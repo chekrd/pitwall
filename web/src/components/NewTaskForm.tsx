@@ -479,6 +479,66 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
 
   const chosen = [when && describeWhen(when), f.prompt.trim() && 'prompt', f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
+  const modelControl = (
+    <div className={styles.models}>
+      <label className={styles.select} title="The model Claude starts with; the first is the one your Claude Code settings pick">
+        <span className={styles.caption}>Model</span>
+        <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
+          {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <Icon name="chevron-down" size={14} />
+      </label>
+      <label className={styles.select} title="How hard Claude thinks; the first is the one your Claude Code settings give that model">
+        <span className={styles.caption}>Effort</span>
+        <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
+          {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <Icon name="chevron-down" size={14} />
+      </label>
+    </div>
+  );
+
+  const startControl = (
+    <div className={styles.when} data-when>
+      <fieldset className={styles.segments}>
+        <legend>When Claude starts</legend>
+        {(['now', 'once', 'repeat'] as const).map((start) => (
+          <label key={start}>
+            <input type="radio" name="start" checked={f.start === start} onChange={() => edit({ start, ...(start === 'once' && !f.at && { at: soon() }) })} />
+            {{ now: 'Now', once: 'Once', repeat: 'Repeat' }[start]}
+          </label>
+        ))}
+      </fieldset>
+      {f.start === 'once' && (
+        <label className={styles.select}>
+          <span className={styles.caption}>At</span>
+          <input type="datetime-local" aria-label="Start at" value={f.at} min={soon()} onChange={(e) => edit({ at: e.currentTarget.value })} />
+        </label>
+      )}
+      {f.start === 'repeat' && (
+        <>
+          <label className={styles.select}>
+            <span className={styles.caption}>At</span>
+            <input type="time" aria-label="Start at" value={f.time} onChange={(e) => edit({ time: e.currentTarget.value })} />
+          </label>
+          <fieldset className={styles.segments} data-days>
+            <legend>On</legend>
+            {WEEK.map((d) => (
+              <label key={d} title={DAYS[d]}>
+                <input
+                  type="checkbox"
+                  checked={f.days.includes(d)}
+                  onChange={(e) => edit({ days: e.currentTarget.checked ? [...f.days, d] : f.days.filter((x) => x !== d) })}
+                />
+                {DAYS[d].slice(0, 2)}
+              </label>
+            ))}
+          </fieldset>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <form className={styles.form} action={create} onKeyDown={onFormKey}>
       <div className={styles.row}>
@@ -542,9 +602,9 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
             value={f.prompt}
             onChange={(e) => edit({ prompt: e.currentTarget.value })}
           />
-          <div className={styles.options}>
-            {!existing && !pickedFolder && (
-              <>
+          {!existing && !pickedFolder ? (
+            <>
+              <div className={styles.options}>
                 <label className={styles.input} title="The new branch; defaults to the name">
                   <span>Branch</span>
                   <input value={f.branch} onChange={(e) => edit({ branch: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder={name || 'same as name'} spellCheck={false} />
@@ -553,67 +613,22 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
                   <span>Worktree path</span>
                   <input value={f.path} onChange={(e) => edit({ path: e.currentTarget.value })} placeholder={`${tilde(repo.worktreeRoot ?? repo.defaultWorktreeRoot, home)}/${name || '<name>'}/${folder}`} spellCheck={false} />
                 </label>
-              </>
-            )}
-            <label className={styles.select} title="The model Claude starts with; the first is the one your Claude Code settings pick">
-              <span className={styles.caption}>Model</span>
-              <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
-                {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-              <Icon name="chevron-down" size={14} />
-            </label>
-            <label className={styles.select} title="How hard Claude thinks; the first is the one your Claude Code settings give that model">
-              <span className={styles.caption}>Effort</span>
-              <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
-                {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-              <Icon name="chevron-down" size={14} />
-            </label>
-          </div>
-          <div className={styles.when} data-when>
-            <fieldset className={styles.mode}>
-              <legend>When Claude starts</legend>
-              {(['now', 'once', 'repeat'] as const).map((start) => (
-                <label key={start}>
-                  <input type="radio" name="start" checked={f.start === start} onChange={() => edit({ start, ...(start === 'once' && !f.at && { at: soon() }) })} />
-                  {{ now: 'Now', once: 'Once', repeat: 'Repeat' }[start]}
-                </label>
-              ))}
-            </fieldset>
-            {f.start === 'once' && (
-              <label className={styles.field}>
-                <span className={styles.caption}>At</span>
-                <input type="datetime-local" aria-label="Start at" value={f.at} min={soon()} onChange={(e) => edit({ at: e.currentTarget.value })} />
-              </label>
-            )}
-            {f.start === 'repeat' && (
-              <>
-                <label className={styles.field}>
-                  <span className={styles.caption}>At</span>
-                  <input type="time" aria-label="Start at" value={f.time} onChange={(e) => edit({ time: e.currentTarget.value })} />
-                </label>
-                <fieldset className={styles.mode} data-days>
-                  <legend>On</legend>
-                  {WEEK.map((d) => (
-                    <label key={d} title={DAYS[d]}>
-                      <input
-                        type="checkbox"
-                        checked={f.days.includes(d)}
-                        onChange={(e) => edit({ days: e.currentTarget.checked ? [...f.days, d] : f.days.filter((x) => x !== d) })}
-                      />
-                      {DAYS[d].slice(0, 2)}
-                    </label>
-                  ))}
-                </fieldset>
-              </>
-            )}
-            {scheduling && (
-              <p className={styles.hint}>
-                {!when ? (f.start === 'once' ? 'Pick a time to come.' : 'Pick at least one day.')
-                  : <>{existing ? 'Starts' : 'Creates the worktree and starts'} Claude {describeWhen(when)}{f.start === 'repeat' && !existing && <>, a new one each time, named <code>{name || '<name>'}-</code> and the date</>}. A run missed while the Mac sleeps starts when it wakes.</>}
-              </p>
-            )}
-          </div>
+                {startControl}
+              </div>
+              <div className={styles.options}>{modelControl}</div>
+            </>
+          ) : (
+            <div className={styles.options}>
+              {startControl}
+              {modelControl}
+            </div>
+          )}
+          {scheduling && (
+            <p className={styles.hint} data-when-hint>
+              {!when ? (f.start === 'once' ? 'Pick a time to come.' : 'Pick at least one day.')
+                : <>{existing ? 'Starts' : 'Creates the worktree and starts'} Claude {describeWhen(when)}{f.start === 'repeat' && !existing && <>, a new one each time, named <code>{name || '<name>'}-</code> and the date</>}. A run missed while the Mac sleeps starts when it wakes.</>}
+            </p>
+          )}
         </div>
       )}
       {error && <p className={styles.error} role="alert">{error}</p>}

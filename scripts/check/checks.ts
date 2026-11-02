@@ -2381,11 +2381,11 @@ export const checks: Check[] = [
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
-      await page.eval(() => document.querySelector<HTMLInputElement>('dialog#new-task [data-when] input:checked')!.focus());
+      await page.eval(() => [...document.querySelectorAll<HTMLSelectElement>('dialog#new-task select')].at(-1)!.focus());
       await page.key('Tab');
       await page.until('the repository button, after the last field', focused, button);
       await page.key('Tab', { shift: true });
-      await page.until('the last field again', () => document.activeElement === document.querySelector('dialog#new-task [data-when] input:checked'));
+      await page.until('the last field again', () => document.activeElement === [...document.querySelectorAll('dialog#new-task select')].at(-1));
       await page.key('Tab');
       await page.until('the repository button', focused, button);
 
@@ -6510,8 +6510,16 @@ export const checks: Check[] = [
       await typeInPrompt(page);
       await page.type('Review the open PRs and summarise what needs me');
       await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
-      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when] p')!.textContent!), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
+      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent!), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
       await shot('new-task-repeat');
+      const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div')].map((row) =>
+        [...row.querySelectorAll(':scope > label, :scope > [data-when] > label, :scope > [data-when] > fieldset:not([data-days]), :scope > div > label')].map((el) => el.querySelector('span')?.textContent ?? 'Start'));
+      assert.deepEqual(await page.eval(rows), [['Branch', 'Worktree path', 'Start', 'At'], ['Model', 'Effort']], 'a new worktree: Start by the worktree path, Model and Effort under it');
+      await page.click('dialog#new-task label', 'Current checkout');
+      await page.until('one row of options', () => document.querySelectorAll('dialog#new-task [data-more-options] > div').length === 1);
+      assert.deepEqual(await page.eval(rows), [['Start', 'At', 'Model', 'Effort']], 'the current checkout: Start first, then Model and Effort');
+      await shot('new-task-repeat-checkout');
+      await page.click('dialog#new-task label', 'New worktree');
       await page.eval(submit);
       const [posted] = await logged(mock, 'the schedule', (e) => e.method === 'POST' && e.path === '/api/schedules');
       assert.equal(posted.status, 200);
