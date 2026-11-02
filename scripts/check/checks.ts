@@ -3795,6 +3795,30 @@ export const checks: Check[] = [
       assert.equal(await page.eval(() => document.activeElement === document.querySelector('#task-sheet textarea')), true, 'focus in the box');
     },
   },
+  {
+    name: 'P5.2.31 a paste into the reply box lands from the paste event itself, at the caret, though the browser\'s own insert comes up empty, and undo takes it back',
+    async run({ page, mock }) {
+      await openFromWall(page, mock, 's-invoice');
+      await page.click('#task-sheet textarea');
+      await page.type('Round half up');
+      // A dispatched paste carries the text but has no insert of its own, as a paste whose clipboard read came back empty.
+      const prevented = await page.eval(() => {
+        const box = document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!;
+        box.setSelectionRange(5, 5);
+        const clipboardData = new DataTransfer();
+        clipboardData.setData('text/plain', ' every cent');
+        return !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+      });
+      assert.equal(prevented, true, 'the box handled the paste');
+      await page.until('the pasted text', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!.value === 'Round every cent half up');
+      assert.deepEqual(await page.eval(() => {
+        const box = document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!;
+        return [box.selectionStart, box === document.activeElement];
+      }), [16, true]);
+      await page.eval(() => document.execCommand('undo'));
+      await page.until('undone', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!.value === 'Round half up');
+    },
+  },
   // DIAG(paste-loss)
   {
     name: 'P5.2.30 Paste missed? under a reply box keeps focus in the box, uploads the recorder\'s report and starts a Pitwall task that investigates it',

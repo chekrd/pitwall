@@ -166,6 +166,9 @@ addEventListener('focusin', (e) => {
 
 const files = (e: { dataTransfer?: DataTransfer | null; clipboardData?: DataTransfer | null }) => [...((e.dataTransfer ?? e.clipboardData)?.files ?? [])];
 
+// Inserts at the caret of the focused field, as typing does, so undo keeps it.
+const insertText = (text: string) => document.execCommand('insertText', false, text);
+
 const onScreen = (el: Element) => !el.closest('[inert]') && el.checkVisibility();
 
 // A paste that lands on the page belongs in the reply box: a change of state takes the box away for a moment (a
@@ -185,7 +188,7 @@ addEventListener('paste', (e) => {
   const box = boxes.find((b) => b.dataset.draft === id);
   box?.focus({ preventScroll: true });
   if (list.length) attach(id, list);
-  else if (!box || !document.execCommand('insertText', false, text)) editDraft(id, (d) => ({ ...d, text: d.text + text }));
+  else if (!box || !insertText(text)) editDraft(id, (d) => ({ ...d, text: d.text + text }));
 });
 
 export interface ComposerProps {
@@ -284,10 +287,18 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
     setClosed(value.startsWith('/') && /\s/.test(value));
   };
 
-  const onPaste = (e: ClipboardEvent) => {
-    if (!files(e).length) return;
+  // The text comes from the paste event itself: Chrome's own insert reads the clipboard again, and that read can come
+  // back empty (seen as a beforeinput without data and no input), so a paste or dictation landed only the second time.
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const list = files(e);
+    const text = e.clipboardData.getData('text/plain');
+    if (!list.length && !text) return;
     e.preventDefault();
-    attach(id, files(e));
+    if (list.length) attach(id, list);
+    else if (!insertText(text)) {
+      const box = e.currentTarget;
+      setText(box.value.slice(0, box.selectionStart) + text + box.value.slice(box.selectionEnd));
+    }
   };
   const onDragOver = (e: DragEvent) => {
     if (e.dataTransfer.types.includes('Files')) e.preventDefault();
