@@ -133,14 +133,11 @@ export function openNewTask(preset?: { repoId: number; name: string; prompt: str
     edit({ ...(!preset && { name: '' }), ...(fields.prompt.trim() && { more: true }) });
     dialog.showModal();
   }
-  const focus = () => dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
-  // A preset opens More, whose prompt takes focus only once it renders.
-  if (preset) requestAnimationFrame(focus);
-  else focus();
+  dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
 }
 
 // Typing on the closed button opens the list with that letter already in the filter.
-function RepoPicker({ repos, repo, pick, first }: { repos: Target[]; repo: Target; pick: (t: Target) => void; first: boolean }) {
+function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick: (t: Target) => void }) {
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
   const filter = useRef<HTMLInputElement>(null);
@@ -195,7 +192,7 @@ function RepoPicker({ repos, repo, pick, first }: { repos: Target[]; repo: Targe
 
   return (
     <>
-      <button type="button" data-autofocus={first || undefined} className={styles.repo} data-ux={repo.kind === 'folder' ? 'folder' : 'repository'} popoverTarget={`${id}-list`} aria-haspopup="listbox" aria-label={`${repo.kind === 'folder' ? 'Folder' : 'Repository'}: ${repo.name}`} onKeyDown={onButtonKey}>
+      <button type="button" data-autofocus className={styles.repo} data-ux={repo.kind === 'folder' ? 'folder' : 'repository'} popoverTarget={`${id}-list`} aria-haspopup="listbox" aria-label={`${repo.kind === 'folder' ? 'Folder' : 'Repository'}: ${repo.name}`} onKeyDown={onButtonKey}>
         <span className={styles.caption}>{repo.kind === 'folder' ? 'Folder' : 'Repository'}</span>
         <strong>{repo.name}</strong>
         <Icon name="chevron-down" size={14} />
@@ -444,7 +441,6 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         <RepoPicker
           repos={targets}
           repo={target}
-          first={!f.more}
           pick={(t) => edit(t.kind === 'folder' ? { folder: t.path, branch: '' } : { folder: null, repoId: t.repo.id, branch: f.existing ? defaultBranch(t.repo) : '' })}
         />
         {!pickedFolder && (
@@ -495,7 +491,6 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       {f.more && (
         <div className={styles.extra} data-more-options>
           <textarea
-            data-autofocus
             className={styles.prompt}
             rows={1}
             aria-label="What should Claude work on?"

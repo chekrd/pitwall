@@ -337,11 +337,19 @@ const segmentsNow = () => [...document.querySelectorAll<HTMLElement>('[data-segm
   session: s.dataset.session, current: s.hasAttribute('data-current'), new: s.hasAttribute('data-new'), width: Math.round(s.getBoundingClientRect().width),
 }));
 
-// New task from the top bar, its prompt focused.
+const newTaskOnRepo = () => !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open &&
+  document.activeElement === document.querySelector('dialog#new-task button[aria-haspopup="listbox"]');
+
+// New task from the top bar, which opens on the repository, then its prompt clicked.
 async function openNewTask(page: Page) {
   await page.click('header button[aria-label="New task"]');
-  await page.until('the New task dialog, its prompt focused', () =>
-    !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open && document.activeElement === document.querySelector('dialog#new-task textarea'));
+  await page.until('the New task dialog, its repository focused', newTaskOnRepo);
+  await typeInPrompt(page);
+}
+
+async function typeInPrompt(page: Page) {
+  await page.click('dialog#new-task textarea');
+  await page.until('the prompt focused', () => document.activeElement === document.querySelector('dialog#new-task textarea'));
 }
 
 const pickerOpen = () => !!document.querySelector('#new-task [data-repo-picker]:popover-open');
@@ -2213,12 +2221,12 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.18 New task keeps its fields: a prompt typed in it on the Wall and closed is there when N opens it over the queue, and a reload keeps it',
+    name: 'P4.18 New task keeps its fields: a prompt typed in it on the Wall and closed is there when N opens it over the queue, on the repository, and a reload keeps it',
     async run({ page, mock, shot }) {
       const dialogPrompt = () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#new-task');
         const prompt = d?.querySelector('textarea');
-        return d?.open && prompt && { value: prompt.value, focused: document.activeElement === prompt };
+        return d?.open && prompt && { value: prompt.value, repositoryFocused: document.activeElement === d.querySelector('button[aria-haspopup="listbox"]') };
       };
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
@@ -2229,7 +2237,7 @@ export const checks: Check[] = [
       await page.click('nav[aria-label="View"] a', 'Queue');
       await page.until('the queue', () => location.pathname === '/');
       await page.key('n');
-      assert.deepEqual(await page.until('the New task dialog', dialogPrompt), { value: 'Typed on the Wall', focused: true });
+      assert.deepEqual(await page.until('the New task dialog', dialogPrompt), { value: 'Typed on the Wall', repositoryFocused: true });
       await page.until('the dialog to settle', settled);
       await shot('new-task-dialog');
       await page.key('Escape');
@@ -2237,7 +2245,7 @@ export const checks: Check[] = [
       await page.goto(`${mock.url}/`);
       await page.until('the card', card);
       await page.key('n');
-      assert.deepEqual(await page.until('the New task dialog after a reload', dialogPrompt), { value: 'Typed on the Wall', focused: true });
+      assert.deepEqual(await page.until('the New task dialog after a reload', dialogPrompt), { value: 'Typed on the Wall', repositoryFocused: true });
     },
   },
   {
@@ -3014,13 +3022,12 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.20 N opens New task over the queue with the prompt focused and Esc closes it; V goes to the Wall and back; on the Wall a waiting tile opens its task page over the Wall, whose Open its card brings the card to the front, and so does a working one',
+    name: 'P5.1.20 N opens New task over the queue with the repository focused and Esc closes it; V goes to the Wall and back; on the Wall a waiting tile opens its task page over the Wall, whose Open its card brings the card to the front, and so does a working one',
     async run({ page, mock }) {
       await openQueue(page, mock);
       await page.key('n');
-      await page.until('New task, its prompt focused', () => !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open && document.activeElement === document.querySelector('dialog#new-task textarea'));
+      await page.until('New task, its repository focused', newTaskOnRepo);
       await page.key('Escape');
-      // The prompt keeps focus while the dialog fades out.
       await page.until('the dialog to close', () => !document.querySelector('dialog#new-task[open]') && !document.activeElement?.closest('dialog'));
       await page.key('v');
       await page.until('the Wall', () => location.pathname === '/wall' && document.querySelectorAll('[data-tile]').length > 0);
@@ -3041,14 +3048,14 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.20b N opens New task over a task page too, its prompt focused, and Esc closes it back to the task page',
+    name: 'P5.1.20b N opens New task over a task page too, its repository focused, and Esc closes it back to the task page',
     async run({ page, mock }) {
       await openQueue(page, mock);
       await page.key('o');
       await page.until('the task page', () => location.pathname === '/s/s-cart/overview' && !!document.querySelector('#task-sheet'));
       await page.until('the task page to settle', settled);
       await page.key('n');
-      await page.until('New task over the task page, its prompt focused', () => !!document.querySelector('dialog#new-task:modal') && document.activeElement === document.querySelector('dialog#new-task textarea'));
+      await page.until('New task over the task page, its repository focused', newTaskOnRepo);
       await page.key('Escape');
       await page.until('the dialog to close', () => !document.querySelector('dialog#new-task[open]'));
       assert.deepEqual(await page.eval(() => [location.pathname, !!document.querySelector('#task-sheet')]), ['/s/s-cart/overview', true]);
@@ -4573,7 +4580,8 @@ export const checks: Check[] = [
     async run({ page, mock }) {
       await openQueue(page, mock);
       await page.key('n');
-      await page.until('the prompt, focused', () => document.activeElement?.matches('#new-task textarea'));
+      await page.until('New task, its repository focused', newTaskOnRepo);
+      await typeInPrompt(page);
       await page.type('Fix');
       await page.key('Escape');
       await page.key('q');
@@ -5026,7 +5034,9 @@ export const checks: Check[] = [
       await page.key('v');
       await page.until('the Wall', () => location.pathname === '/wall' && document.querySelectorAll('[data-tile]').length > 0);
       await page.key('n');
-      await page.until('its prompt, focused', () => document.activeElement?.matches('dialog#new-task textarea'));
+      await page.until('New task, its repository focused', newTaskOnRepo);
+      for (let i = 0; i < 10 && !(await page.eval(() => document.activeElement?.matches('dialog#new-task textarea'))); i++) await page.key('Tab');
+      assert.equal(await page.eval(() => document.activeElement?.matches('dialog#new-task textarea')), true, 'Tab reaches the prompt');
       for (const ch of 'fix the login') await page.key(ch);
       await page.key('Escape');
       await page.until('New task to close', () => !document.querySelector('dialog#new-task[open]') && !document.activeElement?.closest('dialog#new-task'));
@@ -5536,10 +5546,10 @@ export const checks: Check[] = [
       assert.match(text, /^Claude Code 9\.9\.9 changed what Pitwall reads: session files report an unknown status "thinking"\./);
       await shot('drift');
       await page.click('[data-fix-drift]');
-      const form = await page.until('New task with the fix, its prompt focused', () => {
+      const form = await page.until('New task with the fix, its repository focused', () => {
         const dialog = document.querySelector<HTMLDialogElement>('dialog#new-task');
         const prompt = dialog?.querySelector<HTMLTextAreaElement>('[data-more-options] textarea');
-        if (!dialog?.open || !prompt || document.activeElement !== prompt) return null;
+        if (!dialog?.open || !prompt || document.activeElement !== dialog.querySelector('button[aria-haspopup="listbox"]')) return null;
         return {
           repo: dialog.querySelector<HTMLElement>('[data-ux="repository"] strong')?.innerText,
           worktree: dialog.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.parentElement?.innerText.trim(),
