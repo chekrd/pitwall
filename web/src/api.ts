@@ -1,3 +1,4 @@
+import { record } from './recorder.ts';
 import { track } from './ux.ts';
 
 export const wsUrl = (path: string) => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${path}`;
@@ -19,10 +20,12 @@ export async function api<T = void>(method: string, path: string, body?: unknown
     body: body === undefined ? undefined : JSON.stringify(body),
     keepalive,
   }).catch((err: unknown) => {
+    record('api-failed', { method, path, error: String(err) });
     throw err instanceof TypeError ? unreachable() : err;
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
+    record('api-failed', { method, path, status: res.status, error: err.error ?? res.statusText, code: err.code ?? null });
     const failure: ApiError = Object.assign(new Error(err.error ?? res.statusText), { code: err.code as string | undefined, status: res.status });
     throw failure;
   }
@@ -34,6 +37,9 @@ export async function upload(file: File) {
     method: 'POST',
     headers: { 'content-type': file.type || 'application/octet-stream', 'x-filename': encodeURIComponent(file.name || 'pasted') },
     body: file,
+  }).catch((err: unknown) => {
+    record('api-failed', { method: 'POST', path: '/api/uploads', error: String(err) });
+    throw err instanceof TypeError ? unreachable() : err;
   });
   const out = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new Error(out.error ?? res.statusText);

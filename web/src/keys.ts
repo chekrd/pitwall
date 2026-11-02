@@ -72,6 +72,7 @@ export type Action =
   | { type: 'undo' }
   | { type: 'view'; to: 'queue' | 'wall' }
   | { type: 'new-task' }
+  | { type: 'bug' }
   | { type: 'keys' }
   | { type: 'tab'; tab: Tab }
   | { type: 'file'; step: 1 | -1 }
@@ -124,6 +125,7 @@ export const KEYS: readonly Row[] = [
   { keys: 'Z', help: 'Take back the last send while it waits to go out', scopes: ['queue', 'wall', 'sheet'], matches: named('z'), act: () => ({ type: 'undo' }) },
   { keys: 'V', help: 'Switch between Queue and Wall', scopes: ['queue', 'wall'], matches: named('v'), act: (ctx) => ({ type: 'view', to: ctx.view === 'queue' ? 'wall' : 'queue' }) },
   { keys: 'N', help: 'New task', scopes: ['queue', 'wall', 'sheet'], matches: named('n'), act: (ctx) => (ctx.repos ? { type: 'new-task' } : null) },
+  { keys: 'B', help: 'Bug report: say what went wrong, and a Pitwall task fixes it', scopes: ['queue', 'wall', 'sheet'], matches: named('b'), act: () => ({ type: 'bug' }) },
   {
     keys: '1 / 2 / 3 / 4', help: 'In an open task: Overview, Conversation, Diff, Artifacts', scopes: ['sheet'], matches: (e) => digit(e) > 0 && digit(e) <= 4,
     act: (ctx, e) => (digit(e) === 1 ? { type: 'tab', tab: 'overview' } : digit(e) === 2 ? { type: 'tab', tab: 'conversation' } : digit(e) === 3 ? { type: 'tab', tab: 'diff' }

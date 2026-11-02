@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { BugReportDialog } from './components/BugReportDialog.tsx';
 import { DriftBanner } from './components/DriftBanner.tsx';
 import { DeleteWorktreeDialog } from './components/DeleteWorktreeDialog.tsx';
 import { KeysDialog } from './components/KeysDialog.tsx';
@@ -55,6 +56,7 @@ export function App() {
       <NewTaskDialog repos={store.repos} />
       <WorkspaceDialog roots={store.roots} repos={store.repos} sessions={store.sessions} />
       <KeysDialog />
+      <BugReportDialog />
       <DeleteWorktreeDialog />
       <Toasts />
     </>

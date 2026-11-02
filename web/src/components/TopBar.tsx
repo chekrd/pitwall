@@ -4,6 +4,7 @@ import type { Route } from '../router.ts';
 import { reloadNow, useStore, type Link } from '../store.ts';
 import type { Session } from '../types.ts';
 import { clock } from '../util.ts';
+import { openBugReport } from './BugReportDialog.tsx';
 import { Icon } from './Icon.tsx';
 import { Meter } from './Meter.tsx';
 import { openNewTask } from './NewTaskForm.tsx';
@@ -51,6 +52,19 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
       <div className={styles.usage}><Usage /></div>
       <div className={styles.theme}><ThemeMenu /></div>
       <div className={styles.end}>
+        {/* Pressing it leaves focus where it was, so the report shows the field that was being typed in. */}
+        <button
+          type="button"
+          className={`${styles.ghost} ${styles.bug}`}
+          data-bug-report
+          aria-label="Bug report"
+          title="Bug report (B): say what went wrong, and a Pitwall task reproduces it, fixes it and delivers the fix"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={openBugReport}
+        >
+          <Icon name="bug" size={17} />
+          <span className={styles.label}>Bug</span>
+        </button>
         <button
           type="button"
           className={`${styles.ghost} ${styles.pause}`}

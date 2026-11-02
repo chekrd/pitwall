@@ -1,13 +1,14 @@
 import { useEffect, useEffectEvent } from 'react';
+import { openBugReport } from './components/BugReportDialog.tsx';
 import { stepFile } from './components/DiffView.tsx';
 import { toggleKeys } from './components/KeysDialog.tsx';
 import { openNewTask } from './components/NewTaskForm.tsx';
 import { keyAction, KEYS_DIALOG, LOCK_MS, rowFor, SHEET_DIALOG, typingLock, type Action, type Card, type KeyContext, type Key, type Target } from './keys.ts';
 import { openPopovers } from './layers.ts';
 import { queue } from './queue.ts';
+import { record } from './recorder.ts';
 import { closeSheet, go, showTab, viewPath, type Route } from './router.ts';
 import { holding, undo } from './sends.ts';
-import { diag } from './diag.ts'; // DIAG(paste-loss)
 import { track } from './ux.ts';
 
 // The reply box's paperclip counts as part of its field: focus on it is still writing a reply.
@@ -86,7 +87,7 @@ export function useKeys(context: () => Omit<KeyContext, 'target' | 'modal' | 'po
       if (!field || field.isConnected) return;
       field = null;
       if (typing && onPage()) {
-        diag('typing-lock'); // DIAG(paste-loss)
+        record('typing-lock');
         lock.start();
       }
     };
@@ -156,7 +157,7 @@ export function useFront(value: Front | null) {
   }, [value]);
 }
 
-// The board's keys: switching views, New task, the Keys dialog, Undo and the sheet's tabs and files here, and the
+// The board's keys: switching views, New task, Bug report, the Keys dialog, Undo and the sheet's tabs and files here, and the
 // card's keys through the front the queue sets.
 export function useBoardKeys({ route, deck, repos, artifacts }: { route: Route; deck: number; repos: boolean; artifacts: boolean }) {
   useKeys(
@@ -172,6 +173,7 @@ export function useBoardKeys({ route, deck, repos, artifacts }: { route: Route; 
     (action, e) => {
       if (action.type === 'view') go(viewPath(action.to));
       else if (action.type === 'new-task') openNewTask();
+      else if (action.type === 'bug') openBugReport();
       else if (action.type === 'keys') toggleKeys();
       else if (action.type === 'undo') undo();
       else if (action.type === 'tab') showTab(action.tab);

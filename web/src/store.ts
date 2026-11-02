@@ -7,7 +7,7 @@ import { sends } from './sends.ts';
 import type { Drift, FolderView, RepoView, Session, Usage } from './types.ts';
 import { menuOpen } from './layers.ts';
 import { isEditable } from './useKeys.ts';
-import { diag } from './diag.ts'; // DIAG(paste-loss)
+import { record } from './recorder.ts';
 import { attentionChangesAt } from './util.ts';
 import { track } from './ux.ts';
 
@@ -48,7 +48,7 @@ function set(next: State) {
   const key = orderKey(next.sessions);
   const animate = key !== order && state.link === 'live' && !document.hidden && reorderShows();
   order = key;
-  diagStates(state, next, animate); // DIAG(paste-loss)
+  recordStates(state, next, animate);
   if (next.link !== state.link && state.link !== 'connecting') track('link', { state: next.link });
   state = next;
   const notify = () => {
@@ -59,12 +59,13 @@ function set(next: State) {
   else notify();
 }
 
-// DIAG(paste-loss)
-function diagStates(before: State, next: State, animate: boolean) {
+// For a bug report: each session whose state changed, as it was and as it is, and the link as it goes.
+function recordStates(before: State, next: State, animate: boolean) {
   const shape = (s: Session) => `${s.status}|${s.waitingFor ?? ''}|${s.question?.toolUseId ?? ''}|${s.menu ? 'menu' : ''}|${s.archived}|${s.summary?.at ?? ''}`;
   const was = new Map(before.sessions.map((s) => [s.id, shape(s)]));
   const changed = next.sessions.flatMap((s) => (was.get(s.id) === shape(s) ? [] : [[s.id, was.get(s.id) ?? null, shape(s)]]));
-  if (changed.length || animate) diag('state', { changed, animate });
+  if (changed.length || animate) record('state', { changed, animate });
+  if (next.link !== before.link) record('link', next.link);
 }
 
 const PATCH_MS = 15_000;

@@ -1,5 +1,5 @@
 import './renamed.ts';
-import './diag.ts'; // DIAG(paste-loss)
+import './recorder.ts';
 import './ux.ts';
 import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/bricolage-grotesque/opsz.css';

@@ -23,7 +23,6 @@ import { SecondOpinion } from './SecondOpinion.tsx';
 import { STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { FocusButton } from './SessionMenu.tsx';
 import { toast } from './Toasts.tsx';
-import { diag } from '../diag.ts'; // DIAG(paste-loss)
 
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
   const { copied, copy } = useCopy(value, what);
@@ -254,12 +253,10 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               className={styles.message}
               data-ux-section="message box"
               onFocus={() => {
-                if (!writing) diag('overview-writing', { on: true, attention }); // DIAG(paste-loss)
                 setWriting(true);
               }}
               onBlur={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget) && (e.relatedTarget || document.hasFocus())) {
-                  diag('overview-writing', { on: false, attention }); // DIAG(paste-loss)
                   setWriting(false);
                 }
               }}

@@ -3930,28 +3930,84 @@ export const checks: Check[] = [
       await page.until('undone', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!.value === 'Round half up');
     },
   },
-  // DIAG(paste-loss)
   {
-    name: 'P5.2.30 Paste missed? under a reply box keeps focus in the box, uploads the recorder\'s report and starts a Pitwall task that investigates it',
-    async run({ page, mock }) {
-      await openFromWall(page, mock, 's-invoice');
+    name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word',
+    async run({ page, mock, shot }) {
+      const open = () => !!document.querySelector('#bug-report:modal') && document.activeElement === document.querySelector('#bug-report textarea');
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await page.key('b');
+      await page.until('Bug report, its comment focused', open);
+      await page.until('the dialog to settle', settled);
+      await shot('bug-report');
+      await page.key('Escape');
+      await page.until('Bug report to close', () => !document.querySelector('#bug-report[open]'));
+
+      await page.click('[data-tile][data-session="s-invoice"] a');
+      await page.until('the sheet of s-invoice', sheetOpen);
       await page.click('#task-sheet textarea');
       await page.type('Round');
-      await page.click('#task-sheet button', 'Paste missed?');
-      const [created] = await logged(mock, 'the investigating task', (e) => e.method === 'POST' && e.path === '/api/worktrees');
+      await page.eval(() => {
+        const clipboardData = new DataTransfer();
+        clipboardData.setData('text/plain', ' half up');
+        document.querySelector('#task-sheet textarea')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+      });
+      await page.click('[data-bug-report]');
+      await page.until('Bug report, its comment focused', open);
+      const comment = 'The paste ```landed``` twice';
+      await page.type(comment);
+      await page.key('Enter', { shift: true });
+      await page.type('and `Z` did nothing');
+      await page.key('Enter');
+      const [created] = await logged(mock, 'the task', (e) => e.method === 'POST' && e.path === '/api/worktrees');
       const [uploaded] = await logged(mock, 'the report', (e) => e.method === 'POST' && e.path === '/api/uploads');
       assert.equal(created.status, 200);
       assert.equal(created.body.repoId, 3);
-      assert.match(created.body.name, /^paste-loss-\d{10}$/);
-      assert.match(created.body.prompt, /\/paste-loss-\d{10}\.json \(JSON\)/);
+      assert.match(created.body.name, /^bug-\d{10}$/);
+      assert.ok(created.body.prompt.includes(`\`\`\`\`\n${comment}\nand \`Z\` did nothing\n\`\`\`\``), created.body.prompt);
+      assert.match(created.body.prompt, /\/bug-\d{10}\.json \(JSON\)/);
       assert.ok(uploaded.at <= created.at);
       const report = JSON.parse(uploaded.raw!);
+      assert.equal(report.comment, `${comment}\nand \`Z\` did nothing`);
       const types = new Set(report.events.map((e: unknown[]) => e[1]));
-      for (const t of ['load', 'composer-mount', 'claim', 'focusin', 'beforeinput', 'input', 'report']) assert.ok(types.has(t), `the report records ${t}`);
-      assert.deepEqual(report.snapshot.boxes.map((b: { focused: boolean; value: string }) => [b.focused, b.value]), [[true, 'Round']]);
-      assert.equal(report.reportedFrom, 's-invoice');
-      assert.match((await page.until('the toast', toastsOf, 'info'))[0].text, /^Started a task that investigates the missed paste/);
-      assert.equal(await page.eval(() => document.activeElement === document.querySelector('#task-sheet textarea')), true, 'focus stayed in the box');
+      for (const t of ['load', 'focusin', 'keydown', 'beforeinput', 'input', 'paste', 'route', 'ux', 'bug-report-open', 'bug-report']) assert.ok(types.has(t), `the report records ${t}`);
+      assert.match(report.snapshot.active, /^textarea#\d+ draft=s-invoice/);
+      assert.deepEqual(report.snapshot.boxes.map((b: { focused: boolean; value: string }) => [b.focused, b.value]), [[true, 'Round half up']]);
+      assert.match(report.snapshot.url, /\/s\/s-invoice/);
+      assert.match(report.snapshot.text, /Fix invoice PDF rounding/);
+      assert.match((await page.until('the toast', toastsOf, 'info'))[0].text, /^Filed the bug: a task reproduces it, fixes it and delivers the fix/);
+      assert.equal(await page.eval(() => document.activeElement === document.querySelector('#task-sheet textarea')), true, 'focus went back to the box');
+    },
+  },
+  {
+    name: 'P4.20 Bug report with Pitwall out of reach: the report, the comment and the prompt it would have started are saved as a download, and an error toast says where',
+    async run({ page, mock }) {
+      await openQueue(page, mock);
+      await page.eval(() => {
+        const marks = window as unknown as { e2eFetch: typeof fetch; e2eSaved: Promise<{ name: string; text: string }> };
+        marks.e2eFetch = fetch;
+        window.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+        marks.e2eSaved = new Promise((resolve) => {
+          HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+            if (this.download) void marks.e2eFetch(this.href).then((r) => r.text()).then((text) => resolve({ name: this.download, text }));
+          };
+        });
+      });
+      await page.key('b');
+      await page.until('Bug report', () => document.activeElement === document.querySelector('#bug-report textarea'));
+      await page.type('The card never came back');
+      await page.key('Enter');
+      const saved = await page.eval(() => (window as unknown as { e2eSaved: Promise<{ name: string; text: string }> }).e2eSaved);
+      assert.match(saved.name, /^bug-\d{10}\.json$/);
+      const report = JSON.parse(saved.text);
+      assert.equal(report.comment, 'The card never came back');
+      assert.match(report.error, /could not be reached/);
+      assert.ok(report.prompt.includes('```\nThe card never came back\n```'));
+      assert.ok(report.prompt.includes(`this file (${saved.name} in Downloads)`));
+      assert.ok(report.events.length > 0);
+      const [error] = await page.until('the error toast', toastsOf, 'error');
+      assert.match(error.text, new RegExp(`saved to Downloads as ${saved.name.replace('.', '\\.')}`));
+      assert.equal((await mock.log()).some((e) => e.path === '/api/worktrees' || e.path === '/api/uploads'), false);
     },
   },
   {

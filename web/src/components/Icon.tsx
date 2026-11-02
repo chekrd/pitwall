@@ -18,6 +18,12 @@ const shapes = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   pause: <path d="M9 5.5v13M15 5.5v13" />,
+  bug: (
+    <>
+      <rect x="7.5" y="8" width="9" height="12" rx="4.5" />
+      <path d="M9.5 8.2a2.5 2.5 0 0 1 5 0M12 12v8M7.5 13H4M16.5 13H20M8 9.5L5 7M16 9.5l3-2.5M8 17l-3 2.5M16 17l3 2.5" />
+    </>
+  ),
   'arrow-left': <path d="M19 12H5M11 18l-6-6 6-6" />,
   'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,

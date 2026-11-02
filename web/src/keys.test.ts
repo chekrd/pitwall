@@ -139,6 +139,7 @@ test('every row of the Keys table does something, so the Keys dialog lists exact
     Z: [ctx(), key('z')],
     V: [ctx(), key('v')],
     N: [ctx(), key('n')],
+    B: [ctx(), key('b')],
     '1 / 2 / 3 / 4': [ctx({ sheet: { tab: 'overview', artifacts: true } }), key('4')],
     'J / K': [ctx({ sheet: { tab: 'diff', artifacts: true } }), key('k')],
     Esc: [ctx({ view: 'wall' }), key('Escape')],

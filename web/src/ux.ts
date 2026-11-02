@@ -1,3 +1,5 @@
+import { record } from './recorder.ts';
+
 // How the board is used, to tell what to improve: which screens, keys and controls, what a key press that did nothing
 // was, which sections were in view before each action, sends and their Undo, cards shown, dialogs, slow responses and
 // errors, each with how busy the board was. Never what is typed or what a task says: see controlName, and the server
@@ -33,6 +35,7 @@ export const redact = (text: string, known = names) =>
 const ACTIONS = new Set(['click', 'key', 'send']);
 
 export function track(name: string, data?: Data) {
+  record('ux', { name, ...data });
   if (ACTIONS.has(name)) readBefore(name, data);
   const event: UxEvent = { at: Date.now(), name, data: { ...data, board } };
   queued.push(event);

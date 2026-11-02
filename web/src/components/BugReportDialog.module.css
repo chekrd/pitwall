@@ -1,0 +1,56 @@
+@layer components {
+  .dialog {
+    width: min(640px, calc(100% - 32px));
+    max-width: none;
+    margin: 66px auto auto;
+    padding: 18px 18px 14px 20px;
+    border-color: var(--line-2);
+    translate: 0 0;
+    transition: opacity 0.2s, translate 0.2s, display 0.2s allow-discrete, overlay 0.2s allow-discrete;
+    @starting-style { translate: 0 -8px; }
+    &::backdrop { transition-duration: 0.2s; }
+    h2 { font-size: 13px; font-weight: 650; color: var(--muted); }
+  }
+
+  .form { display: flex; flex-direction: column; gap: 10px; }
+
+  .comment {
+    width: 100%;
+    min-height: 62px;
+    max-height: 40vh;
+    field-sizing: content;
+    resize: none;
+    padding: 2px;
+    border: 0;
+    border-radius: 0;
+    outline: none;
+    background: none;
+    font: 500 19px/1.4 var(--font-display);
+    &:focus-visible { outline: none; }
+  }
+
+  .foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+
+  .hint { flex: 1 1 260px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+
+  .file {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 10px 0 16px;
+    border: 0;
+    border-radius: 11px;
+    background: var(--text);
+    color: var(--ground);
+    font-size: 14.5px;
+    font-weight: 700;
+    kbd { border-color: color-mix(in srgb, var(--ground) 30%, transparent); background: color-mix(in srgb, var(--ground) 14%, transparent); color: inherit; }
+    &:hover { filter: brightness(1.1); }
+  }
+
+  @media (max-width: 760px) {
+    .dialog { width: calc(100% - 16px); margin-top: 104px; }
+  }
+}
