@@ -5464,7 +5464,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'drift a banner says which Claude Code version changed which file Pitwall reads, and leaves when the drift is gone',
+    name: 'drift a banner says which Claude Code version changed which file Pitwall reads, Fix it opens New task on Pitwall with a prompt to update it, and the banner leaves when the drift is gone',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       assert.equal(await page.eval(() => !!document.querySelector('[data-drift]')), false, 'a banner shows without drift');
@@ -5472,6 +5472,24 @@ export const checks: Check[] = [
       const text = await page.until('the drift banner', () => document.querySelector<HTMLElement>('[data-drift]')?.innerText.replace(/\s+/g, ' ').trim() || null);
       assert.match(text, /^Claude Code 9\.9\.9 changed what Pitwall reads: session files report an unknown status "thinking"\./);
       await shot('drift');
+      await page.click('[data-fix-drift]');
+      const form = await page.until('New task with the fix, its prompt focused', () => {
+        const dialog = document.querySelector<HTMLDialogElement>('dialog#new-task');
+        const prompt = dialog?.querySelector<HTMLTextAreaElement>('[data-more-options] textarea');
+        if (!dialog?.open || !prompt || document.activeElement !== prompt) return null;
+        return {
+          repo: dialog.querySelector<HTMLElement>('[data-ux="repository"] strong')?.innerText,
+          worktree: dialog.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.parentElement?.innerText.trim(),
+          name: dialog.querySelector<HTMLInputElement>('input[placeholder="fix-login-redirect"]')?.value,
+          prompt: prompt.value,
+        };
+      });
+      assert.equal(form.repo, 'pitwall');
+      assert.equal(form.worktree, 'New worktree');
+      assert.equal(form.name, 'claude-code-drift');
+      assert.match(form.prompt, /Claude Code 9\.9\.9 changed a file it reads/);
+      assert.match(form.prompt, /^- session files report an unknown status "thinking"$/m);
+      await page.eval(() => document.querySelector<HTMLDialogElement>('dialog#new-task')!.close());
       await mock.post('/mock/drift', { drift: [] });
       await page.until('the banner gone', () => !document.querySelector('[data-drift]'));
     },

@@ -77,7 +77,7 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
             <span className={styles.label}>Wall</span>
           </a>
         </nav>
-        <button type="button" className={styles.newTask} disabled={!repos.length} aria-label="New task" onClick={openNewTask}>
+        <button type="button" className={styles.newTask} disabled={!repos.length} aria-label="New task" onClick={() => openNewTask()}>
           <Icon name="plus" />
           <span className={styles.label}>New task</span>
         </button>

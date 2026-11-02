@@ -123,16 +123,20 @@ const subscribe = (fn: () => void) => {
   return () => void subscribers.delete(fn);
 };
 
-// New task opens as a dialog over either view.
-export function openNewTask() {
+// New task opens as a dialog over either view; a preset starts a new worktree of that repository with that prompt.
+export function openNewTask(preset?: { repoId: number; name: string; prompt: string }) {
   const dialog = document.getElementById(DIALOG) as HTMLDialogElement | null;
   if (!dialog) return;
+  if (preset) edit({ ...preset, folder: null, existing: false, branch: '', path: '', more: true });
   if (!dialog.open) {
     opened++;
-    edit({ name: '', ...(fields.prompt.trim() && { more: true }) });
+    edit({ ...(!preset && { name: '' }), ...(fields.prompt.trim() && { more: true }) });
     dialog.showModal();
   }
-  dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+  const focus = () => dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+  // A preset opens More, whose prompt takes focus only once it renders.
+  if (preset) requestAnimationFrame(focus);
+  else focus();
 }
 
 // Typing on the closed button opens the list with that letter already in the filter.

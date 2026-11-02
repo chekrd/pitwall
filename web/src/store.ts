@@ -23,6 +23,8 @@ interface State {
   // Tasks Pause is still bringing to a stop, and those of them still finishing a turn.
   pause: { stopping: string[]; finishing: string[] };
   drift: Drift[];
+  // The checkout this Pitwall runs from, so drift can be fixed in a task on its repository.
+  pitwall: string;
   link: Link;
   // The top bar offers to reload into a new build: in 15 s no moment came when reloading would lose nothing, or
   // reloading for that build already brought this tab back to the build it runs.
@@ -32,7 +34,7 @@ interface State {
 const RELOAD_CAP_MS = 15_000;
 const RELOADED_FOR = 'pitwall:reloaded-for';
 
-let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], usage: null, pause: { stopping: [], finishing: [] }, drift: [], link: 'connecting', newVersion: false };
+let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], usage: null, pause: { stopping: [], finishing: [] }, drift: [], pitwall: '', link: 'connecting', newVersion: false };
 const subscribers = new Set<() => void>();
 let order = '';
 

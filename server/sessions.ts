@@ -239,9 +239,9 @@ export async function hookEvent(hook: { session_id?: unknown; transcript_path?: 
   const transcript = typeof hook.transcript_path === 'string' && hook.transcript_path ? hook.transcript_path : null;
   const start = hook.hook_event_name === 'SessionStart';
   hookedConversation(id, { transcript, source: start && typeof hook.source === 'string' ? hook.source : null });
-  // Only at the start is the hook's cwd the folder the transcript is filed under; Claude may cd away later. Before the
-  // folder exists a long path's hashed name cannot be found.
-  if (start && transcript && typeof hook.cwd === 'string' && existsSync(dirname(transcript)) && (await guessedTranscriptFile(hook.cwd, id)) !== transcript) {
+  // Only at startup is the hook's cwd the folder the transcript is filed under: SessionStart fires again on /clear and
+  // compaction, after Claude may have cd'd away. Before the folder exists a long path's hashed name cannot be found.
+  if (start && hook.source === 'startup' && transcript && typeof hook.cwd === 'string' && existsSync(dirname(transcript)) && (await guessedTranscriptFile(hook.cwd, id)) !== transcript) {
     report(['transcripts are no longer where Pitwall looks for them without a hook'], null);
   }
   await sync();

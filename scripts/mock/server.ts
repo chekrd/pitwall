@@ -140,7 +140,7 @@ const taskWorktrees = (taskFolder: string) =>
 
 const snapshot = () => ({
   home: '/Users/me', roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders() }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
-  ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift }),
+  ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: '~/git/github/pitwall' }),
 });
 
 // As in server/main.ts: every snapshot names the entry the polls have taken, and a socket that opens first reads

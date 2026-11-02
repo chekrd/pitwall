@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono';
 import { WebSocketServer } from 'ws';
 import { handleAdvisorMcp, retryAdvice, stopAdvice } from './advisor.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
-import { HOST, PORT, USAGE_FILE, WEB_DIST } from './config.ts';
+import { HOST, PORT, ROOT, USAGE_FILE, WEB_DIST } from './config.ts';
 import { repos, roots, sessions, uxEvents } from './db.ts';
 import { listCommands } from './commands.ts';
 import { openDecision, Refusal } from './decision.ts';
@@ -53,7 +53,7 @@ app.onError((err, c) => {
 
 const usage = watchUsage(USAGE_FILE, notify);
 onDrift(notify);
-const state = () => ({ ...snapshot(), usage: usage.current(), pause: S.pauseState(), drift: drift() });
+const state = () => ({ ...snapshot(), usage: usage.current(), pause: S.pauseState(), drift: drift(), pitwall: ROOT });
 
 app.get('/api/state', (c) => c.json(state()));
 
