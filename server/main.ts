@@ -29,7 +29,7 @@ import { drift, onDrift } from './claudeFormat.ts';
 import { boardAnswer, boardTracker, cleanBatch, cleanEvent, KEEP_DAYS, type Data } from './uxlog.ts';
 import { folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
 import { folderDiff, makeTaskFolder } from './folderTasks.ts';
-import { nextRun, parseSchedule, repeats, scheduler, type Scheduled, type TaskRequest } from './schedule.ts';
+import { nextRun, parseSchedule, repeats, scheduler, untilNextMinute, type Scheduled, type TaskRequest } from './schedule.ts';
 
 const run = promisify(execFile);
 const app = new Hono();
@@ -454,12 +454,15 @@ app.get('*', async (c) => {
 await refreshWorkspace({ scan: true });
 await sync();
 setInterval(() => void sync().then(S.pauseStep).catch((err) => console.warn('session sync failed', err)), 1500);
-// A timer does not run while the Mac sleeps; the first step after it wakes starts what came due meanwhile.
-setInterval(() => void plan.step().catch((err) => console.warn('schedules failed', err)), 15_000);
 setInterval(() => void refreshWorkspace({ scan: true }).catch((err) => console.warn('workspace refresh failed', err)), 30_000);
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT, websocket: { server: new WebSocketServer({ noServer: true }) } }, () => {
   console.log(`pitwall listening on http://${HOST}:${PORT}`);
-  // Only now, as the Claude a schedule starts connects to the MCP server here.
-  void plan.step().catch((err) => console.warn('schedules failed', err));
+  // Only now, as the Claude a schedule starts connects to the MCP server here. A timer does not run while the Mac
+  // sleeps; the first look after it wakes starts what came due meanwhile.
+  const look = () => {
+    void plan.step().catch((err) => console.warn('schedules failed', err));
+    setTimeout(look, untilNextMinute(Date.now()));
+  };
+  look();
 });

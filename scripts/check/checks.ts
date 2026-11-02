@@ -6564,7 +6564,7 @@ export const checks: Check[] = [
   {
     name: 'S2 a one-off missed while the Mac slept starts once when it wakes: its task says it started late and why, and the schedule reads Done with the run; a step after starts nothing more',
     async run({ page, mock, shot }) {
-      const due = Date.now() + 3_600_000;
+      const due = Math.ceil(Date.now() / 60_000) * 60_000 + 3_600_000;
       const schedule = await mock.post('/api/schedules', {
         name: 'after-lunch', when: { at: due },
         task: { kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Bump the dependencies', model: '', effort: '' },

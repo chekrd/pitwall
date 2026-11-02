@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { nextRun, parseSchedule, runName, scheduler, type Schedule } from './schedule.ts';
+import { nextRun, parseSchedule, runName, scheduler, untilNextMinute, type Schedule } from './schedule.ts';
 
 const local = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
 // Monday 2 November 2026.
@@ -12,6 +12,11 @@ test('a repeating schedule runs next at its time on the next of its days after n
   assert.equal(nextRun({ time: '09:00', days: WEEKDAYS }, MON(9)), local(2026, 11, 3, 9));
   assert.equal(nextRun({ time: '09:00', days: WEEKDAYS }, local(2026, 11, 6, 10)), local(2026, 11, 9, 9));
   assert.equal(nextRun({ time: '22:30', days: [1] }, MON(23)), local(2026, 11, 9, 22, 30));
+});
+
+test('the next look is at the start of the next minute', () => {
+  assert.equal(untilNextMinute(MON(9)), 60_000);
+  assert.equal(untilNextMinute(MON(9) + 59_000), 1000);
 });
 
 test('a one-off runs at its time, and not again once it has passed', () => {
@@ -30,6 +35,7 @@ test('a schedule needs a prompt, a name, and a time to come or days to repeat on
   assert.throws(() => parseSchedule({ name: 'x', task: { ...task, prompt: ' ' }, when: { at: MON(9) } }, MON(8)), /prompt/);
   assert.throws(() => parseSchedule({ name: 'a b', task, when: { at: MON(9) } }, MON(8)), /name/);
   assert.throws(() => parseSchedule({ name: 'x', task, when: { at: MON(7) } }, MON(8)), /passed/);
+  assert.throws(() => parseSchedule({ name: 'x', task, when: { at: MON(9) + 30_000 } }, MON(8)), /whole minute/);
   assert.throws(() => parseSchedule({ name: 'x', task, when: { time: '9:00', days: [1] } }, MON(8)), /when/);
   assert.throws(() => parseSchedule({ name: 'x', task, when: { time: '09:00', days: [] } }, MON(8)), /day/);
   assert.deepEqual(parseSchedule({ name: 'x', task, when: { time: '09:00', days: [5, 1, 1, 9] } }, MON(8)).when, { time: '09:00', days: [1, 5] });

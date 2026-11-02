@@ -37,6 +37,11 @@ export interface Scheduled {
 // A run that starts this much after it was due, the Mac asleep or Pitwall down meanwhile, says it started late.
 export const LATE_MS = 2 * 60_000;
 
+const MINUTE = 60_000;
+
+// Schedules run on whole minutes, so one look at the start of each minute starts every run on time.
+export const untilNextMinute = (now: number) => MINUTE - (now % MINUTE);
+
 const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const NAME = /^[A-Za-z0-9._-]+$/;
 
@@ -76,6 +81,7 @@ export function parseSchedule(body: { name?: unknown; task?: unknown; when?: unk
   const w = body.when as Partial<{ at: number; time: string; days: number[] }>;
   let when: When;
   if (typeof w?.at === 'number') {
+    if (w.at % MINUTE) throw new Error('a task starts on a whole minute');
     if (w.at <= now) throw new Error('that time has passed');
     when = { at: w.at };
   } else if (typeof w?.time === 'string' && TIME.test(w.time) && Array.isArray(w.days)) {
