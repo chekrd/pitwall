@@ -1674,7 +1674,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.9 the ⋯ menu lists what each session can do; Clear task… asks in a dialog that names the branch, the path and the loss, starts on Cancel and closes on Esc; a failed loss check says so; Clear task deletes',
+    name: 'P4.9 the ⋯ menu lists what each session can do; Clear task…, or the trash beside the ⋯ on a task tile, asks in a dialog that names the branch, the path and the loss, starts on Cancel and closes on Esc; a failed loss check says so; Clear task deletes',
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
@@ -1719,9 +1719,11 @@ export const checks: Check[] = [
       await page.key('Escape');
       await page.until('the dialog to close', () => !document.querySelector('dialog#delete-worktree[open]'));
 
-      await open('s-invoice');
-      await page.click(':popover-open button', 'Clear task');
-      await page.until('the delete dialog', asked);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => !t.querySelector('[data-clear]')).map((t) => t.dataset.session)),
+        await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => t.querySelector('[data-parent]')).map((t) => t.dataset.session)),
+        'a tile without the Clear task button is not a subtask');
+      await page.click('[data-tile][data-session="s-invoice"] button[aria-label="Clear task"]');
+      assert.equal((await page.until('the delete dialog', asked)).focus, 'Cancel', 'the trash starts on Cancel when something would be lost');
       await page.click('dialog#delete-worktree button', 'Clear task');
       const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual([deleted.sessionId, deleted.status], ['s-invoice', 204]);
@@ -1729,21 +1731,24 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.9.checkout a task in the main checkout says it has no worktree in its facts; Clear task… on it asks to clear only the task, says the checkout stays on its branch, and removes the task alone',
-    async run({ page, mock }) {
+    name: 'P4.9.checkout a task in the main checkout says it has no worktree in its facts; the trash in its page header asks to clear only the task, says the checkout stays on its branch and, as nothing is lost, starts on Clear task, so Enter removes the task alone',
+    async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/s/s-edge/overview`);
       await page.until('the task page', sheetOpen);
       await page.until('Worktree None', () => [...document.querySelectorAll<HTMLElement>('#task-sheet dt')].find((d) => d.textContent === 'Worktree')?.nextElementSibling?.textContent === 'None');
       await page.click('#task-sheet button[aria-label="Session actions"]');
       assert.ok((await page.until('the menu', menuItems)).includes('Clear task…'), 'no Clear task… for a task in the main checkout');
-      await page.click(':popover-open button', 'Clear task');
+      await page.key('Escape');
+      await page.until('the menu to close', () => !document.querySelector(':popover-open'));
+      await shot('sheet-head');
+      await page.click('#task-sheet button[aria-label="Clear task"]');
       const shown = await page.until('the dialog', () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
-        return d?.open && !d.innerText.includes('Checking') ? { title: d.querySelector('h2')?.textContent?.trim(), text: d.innerText, loss: d.querySelectorAll('li').length } : null;
+        return d?.open && !d.innerText.includes('Checking') && document.activeElement?.textContent === 'Clear task' ? { title: d.querySelector('h2')?.textContent?.trim(), text: d.innerText, loss: d.querySelectorAll('li').length } : null;
       });
       assert.deepEqual({ title: shown.title, loss: shown.loss }, { title: 'Clear the task?', loss: 0 });
       assert.match(shown.text, /main checkout, which stays as it is, on main\./);
-      await page.click('dialog#delete-worktree button', 'Clear task');
+      await page.key('Enter');
       const [cleared] = await logged(mock, 'the clearing', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual([cleared.sessionId, cleared.status], ['s-edge', 204]);
       const after = await mock.get('/api/state');
@@ -3061,8 +3066,8 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.wall-age at rest a Wall tile\'s age ends at the tile\'s padding edge, where its ⋯ shows instead on hover',
-    async run({ page, mock }) {
+    name: 'P5.1.wall-age at rest a Wall tile\'s age ends at the tile\'s padding edge, where its trash and ⋯ show instead on hover',
+    async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       const gaps = await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => t.checkVisibility()).map((t) => {
@@ -3084,6 +3089,13 @@ export const checks: Check[] = [
         const age = document.querySelector<HTMLElement>(`${tile} [data-age]`)!;
         return getComputedStyle(menu.parentElement!).opacity === '1' && getComputedStyle(age).opacity === '0';
       }, tile);
+      const clash = await page.eval((tile: string) => {
+        const trash = document.querySelector(`${tile} [data-clear]`)!.getBoundingClientRect();
+        const state = document.querySelector(`${tile} header > span`)!.getBoundingClientRect();
+        return state.right > trash.left;
+      }, tile);
+      assert.equal(clash, false, 'the trash overlaps the state');
+      await shot('tile-hover');
     },
   },  {
     name: 'P5.1.n1-card typing in the reply box holds the card as it is: a new decision on it waits, then updates it in place with the same box and draft; the card leaving waits too, until focus leaves',

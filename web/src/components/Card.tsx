@@ -19,7 +19,7 @@ import { MenuBody } from './MenuBody.tsx';
 import { Age, BranchMark } from './Parts.tsx';
 import { ParentCrumb } from './Findings.tsx';
 import { PromptBody } from './PromptBody.tsx';
-import { archive, openTerminal, SessionMenu } from './SessionMenu.tsx';
+import { archive, ClearButton, openTerminal, SessionMenu } from './SessionMenu.tsx';
 import { StateMark } from './StateMark.tsx';
 import { labelOf, stoppedOnError } from './Status.tsx';
 import { TaskRail } from './TaskRail.tsx';
@@ -289,7 +289,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
             {session.artifacts.length > 0 && (
               <button type="button" onClick={() => openSheet(session.id, 'artifacts')}>Artifacts {session.artifacts.length}</button>
             )}
-            <span className={styles.more}><SessionMenu session={session} worktree={worktree} name={name} /></span>
+            <span className={styles.more}><ClearButton session={session} /><SessionMenu session={session} worktree={worktree} name={name} /></span>
           </nav>
         </div>
         <div className={styles.meta}>

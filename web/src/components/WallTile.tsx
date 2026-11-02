@@ -8,7 +8,7 @@ import { useStore } from '../store.ts';
 import { adviceFor, ago, attentionOf, decisionOf, openSubtasks, locate, sessionLabel, shownOf, type Attention, type Shown } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { ParentCrumb } from './Findings.tsx';
-import { SessionMenu } from './SessionMenu.tsx';
+import { ClearButton, SessionMenu } from './SessionMenu.tsx';
 import { BranchMark } from './Parts.tsx';
 import { StateMark } from './StateMark.tsx';
 import { ERROR_LINES, hintOf, labelOf, PrChips, stoppedOnError } from './Status.tsx';
@@ -81,6 +81,7 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
           {asked !== undefined ? `asked ${ago(asked)}` : ago(session.summary?.at ?? session.updatedAt)}
         </span>
         <span className={styles.menu}>
+          <ClearButton session={session} />
           <SessionMenu session={session} worktree={worktree} name={name} />
         </span>
       </header>

@@ -39,6 +39,8 @@
 
   .head { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 10px 26px; border-bottom: 1px solid var(--line); }
 
+  .actions { display: flex; gap: 2px; }
+
   .close {
     display: inline-flex;
     align-items: center;

@@ -12,7 +12,7 @@ import { ParentCrumb, stateLabel } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
 import { Overview } from './Overview.tsx';
 import { BranchMark } from './Parts.tsx';
-import { SessionMenu } from './SessionMenu.tsx';
+import { ClearButton, SessionMenu } from './SessionMenu.tsx';
 import { StateMark } from './StateMark.tsx';
 import { hintOf, PrChips, stoppedOnError } from './Status.tsx';
 import { TaskName } from './TaskName.tsx';
@@ -127,7 +127,10 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
             )
           ))}
         </nav>
-        <SessionMenu session={session} worktree={worktree} name={name} />
+        <span className={styles.actions}>
+          <ClearButton session={session} />
+          <SessionMenu session={session} worktree={worktree} name={name} />
+        </span>
       </header>
       <div className={styles.panel} role="tabpanel">
         {current === 'overview' && <Overview session={session} name={name} branch={worktree?.branch ?? undefined} repo={repo} />}

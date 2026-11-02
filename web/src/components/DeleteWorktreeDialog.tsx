@@ -27,12 +27,16 @@ let ask: ((session: Session) => void) | null = null;
 
 export const askDeleteWorktree = (session: Session) => ask?.(session);
 
+const counts = (l: { files: number; commits: number }) => l.files + l.commits;
+const isSafe = (loss: Loss) => !!loss.gone || !!loss.checkout || (loss.repos ? loss.repos.every((r) => !counts(r)) : !counts(loss));
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function DeleteWorktreeDialog() {
   const { home } = useStore();
   const dialog = useRef<HTMLDialogElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  const clear = useRef<HTMLButtonElement>(null);
   const [target, setTarget] = useState<{ session: Session; check: Check } | null>(null);
 
   useEffect(() => {
@@ -73,6 +77,12 @@ export function DeleteWorktreeDialog() {
   const check = target?.check;
   const loss = check?.state === 'done' ? check.loss : null;
   const keeps = !!loss?.checkout;
+
+  // Nothing to lose: Enter clears. Only while focus is still on Cancel, where the dialog put it.
+  const safe = !!loss && isSafe(loss);
+  useEffect(() => {
+    if (safe && document.activeElement === cancel.current) clear.current?.focus();
+  }, [safe]);
   const folder = loss?.repos;
   const lostIn = (l: { branch: string | null; deletesBranch: boolean; files: number; commits: number }) => [
     l.files && plural(l.files, 'uncommitted or untracked file', 'uncommitted or untracked files'),
@@ -118,7 +128,7 @@ export function DeleteWorktreeDialog() {
           </p>
           <footer>
             <button type="button" ref={cancel} commandfor="delete-worktree" command="close">Cancel</button>
-            <button type="button" className={styles.delete} disabled={check?.state === 'checking'} onClick={confirm}>Clear task</button>
+            <button type="button" ref={clear} className={styles.delete} disabled={check?.state === 'checking'} onClick={confirm}>Clear task</button>
           </footer>
         </>
       )}

@@ -31,6 +31,7 @@ const shapes = {
       <circle cx="19" cy="12" r="1.7" />
     </g>
   ),
+  trash: <path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l.9 12.2a1.5 1.5 0 0 0 1.5 1.3h6.2a1.5 1.5 0 0 0 1.5-1.3l.9-12.2M10 10.5v6M14 10.5v6" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   search: (
     <>
