@@ -144,9 +144,11 @@ function Empty() {
           <circle cx="80" cy="69" r="17" />
           <path d="M72 69l6 6 11-12" />
         </svg>
-        <h1>{link === 'connecting' ? 'Connecting…' : 'Nothing needs you.'}</h1>
+        <h1>{link === 'connecting' ? 'Connecting…' : 'All caught up.'}</h1>
         {link !== 'connecting' && (
-          <p>{working ? `${working} ${working === 1 ? 'agent is' : 'agents are'} at work; what they ask for comes here.` : 'No agent is working right now.'}</p>
+          <p>
+            {working ? `${working} ${working === 1 ? 'agent is' : 'agents are'} on it; anything they need from you lands here.` : <>A good moment to start something new: New task <kbd>N</kbd></>}
+          </p>
         )}
         {link !== 'connecting' && <a href="/wall">See every agent on the Wall <kbd>V</kbd></a>}
       </div>

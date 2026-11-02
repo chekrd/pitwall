@@ -2332,6 +2332,45 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P4.repo-keys New task by keyboard alone: Tab goes round inside the dialog, from its last field to the repository button and back with Shift+Tab; Tab in the repository filter takes the highlighted one and moves on to the mode, Shift+Tab closes the list on the button',
+    async run({ page, mock }) {
+      const picker = '#new-task [data-repo-picker]';
+      const button = '#new-task button[aria-haspopup="listbox"]';
+      const focused = (selector: string) => document.activeElement === document.querySelector(selector);
+      const picked = () => document.querySelector('#new-task button[aria-haspopup="listbox"] strong')?.textContent;
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      await page.eval(() => [...document.querySelectorAll<HTMLSelectElement>('dialog#new-task select')].at(-1)!.focus());
+      await page.key('Tab');
+      await page.until('the repository button, after the last field', focused, button);
+      await page.key('Tab', { shift: true });
+      await page.until('the last field again', () => document.activeElement === [...document.querySelectorAll('dialog#new-task select')].at(-1));
+      await page.key('Tab');
+      await page.until('the repository button', focused, button);
+
+      await page.key('b');
+      await page.until('the picker filtered by the letter', (picker: string) => document.querySelector<HTMLInputElement>(`${picker}:popover-open input`)?.value === 'b', picker);
+      await page.type('illing');
+      await page.key('Tab');
+      await page.until('billing-api picked, the list closed and focus on the mode', (picker: string) => !document.querySelector(`${picker}:popover-open`) &&
+        document.querySelector('#new-task button[aria-haspopup="listbox"] strong')?.textContent === 'billing-api' &&
+        document.activeElement === document.querySelector('dialog#new-task input[type="radio"]:checked'), picker);
+
+      await page.key('Tab', { shift: true });
+      await page.until('the repository button', focused, button);
+      await page.key('ArrowDown');
+      await page.until('the picker, its filter focused', (picker: string) => document.activeElement === document.querySelector(`${picker}:popover-open input`), picker);
+      await page.key('ArrowDown');
+      await page.key('Tab', { shift: true });
+      await page.until('the list closed on the button', (picker: string) => !document.querySelector(`${picker}:popover-open`) &&
+        document.activeElement === document.querySelector('#new-task button[aria-haspopup="listbox"]'), picker);
+      assert.equal(await page.eval(picked), 'billing-api', 'Shift+Tab picked nothing');
+      assert.equal(await page.eval(() => !!document.querySelector('#new-task:modal')), true);
+      assert.equal((await mock.log()).some((e) => e.method === 'POST' && e.path === '/api/worktrees'), false, 'nothing was created');
+    },
+  },
+  {
     name: 'P4.branch-filter New task\'s branch list stays closed until a click, ↓ or typing; 43+ branches scroll inside it and leave the dialog its size; typing filters, arrows and Enter pick, Esc closes only the list, and no match says so',
     async run({ page, mock, shot }) {
       const list = '#new-task [data-branch-picker]';
@@ -2808,11 +2847,11 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.16 with nothing waiting / shows the empty queue, Nothing needs you., with the Queue toggle on and a way to the Wall; a decision that arrives comes to the front',
+    name: 'P5.1.16 with nothing waiting / shows the empty queue, All caught up., with the Queue toggle on and a way to the Wall; a decision that arrives comes to the front',
     scenario: 'zero',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the empty queue', () => document.querySelector('main[data-empty] h1')?.textContent === 'Nothing needs you.');
+      await page.until('the empty queue', () => document.querySelector('main[data-empty] h1')?.textContent === 'All caught up.');
       assert.deepEqual(await page.eval(() => [location.pathname, document.querySelector('nav[aria-label="View"] a[aria-label="Queue"]')?.getAttribute('href'), !!document.querySelector('[data-card]'), !!document.querySelector('[data-tile]')]), ['/', '/', false, false]);
       assert.equal(await page.eval(() => document.querySelector('main[data-empty] a')?.getAttribute('href')), '/wall');
       await shot('queue-zero');
@@ -2974,7 +3013,7 @@ export const checks: Check[] = [
     scenario: 'zero',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'Nothing needs you.');
+      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await openNewTask(page);
       await page.type('Fix the login ');
       await mock.post('/mock/add', { template: 'idle', id: 's-idle' });
@@ -4302,7 +4341,7 @@ export const checks: Check[] = [
     scenario: 'zero',
     async run({ wait, page, mock }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'Nothing needs you.');
+      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await page.until('the dock', docked, 3);
       await wait(2000);
       assert.equal(await page.eval(docked, 3), true, 'the dock stayed');
@@ -4418,7 +4457,7 @@ export const checks: Check[] = [
     scenario: 'zero',
     async run({ page, mock }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'Nothing needs you.');
+      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await openNewTask(page);
       await page.type('Add retries');
       await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 1 });

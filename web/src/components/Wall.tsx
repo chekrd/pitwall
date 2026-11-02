@@ -18,11 +18,11 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
   }
   const { active, archived } = orderTiles(sessions);
   const working = sessions.filter((s) => !s.archived && attentionOf(s) === 'working').length;
-  const title = !sessions.length ? (repos.length ? 'No sessions yet.' : 'No repositories yet.') : deck.length ? 'Every agent, in priority order' : 'Nothing needs you.';
+  const title = !sessions.length ? (repos.length ? 'Ready when you are.' : 'Welcome to Pitwall.') : deck.length ? 'Every agent, in priority order' : 'All caught up.';
   const sub = !sessions.length ? null
     : deck.length ? `${meter(deck, null).label} ${deck.length === 1 ? 'waits' : 'wait'} in the queue.`
-    : working ? `${working} ${working === 1 ? 'agent is' : 'agents are'} at work.`
-    : 'No agent is working right now.';
+    : working ? `${working} ${working === 1 ? 'agent is' : 'agents are'} on it.`
+    : 'A good moment to start something new.';
 
   return (
     <main className={styles.wall} data-resting={(!!sessions.length && !deck.length) || undefined}>

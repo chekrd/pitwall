@@ -39,7 +39,7 @@ export function AgentsDock() {
           {capsules.map((c) => <CapsuleView key={c.session.id} capsule={c} repos={repos} fresh={fresh.has(c.session.id)} />)}
         </div>
       ) : (
-        <p className={styles.empty}>No agent is working right now.</p>
+        <p className={styles.empty}>All quiet for now.</p>
       )}
       {ended.length > 0 && (
         <>

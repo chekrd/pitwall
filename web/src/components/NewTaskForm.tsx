@@ -181,6 +181,11 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
     } else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       if (shown[at]) choose(shown[at]);
+    } else if (e.key === 'Tab') {
+      // Hiding hands focus back to the button, so Tab carries on from there and Shift+Tab stays on it.
+      if (e.shiftKey) e.preventDefault();
+      if (!e.shiftKey && shown[at]) choose(shown[at]);
+      else list.current?.hidePopover();
     }
   };
 
@@ -529,10 +534,21 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   );
 }
 
+// Chrome lets Tab leave a modal dialog for its own toolbar, from where the repository button, first in the dialog, is
+// hard to reach again; so Tab goes round inside it.
+function wrapTab(e: KeyboardEvent<HTMLDialogElement>) {
+  if (e.key !== 'Tab' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+  const stops = [...e.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]')]
+    .filter((el) => el.tabIndex >= 0 && !el.matches(':disabled, [type="radio"]:not(:checked)') && el.checkVisibility());
+  if (!stops.length || document.activeElement !== (e.shiftKey ? stops[0] : stops.at(-1))) return;
+  e.preventDefault();
+  (e.shiftKey ? stops.at(-1) : stops[0])!.focus();
+}
+
 export function NewTaskDialog({ repos }: { repos: RepoView[] }) {
   const dialog = useRef<HTMLDialogElement>(null);
   return (
-    <dialog id={DIALOG} ref={dialog} closedby="any" aria-label="New task" className={styles.dialog} onCancel={keepUnderLayer}>
+    <dialog id={DIALOG} ref={dialog} closedby="any" aria-label="New task" className={styles.dialog} onCancel={keepUnderLayer} onKeyDown={wrapTab}>
       {repos.length > 0 && <NewTaskForm repos={repos} done={() => dialog.current?.close()} />}
     </dialog>
   );
