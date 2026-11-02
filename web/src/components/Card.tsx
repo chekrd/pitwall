@@ -12,6 +12,7 @@ import { adviceFor, attentionOf, decisionOf, locate, sessionLabel } from '../uti
 import { track } from '../ux.ts';
 import styles from './Card.module.css';
 import { editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
+import { CopyButton } from './CopyButton.tsx';
 import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
 import { LatestReply } from './LatestReply.tsx';
@@ -338,6 +339,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               <div className={styles.know} data-know>
                 <span className={styles.knowLabel}>Worth knowing</span>
                 {learnings.map((k) => <span key={k}>{k}</span>)}
+                <CopyButton value={learnings.join('\n\n')} what="Worth knowing" />
               </div>
             )}
             {(kind === 'ask' || menu) && session.lastMessage && (

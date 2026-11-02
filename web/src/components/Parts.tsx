@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useNow } from '../now.ts';
 import type { Session } from '../types.ts';
 import { ago } from '../util.ts';
+import { CopyButton } from './CopyButton.tsx';
 import { Markdown } from './Markdown.tsx';
 import parts from './Parts.module.css';
 
@@ -31,7 +32,7 @@ export function LatestReply({ text }: { text: string | null }) {
   if (!text) return null;
   return (
     <section className={parts.reply}>
-      <h3 className={parts.label}>Claude's latest reply</h3>
+      <h3 className={parts.label}>Claude's latest reply<CopyButton value={text} what="Reply" /></h3>
       <div className={parts.body}><Markdown source={text} /></div>
     </section>
   );

@@ -1341,7 +1341,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.4 a tile opens its sheet on Overview, which takes focus itself: the working banner with a 30 px clock that ticks, the composer, Session summary · updated, Worth knowing, the latest reply with its code in colour, Facts with the repository, the worktree\'s name and its path under ~, whose Path, Branch and Session copy on a click (the path whole) and say Copied in place, and the Artifacts links; Esc in the composer\'s command list closes only the list',
+    name: 'P4.4 a tile opens its sheet on Overview, which takes focus itself: the working banner with a 30 px clock that ticks, the composer, Session summary · updated, Worth knowing, the latest reply with its code in colour, Facts with the repository, the worktree\'s name and its path under ~, whose Path, Branch and Session copy on a click (the path whole) and say Copied in place, Worth knowing and the reply copy from their heading, and the Artifacts links; Esc in the composer\'s command list closes only the list',
     clock: 'fast',
     async run({ wait, page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
@@ -1394,6 +1394,15 @@ export const checks: Check[] = [
       assert.deepEqual(copied, ['/Users/me/code/worktrees/invoice-rounding/billing-api', 'invoice-rounding', 's-invoice']);
       await shot('sheet-facts-copied');
 
+      await page.eval(() => {
+        for (const what of ['Copy worth knowing', 'Copy reply']) document.querySelector<HTMLElement>(`#task-sheet h3 button[aria-label="${what}"]`)!.click();
+      });
+      await page.until('Worth knowing and the reply copied', () => (window as unknown as { copied: string[] }).copied.length === 5);
+      await shot('sheet-reply-copied');
+      const state = await mock.get('/api/state');
+      const invoice = state.sessions.find((x: { id: string }) => x.id === 's-invoice');
+      assert.deepEqual((await page.eval(() => (window as unknown as { copied: string[] }).copied)).slice(3), [invoice.summary.learnings.join('\n\n'), invoice.lastMessage]);
+
       await page.click('#task-sheet textarea');
       await page.type('/re');
       await page.until('the command list', () => document.querySelectorAll('#task-sheet [role="listbox"] [role="option"]').length > 0);
@@ -1429,7 +1438,7 @@ export const checks: Check[] = [
       const reply = () => {
         const section = [...document.querySelectorAll<HTMLElement>('#task-sheet section')].find((s) => s.querySelector('h3')?.textContent === "Claude's latest reply");
         const asked = section?.querySelector<HTMLElement>('[data-prompt] p');
-        return section ? { prompt: asked?.textContent ?? null, lines: asked ? Math.round(asked.getBoundingClientRect().height / parseFloat(getComputedStyle(asked).lineHeight)) : 0, more: section.querySelector('button')?.textContent ?? null } : null;
+        return section ? { prompt: asked?.textContent ?? null, lines: asked ? Math.round(asked.getBoundingClientRect().height / parseFloat(getComputedStyle(asked).lineHeight)) : 0, more: section.querySelector('[data-prompt] button')?.textContent ?? null } : null;
       };
       await openSheetOf(page, mock, 's-invoice');
       assert.deepEqual(await page.until('the latest reply', reply), { prompt: 'Why is the total a cent off on some invoices? Fix it and push.', lines: 1, more: null });
@@ -1457,7 +1466,7 @@ export const checks: Check[] = [
       assert.deepEqual(await page.until('the long reply whole', () => {
         const section = [...document.querySelectorAll<HTMLElement>('#task-sheet section')].find((s) => s.querySelector('h3')?.textContent === "Claude's latest reply");
         const body = section?.querySelector<HTMLElement>(':scope > div');
-        return body?.innerText.includes('Paragraph 40') ? { clipped: body.scrollHeight > body.clientHeight, buttons: section!.querySelectorAll('button').length } : null;
+        return body?.innerText.includes('Paragraph 40') ? { clipped: body.scrollHeight > body.clientHeight, buttons: section!.querySelectorAll('[data-prompt] button').length } : null;
       }), { clipped: false, buttons: 0 });
     },
   },
@@ -1778,7 +1787,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.9.conversation Conversation, the third tab, shows each prompt with its pictures and Claude\'s reply to it with the artifacts it made, oldest first, earlier conversations before a /clear line; a picture grows on a click and an artifact opens in Artifacts; it reads the transcript again after a new reply; 3 comes back to it',
+    name: 'P4.9.conversation Conversation, the third tab, shows each prompt with its pictures and Claude\'s reply to it with the artifacts it made, oldest first, earlier conversations before a /clear line; a picture grows on a click and an artifact opens in Artifacts; a prompt and a reply copy whole, as written, from a button in their heading; it reads the transcript again after a new reply; 3 comes back to it',
     async run({ page, mock, shot }) {
       const log = () => {
         const tab = document.querySelector('#task-sheet [role="tab"][aria-selected="true"]')?.textContent;
@@ -1816,9 +1825,25 @@ export const checks: Check[] = [
       assert.equal(await page.eval(lastPrompt), 18, 'opens on the last prompt');
       await shot('conversation');
 
+      await page.eval(() => {
+        const w = window as unknown as { copied: string[] };
+        w.copied = [];
+        navigator.clipboard.writeText = async (t: string) => void w.copied.push(t);
+      });
+      await page.eval(() => {
+        const articles = [...document.querySelectorAll('#task-sheet article')];
+        articles[1].querySelector<HTMLElement>('[data-prompt] h3 button[aria-label="Copy prompt"]')!.click();
+        articles[3].querySelector<HTMLElement>('[data-reply] h3 button[aria-label="Copy reply"]')!.click();
+      });
+      await page.until('both marked Copied', () => [...document.querySelectorAll('#task-sheet h3 button[data-copied]')].map((b) => b.getAttribute('data-tip')).join() === 'Copied,Copied');
+      const copied = await page.eval(() => (window as unknown as { copied: string[] }).copied);
+      assert.deepEqual(copied, ['Invoice PDFs are sometimes off by a cent (BILL-91). Find out why, fix it, and get the PR green.', long]);
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet article [data-prompt] p')!.closest('article')!.querySelector('[data-reply] h3')!.textContent), 'Claude', 'the button adds no text to its heading');
+      await shot('conversation-copied');
+
       const height = () => document.querySelector<HTMLImageElement>('#task-sheet [data-prompt] img')!.getBoundingClientRect().height;
       const small = await page.eval(height);
-      await page.click('#task-sheet [data-prompt] button');
+      await page.click('#task-sheet [data-prompt] button:has(img)');
       await page.until('the picture larger', (h: number) => document.querySelector<HTMLImageElement>('#task-sheet [data-prompt] img')!.getBoundingClientRect().height > h, small);
 
       await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: 'Checks are green.' } });

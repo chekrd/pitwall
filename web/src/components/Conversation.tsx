@@ -4,6 +4,7 @@ import { showTab } from '../router.ts';
 import type { ConversationLog, Session } from '../types.ts';
 import { ago, clock } from '../util.ts';
 import styles from './Conversation.module.css';
+import { CopyButton } from './CopyButton.tsx';
 import { Markdown } from './Markdown.tsx';
 
 // Read only while open: the whole transcript can run to many megabytes. A new reply or a /clear reads it again. It opens
@@ -46,7 +47,7 @@ export function Conversation({ session }: { session: Session }) {
             {c.exchanges.map((e) => (
               <article key={e.id} className={styles.exchange}>
                 <div className={styles.prompt} data-prompt>
-                  <h3>You <time title={ago(e.at)}>{clock(e.at, true)}</time></h3>
+                  <h3>You <time title={ago(e.at)}>{clock(e.at, true)}</time>{e.prompt && <CopyButton value={e.prompt} what="Prompt" />}</h3>
                   {e.prompt && <p>{e.prompt}</p>}
                   {e.images > 0 && (
                     <div className={styles.images}>
@@ -63,7 +64,7 @@ export function Conversation({ session }: { session: Session }) {
                 </div>
                 {e.reply ? (
                   <div className={styles.reply} data-reply>
-                    <h3>Claude</h3>
+                    <h3>Claude<CopyButton value={e.reply} what="Reply" /></h3>
                     <Markdown source={e.reply} />
                   </div>
                 ) : <p className={styles.none} data-reply>No reply from Claude: still working, or stopped.</p>}

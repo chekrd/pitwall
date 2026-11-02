@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { CopyButton } from './CopyButton.tsx';
 import styles from './LatestReply.module.css';
 import { Markdown } from './Markdown.tsx';
 
@@ -12,7 +13,7 @@ export function LatestReply({ text, prompt = null }: { text: string; prompt?: st
   }, []);
   return (
     <section className={styles.reply} data-ux-section="latest reply">
-      <h3>Claude's latest reply</h3>
+      <h3>Claude's latest reply<CopyButton value={text} what="Reply" /></h3>
       {prompt && (
         <blockquote className={styles.prompt} data-prompt data-full={full || undefined}>
           <span>You</span>

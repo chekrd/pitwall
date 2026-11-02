@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { decisionKey } from '../../../server/decision.ts';
 import { sessionAction } from '../api.ts';
 import { acceptance, choose, dismissal, freeze, kindOf, menuAnswer, primary as primaryOf, typed, type Composer as Note } from '../deck.ts';
@@ -10,6 +10,7 @@ import { useStore } from '../store.ts';
 import type { MenuAnswer, RepoView, Session } from '../types.ts';
 import { adviceFor, ago, attentionOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
+import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { Findings, Subtasks, SubtaskOf } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
@@ -24,19 +25,8 @@ import { FocusButton } from './SessionMenu.tsx';
 import { toast } from './Toasts.tsx';
 import { diag } from '../diag.ts'; // DIAG(paste-loss)
 
-const COPIED_MS = 1500;
-
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), COPIED_MS);
-    return () => clearTimeout(t);
-  }, [copied]);
-  const copy = () => navigator.clipboard.writeText(value).then(
-    () => setCopied(true),
-    () => toast('error', `Could not copy the ${what.toLowerCase()}`),
-  );
+  const { copied, copy } = useCopy(value, what);
   return (
     <button type="button" className={styles.copy} data-ux={`copy ${what.toLowerCase()}`} data-copied={copied || undefined} title={title} aria-label={`Copy ${what.toLowerCase()} ${value}`} onClick={copy}>
       <code>{shown}</code>
@@ -294,7 +284,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           </section>
           {learnings.length > 0 && (
             <section className={styles.know} data-ux-section="worth knowing">
-              <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing</h3>
+              <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>
               {learnings.map((k) => <p key={k}>{k}</p>)}
             </section>
           )}
