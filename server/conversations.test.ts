@@ -154,6 +154,33 @@ test('the conversation pairs each prompt with what Claude wrote after its last t
   assert.deepEqual(await exchanges(join(dir, 'gone.jsonl')), []);
 });
 
+test('a message sent while Claude works is a prompt of its own, with its pictures; a peer message is not', async () => {
+  const queued = (uuid: string, prompt: unknown, minute: number, extra: object = {}) => ({
+    type: 'attachment', uuid, timestamp: at(minute),
+    attachment: { type: 'queued_command', commandMode: 'prompt', origin: { kind: 'human' }, prompt, ...extra },
+  });
+  const png = Buffer.from('fake png').toString('base64');
+  const file = join(dir, `${n++}.jsonl`);
+  writeFileSync(file, [
+    prompt('Fold it in', 0),
+    assistant([text('Rebasing.'), toolUse('t1', 'Bash', { command: 'git rebase' })], 1),
+    toolResult('t1', 'ok'),
+    queued('q1', 'Also add the Jira prefix', 2),
+    queued('q2', '<cross-session-message>hi</cross-session-message>', 2, { isMeta: true, origin: { kind: 'peer' } }),
+    { type: 'attachment', uuid: 'n1', timestamp: at(2), attachment: { type: 'queued_command', commandMode: 'task-notification', prompt: 'done' } },
+    assistant([text('Prefixing.'), toolUse('t2', 'Bash', { command: 'git rebase' })], 3),
+    toolResult('t2', 'ok'),
+    queued('q3', [{ type: 'text', text: '[Image #1] Look' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } }], 4),
+    assistant([text('Prefixed every asset commit.')], 5),
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  assert.deepEqual((await exchanges(file)).map((e) => [e.prompt, e.images, e.reply, e.at]), [
+    ['Fold it in', 0, null, Date.parse(at(0))],
+    ['Also add the Jira prefix', 0, null, Date.parse(at(2))],
+    ['[Image #1] Look', 1, 'Prefixed every asset commit.', Date.parse(at(4))],
+  ]);
+  assert.deepEqual(await promptImage(file, 'q3', 0), { type: 'image/png', data: Buffer.from('fake png') });
+});
+
 test('a prompt keeps its pictures, also one with no text, served one by one; a reply keeps the artifacts made for it', async () => {
   const png = Buffer.from('fake png').toString('base64');
   const image = (data: string, media_type = 'image/png') => ({ type: 'image', source: { type: 'base64', media_type, data } });

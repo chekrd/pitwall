@@ -159,9 +159,16 @@ const jsonLines = (text: string) =>
     }
   });
 
+// A message sent while Claude works is logged as a queued_command attachment, not as a user entry.
+function promptContent(entry: Record<string, any>): unknown {
+  if (entry.isMeta || entry.isSidechain) return null;
+  if (entry.type === 'user') return entry.message?.content;
+  const a = entry.type === 'attachment' ? entry.attachment : null;
+  return a?.type === 'queued_command' && a.commandMode === 'prompt' && !a.isMeta ? a.prompt : null;
+}
+
 function promptText(entry: Record<string, any>, max = 500): string | null {
-  if (entry.type !== 'user' || entry.isMeta || entry.isSidechain) return null;
-  const content = entry.message?.content;
+  const content = promptContent(entry);
   const text = typeof content === 'string' ? content : Array.isArray(content) ? content.find((c) => c.type === 'text')?.text : null;
   if (!text || text.startsWith('<')) return null;
   return text.trim().slice(0, max);
@@ -270,10 +277,12 @@ function settings(entries: Record<string, any>[]) {
 // before the first prompt has no prompt.
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
-const promptImages = (entry: Record<string, any>): { media_type: string; data: string }[] =>
-  entry.type === 'user' && !entry.isMeta && !entry.isSidechain && Array.isArray(entry.message?.content)
-    ? entry.message.content.filter((b: any) => b.type === 'image' && b.source?.type === 'base64' && IMAGE_TYPES.has(b.source.media_type)).map((b: any) => b.source)
+const promptImages = (entry: Record<string, any>): { media_type: string; data: string }[] => {
+  const content = promptContent(entry);
+  return Array.isArray(content)
+    ? content.filter((b: any) => b.type === 'image' && b.source?.type === 'base64' && IMAGE_TYPES.has(b.source.media_type)).map((b: any) => b.source)
     : [];
+};
 
 function replies(entries: Record<string, any>[], max?: number) {
   const out: { entry: Record<string, any> | null; prompt: string | null; reply: string[]; artifacts: string[] }[] = [{ entry: null, prompt: null, reply: [], artifacts: [] }];
