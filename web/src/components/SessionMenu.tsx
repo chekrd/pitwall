@@ -75,7 +75,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
 
   return (
     <>
-      <button type="button" className={styles.more} popoverTarget={id} aria-label="Session actions" title="More actions">
+      <button type="button" className={styles.more} popoverTarget={id} aria-label="Session actions" data-tip="More actions">
         <Icon name="more" size={18} />
       </button>
       <div id={id} popover="auto" className={styles.menu}>
@@ -164,7 +164,7 @@ function Item({ label, note, danger = false, onClick }: { label: string; note: s
 export function ClearButton({ session }: { session: Session }) {
   if (session.parent) return null;
   return (
-    <button type="button" className={styles.more} aria-label="Clear task" title="Clear task…" data-clear onClick={() => askDeleteWorktree(session)}>
+    <button type="button" className={styles.more} aria-label="Clear task" data-tip="Clear task…" data-clear onClick={() => askDeleteWorktree(session)}>
       <Icon name="trash" size={17} />
     </button>
   );

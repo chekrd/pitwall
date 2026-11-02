@@ -3066,7 +3066,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.wall-age at rest a Wall tile\'s age ends at the tile\'s padding edge, where its trash and ⋯ show instead on hover',
+    name: 'P5.1.wall-age at rest a Wall tile\'s age ends at the tile\'s padding edge, where its trash and ⋯ show instead on hover, each naming itself in a tooltip',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
@@ -3095,6 +3095,15 @@ export const checks: Check[] = [
         return state.right > trash.left;
       }, tile);
       assert.equal(clash, false, 'the trash overlaps the state');
+      const trash = await page.eval((tile: string) => {
+        const r = document.querySelector(`${tile} [data-clear]`)!.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }, tile);
+      await page.pointAt(trash.x, trash.y);
+      await page.until('the trash\'s tooltip', (tile: string) => {
+        const after = getComputedStyle(document.querySelector(`${tile} [data-clear]`)!, '::after');
+        return after.content === '"Clear task…"' && after.opacity === '1';
+      }, tile);
       await shot('tile-hover');
     },
   },  {
