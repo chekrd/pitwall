@@ -6544,6 +6544,21 @@ export const checks: Check[] = [
       await page.eval(() => document.querySelector('[data-schedules]')!.scrollIntoView({ block: 'center' }));
       await shot('wall-scheduled');
 
+      const startOf = () => [...document.querySelectorAll<HTMLInputElement>('dialog#new-task [data-when] input[name="start"]')].findIndex((i) => i.checked);
+      await openNewTask(page);
+      await page.click('dialog#new-task [data-when] label', 'Once');
+      await page.until('Once picked', () => !!document.querySelector('dialog#new-task input[type="datetime-local"]'));
+      await page.key('Escape');
+      await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#new-task')!.open);
+      await openNewTask(page);
+      assert.equal(await page.eval(startOf), 0, 'New task opens on Now, after a schedule and after Once was left picked');
+      await page.click('dialog#new-task [data-when] label', 'Repeat');
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the schedule after a reload', () => !!document.querySelector('[data-schedule="nightly-review"]'));
+      await openNewTask(page);
+      assert.equal(await page.eval(startOf), 0, 'and after a reload');
+      await page.key('Escape');
+      await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#new-task')!.open);
       await page.click('[data-schedule="nightly-review"] button', 'Run now');
       const d = new Date();
       const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

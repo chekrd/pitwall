@@ -84,12 +84,13 @@ const read = (storage: () => Storage, key: string) => {
 };
 
 function stored(): Fields {
-  const { prompt, branch, path, start, at, time, days } = read(() => sessionStorage, STORED);
-  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '', start: start ?? 'now', at: at ?? '', time: time ?? WHEN.time, days: days ?? [...WHEN.days] };
+  const { prompt, branch, path, time, days } = read(() => sessionStorage, STORED);
+  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '', time: time ?? WHEN.time, days: days ?? [...WHEN.days] };
   return { ...EMPTY, ...read(() => localStorage, CHOICES), ...draft };
 }
 
-// A prompt begun and closed is there when New task opens again, and a reload keeps it; the name starts empty each time.
+// A prompt begun and closed is there when New task opens again, and a reload keeps it; the name starts empty and Start
+// on Now each time.
 // The repository, the mode, the model and effort and whether More is open outlast the tab, as the next task usually
 // starts where the last one did.
 let fields = stored();
@@ -109,8 +110,8 @@ const notify = () => {
 function edit(patch: Partial<Fields>) {
   fields = { ...fields, ...patch };
   try {
-    const { prompt, branch, path, start, at, time, days } = fields;
-    sessionStorage.setItem(STORED, JSON.stringify({ prompt, branch, path, start, at, time, days }));
+    const { prompt, branch, path, time, days } = fields;
+    sessionStorage.setItem(STORED, JSON.stringify({ prompt, branch, path, time, days }));
     localStorage.setItem(CHOICES, JSON.stringify(choicesOf(fields)));
   } catch {
     // A page without storage keeps them in memory only.
@@ -160,7 +161,7 @@ export function openNewTask(preset?: { repoId: number; name: string; prompt: str
   if (preset) edit({ ...preset, folder: null, existing: false, branch: '', path: '', more: true });
   if (!dialog.open) {
     opened++;
-    edit({ ...(!preset && { name: '' }), ...(fields.prompt.trim() && { more: true }) });
+    edit({ ...(!preset && { name: '' }), ...(fields.prompt.trim() && { more: true }), start: 'now', at: '' });
     dialog.showModal();
   }
   dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
