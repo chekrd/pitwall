@@ -29,8 +29,13 @@ export function App() {
 
   useEffect(() => {
     const live = store.sessions.filter((s) => !s.archived);
-    setBoard({ tasks: live.length, deck: deck.length, names: store.sessions.flatMap((s) => [s.title, s.worktree.split('/').at(-1)]).filter((n): n is string => !!n) });
-  }, [store.sessions, deck.length]);
+    const names = [
+      ...store.sessions.flatMap((s) => [s.title, s.worktree.split('/').at(-1)]),
+      ...store.repos.flatMap((r) => [r.name, ...r.worktrees.flatMap((w) => [w.branch, w.path.split('/').at(-1)])]),
+      ...store.folders.map((f) => f.name),
+    ];
+    setBoard({ tasks: live.length, deck: deck.length, names: names.filter((n): n is string => !!n) });
+  }, [store.sessions, store.repos, store.folders, deck.length]);
 
   useDeckSync(deck, store.link !== 'connecting');
   useBoardKeys({ route, deck: deck.length, repos: store.repos.length > 0, artifacts: !!sheetSession?.artifacts.length });

@@ -4,7 +4,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { LIVE_PORT, refuseLive } from '../isolate.ts';
 import { launch, lookName, sleep, type Browser, type Look } from './cdp.ts';
-import { checks, type Check } from './checks.ts';
+import { checks, NEW_TASK_MORE, type Check } from './checks.ts';
 import { startMock, type Mock } from './mock.ts';
 
 // pnpm e2e [--only <pattern>] [--matrix] [--workers <n>] [--port <mock port>] [--shots <dir>] [--dist <dir>]
@@ -86,6 +86,7 @@ async function runOne(mock: Mock, browser: Browser, check: Check, look: Look) {
   const page = await browser.newPage(look);
   const speed = check.clock === 'fast' ? FAST_CLOCK : 1;
   if (speed !== 1) await page.fastClock(speed);
+  if (check.newTask !== 'default') await page.initScript(NEW_TASK_MORE);
   const settled = () => page.until('the transitions to end', () => document.getAnimations().every((a) => !(a instanceof CSSTransition) || a.playState === 'finished'));
   let current = look.scheme;
   // Inside themes() a screenshot is of the scheme being checked only.

@@ -3,12 +3,21 @@ export { tildeIn } from '../../server/home.ts';
 import type { Finding, QuestionOption, RepoView, Session } from './types.ts';
 
 // `place` names the repository, or for a task across a folder of repos, the folder.
+// Where a task works, as its tile and card name it: the repositories, and the branch, or the branches of a folder task's
+// worktrees. A worktree that is gone is named by its task folder, as git-wt lays it out in <task>/<repo folder>, not by
+// the repository folder at the end of its path.
 export function locate(repos: RepoView[], session: Session) {
   const repo = repos.find((r) => r.id === session.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === session.worktree);
-  const folder = session.worktree.split('/').at(-1) ?? session.worktree;
+  const parts = session.worktree.split('/');
+  const folder = (repo && parts.length > 2 && parts.at(-1) === repo.path.split('/').at(-1) ? parts.at(-2) : parts.at(-1)) || session.worktree;
   const task = folderTaskOf(repos, session);
-  return { repo, worktree, task, place: repo?.name ?? task?.folder, branch: worktree?.branch ?? folder };
+  if (task) {
+    const branches = [...new Set(task.worktrees.map((t) => t.worktree.branch).filter((b): b is string => !!b))];
+    const names = [...new Set(task.worktrees.map((t) => t.repo.name))];
+    return { repo, worktree, task, place: names.join(', ') || task.folder, branch: branches.join(', ') || folder };
+  }
+  return { repo, worktree, task, place: repo?.name, branch: worktree?.branch ?? folder };
 }
 
 // A task across a folder of repos runs in <folder>/worktrees/<task>, with a worktree <task>/<repo> in each repo it changes.

@@ -1,7 +1,7 @@
 import { parsePatchFiles, registerCustomTheme, type FileDiffMetadata } from '@pierre/diffs';
 import type { ThemeRegistration } from 'shiki';
 import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { useEffect, useLayoutEffect, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { api } from '../api.ts';
 import { SHEET_DIALOG } from '../keys.ts';
 import type { FullDiff } from '../types.ts';
@@ -53,6 +53,15 @@ function storeTreeWidth(w: number) {
   }
 }
 
+// Typing in the filter or dragging the file list's edge renders the toolbar and the tree, not every file's diff again.
+const FileDiffs = memo(function FileDiffs({ files }: { files: FileDiffMetadata[] }) {
+  return files.map((f) => (
+    <section key={f.name} id={fileAnchor(f.name)} data-file={f.name} className={styles.file}>
+      <FileDiff fileDiff={f} options={FILE_OPTIONS} />
+    </section>
+  ));
+});
+
 export function DiffView({ worktree }: { worktree: string }) {
   return (
     <WorkerPoolContextProvider {...POOL}>
@@ -73,6 +82,7 @@ function Diffs({ worktree }: { worktree: string }) {
   const [whole, setWhole] = useState<FileDiffMetadata | null>(null);
   const [seeking, setSeeking] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const shownQuery = useDeferredValue(query);
   const filterRef = useRef<HTMLInputElement>(null);
   const diffsRef = useRef<HTMLDivElement>(null);
   const returnTo = useRef<string | null>(null);
@@ -178,7 +188,7 @@ function Diffs({ worktree }: { worktree: string }) {
 
   useEffect(() => {
     if (!returnTo.current) diffsRef.current?.scrollTo({ top: 0 });
-  }, [dir, query]);
+  }, [dir, shownQuery]);
 
   useEffect(() => {
     if (focused || !returnTo.current) return;
@@ -215,9 +225,12 @@ function Diffs({ worktree }: { worktree: string }) {
     e.preventDefault();
   };
 
-  const files = diff ? treeOrder(parsePatchFiles(diff.patch).flatMap((p) => p.files)) : [];
-  const listed = files.filter(inDir(dir)).filter(matching(query));
-  const shown = focused ? [whole?.name === focused ? whole : files.find((f) => f.name === focused)].filter((f) => !!f) : listed;
+  const files = useMemo(() => (diff ? treeOrder(parsePatchFiles(diff.patch).flatMap((p) => p.files)) : []), [diff]);
+  const listed = useMemo(() => files.filter(inDir(dir)).filter(matching(shownQuery)), [files, dir, shownQuery]);
+  const shown = useMemo(
+    () => (focused ? [whole?.name === focused ? whole : files.find((f) => f.name === focused)].filter((f) => !!f) : listed),
+    [focused, whole, files, listed],
+  );
   const dirStat = listed.map(counts).reduce((sum, c) => ({ add: sum.add + c.add, del: sum.del + c.del }), { add: 0, del: 0 });
 
   // From all files, J opens the file in view and K the one before it.
@@ -264,7 +277,7 @@ function Diffs({ worktree }: { worktree: string }) {
     }, { root, rootMargin: '0px 0px -85% 0px' });
     for (const section of root.querySelectorAll('section')) observer.observe(section);
     return () => observer.disconnect();
-  }, [diff, focused, dir, query]);
+  }, [shown, focused]);
 
   return (
     <div className={styles.frame}>
@@ -281,18 +294,18 @@ function Diffs({ worktree }: { worktree: string }) {
               <button type="button" className={styles.tool} title="Esc" onClick={back}>← All files</button>
               <code className={styles.path}>{dir}/</code>
               <span className={styles.stat}>
-                <span>{listed.length} {listed.length === 1 ? 'file' : 'files'}{query && ' match'}</span> · <span className={styles.add}>+{dirStat.add}</span>{' '}
+                <span>{listed.length} {listed.length === 1 ? 'file' : 'files'}{shownQuery && ' match'}</span> · <span className={styles.add}>+{dirStat.add}</span>{' '}
                 <span className={styles.del}>−{dirStat.del}</span>
               </span>
             </>
           )}
-          {diff && !focused && !dir && query && (
+          {diff && !focused && !dir && shownQuery && (
             <span className={styles.stat}>
               <span>{listed.length} of {files.length} files match</span> · <span className={styles.add}>+{dirStat.add}</span>{' '}
               <span className={styles.del}>−{dirStat.del}</span>
             </span>
           )}
-          {diff && !focused && !dir && !query && (
+          {diff && !focused && !dir && !shownQuery && (
             <span className={styles.stat}>
               <span>{diff.stat.files} files</span> · <span className={styles.add}>+{diff.stat.insertions}</span>{' '}
               <span className={styles.del}>−{diff.stat.deletions}</span> against{' '}
@@ -341,13 +354,9 @@ function Diffs({ worktree }: { worktree: string }) {
           <div className={styles.diffs} ref={diffsRef} data-seeking={seeking ?? undefined}>
             {diff && !files.length && <p className={styles.empty}>No changes against {diff.base}.</p>}
             {files.length > 0 && !listed.length && (
-              <p className={styles.empty}>{query ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${query.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
+              <p className={styles.empty}>{shownQuery ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${shownQuery.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
             )}
-            {shown.map((f) => (
-              <section key={f.name} id={fileAnchor(f.name)} data-file={f.name} className={styles.file}>
-                <FileDiff fileDiff={f} options={FILE_OPTIONS} />
-              </section>
-            ))}
+            <FileDiffs files={shown} />
           </div>
         </div>
       </div>

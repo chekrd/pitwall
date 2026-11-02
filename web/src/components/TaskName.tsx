@@ -9,7 +9,7 @@ export function TaskName({ session, name }: { session: Session; name: string }) 
   if (!editing) {
     return (
       <h2 className={styles.title}>
-        <button type="button" className={styles.name} title="Click to rename; the Claude session gets the same name" onClick={() => setEditing(true)}>
+        <button type="button" className={styles.name} data-ux="task name" title="Click to rename; the Claude session gets the same name" onClick={() => setEditing(true)}>
           {name}
         </button>
       </h2>

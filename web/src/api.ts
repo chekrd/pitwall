@@ -8,6 +8,9 @@ export interface ApiError extends Error {
   status: number;
 }
 
+// Still a TypeError, which the outbox reads as "try again once the link is back".
+const unreachable = () => Object.assign(new TypeError('Pitwall could not be reached; it may be restarting. Try again in a moment.'), { code: 'unreachable', status: 0 });
+
 export async function api<T = void>(method: string, path: string, body?: unknown, { keepalive = false } = {}): Promise<T> {
   if (method !== 'GET') track('api', { method, path: path.split('?')[0].replace(/\/(?:[0-9a-f-]{8,}|\d+)(?=\/|$)/g, '/:id') });
   const res = await fetch(path, {
@@ -15,6 +18,8 @@ export async function api<T = void>(method: string, path: string, body?: unknown
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
     keepalive,
+  }).catch((err: unknown) => {
+    throw err instanceof TypeError ? unreachable() : err;
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

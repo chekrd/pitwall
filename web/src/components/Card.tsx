@@ -281,7 +281,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           </span>
           {q.updated.has(session.id) && <span className={styles.updated} data-updated>Updated just now</span>}
           <BranchMark session={session} branch={branch} />
-          <a className={styles.name} href={sessionPath(session.id)} title="Open the task on its own page" data-open-task>{name}</a>
+          <a className={styles.name} href={sessionPath(session.id)} title="Open the task on its own page" data-open-task data-ux="task">{name}</a>
           <span className={styles.spacer} />
           <nav className={styles.nav} aria-label="Open the task">
             <button type="button" onClick={() => openSheet(session.id, 'overview')}>Overview <kbd>O</kbd></button>

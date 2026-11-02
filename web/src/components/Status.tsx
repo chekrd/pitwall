@@ -62,7 +62,7 @@ export function PrChip({ pr, status }: { pr: PrFlow; status: SessionStatus }) {
   ].filter(Boolean).join('\n');
   const text = <>{pr.repo && `${pr.repo} `}PR{pr.id ? ` ${pr.id}` : ''} · {label}</>;
   const marks = { className: styles.pr, 'data-state': state, 'data-label': label, 'data-watching': pr.watching || undefined, title };
-  return pr.url ? <a {...marks} href={pr.url} target="_blank" rel="noreferrer">{text}</a> : <span {...marks}>{text}</span>;
+  return pr.url ? <a {...marks} data-ux="pr" href={pr.url} target="_blank" rel="noreferrer">{text}</a> : <span {...marks}>{text}</span>;
 }
 
 export function PrDot({ pr, status }: { pr: PrFlow; status: SessionStatus }) {

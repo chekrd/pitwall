@@ -281,6 +281,8 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
         cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }, { name: 'prefers-reduced-motion', value: look.motion }] }),
       // Before the first goto: every page loaded after runs its clock `speed` times faster, timers and dates alike.
       fastClock: (speed: number) => cdp('Page.addScriptToEvaluateOnNewDocument', { source: `(${fastClock})(${speed})` }),
+      // Before the first goto: every page loaded after runs `source` before its own scripts.
+      initScript: (source: string) => cdp('Page.addScriptToEvaluateOnNewDocument', { source }),
       // Freezes the page, as a browser does to a tab in the background, or lets it run again.
       lifecycle: (state: 'frozen' | 'active') => cdp('Page.setWebLifecycleState', { state }),
       async shot(file: string) {

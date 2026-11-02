@@ -77,12 +77,13 @@ function Folder({ node, ...picks }: Picks & { node: Dir }) {
               className={styles.twisty}
               aria-expanded={!collapsed.has(d.path)}
               aria-label={`${collapsed.has(d.path) ? 'Expand' : 'Collapse'} ${d.path}/`}
+              data-ux={collapsed.has(d.path) ? 'expand folder' : 'collapse folder'}
               title={collapsed.has(d.path) ? 'Expand' : 'Collapse'}
               onClick={() => onToggle(d.path)}
             >
               <Icon name={collapsed.has(d.path) ? 'chevron-right' : 'chevron-down'} size={14} />
             </button>
-            <button type="button" className={styles.dir} aria-pressed={dir === d.path} title={`Show only the changes in ${d.path}/`} onClick={() => onDir(d.path)}>
+            <button type="button" className={styles.dir} data-ux="folder" aria-pressed={dir === d.path} title={`Show only the changes in ${d.path}/`} onClick={() => onDir(d.path)}>
               <Icon name="folder" size={14} />
               <span className={styles.name}>{d.name}</span>
             </button>
@@ -97,6 +98,7 @@ function Folder({ node, ...picks }: Picks & { node: Dir }) {
             <a
               href={`#${fileAnchor(f.name)}`}
               aria-current={selected === f.name || undefined}
+              data-ux="file"
               title={f.prevName ? `${f.prevName} → ${f.name}` : f.name}
               onClick={(e) => {
                 e.preventDefault();

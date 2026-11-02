@@ -38,7 +38,7 @@ function Copy({ value, what, title, shown = value }: { value: string; what: stri
     () => toast('error', `Could not copy the ${what.toLowerCase()}`),
   );
   return (
-    <button type="button" className={styles.copy} data-copied={copied || undefined} title={title} aria-label={`Copy ${what.toLowerCase()} ${value}`} onClick={copy}>
+    <button type="button" className={styles.copy} data-ux={`copy ${what.toLowerCase()}`} data-copied={copied || undefined} title={title} aria-label={`Copy ${what.toLowerCase()} ${value}`} onClick={copy}>
       <code>{shown}</code>
       <span className={styles.copyMark} aria-live="polite">
         <Icon name={copied ? 'check' : 'copy'} size={13} />
@@ -99,7 +99,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
     closeSheetToQueue();
   };
   return (
-    <section className={styles.queued} data-queued>
+    <section className={styles.queued} data-queued data-ux-section="decision">
       <span className={styles.kicker}>In your queue · {menu ? 'Asked in the terminal' : 'Decision'}</span>
       {decision && (
         <>
@@ -162,7 +162,7 @@ function Interrupted({ session, name }: { session: Session; name: string }) {
   const asked = waitingFor ?? (menu && `its question “${menu.questions.map((q) => q.question).join(' · ')}”`);
   if (session.status === 'exited') {
     return (
-      <section className={styles.blocked} data-interrupted="ended">
+      <section className={styles.blocked} data-interrupted="ended" data-ux-section="interrupted">
         <p>The Mac restarted while this task was <strong>{was}</strong>{asked && <> ({asked})</>}, and its Claude ended with it.</p>
         <button type="button" data-variant="primary" onClick={() => sessionAction(session.id, 'focus').catch(reportError)}>Continue</button>
       </section>
@@ -170,7 +170,7 @@ function Interrupted({ session, name }: { session: Session; name: string }) {
   }
   if (session.status === 'working') return null;
   return (
-    <section className={styles.blocked} data-interrupted="cut-short">
+    <section className={styles.blocked} data-interrupted="cut-short" data-ux-section="interrupted">
       <p>The restart cut Claude's turn short{asked && <>, at {asked}</>}. It waits for you: <strong>Continue the turn</strong> asks it to check where it got to and carry on.</p>
       <button type="button" data-variant="primary" onClick={() => void hold(session, typed(null, CONTINUE_TURN, [], null), name)}>Continue the turn</button>
     </section>
@@ -188,7 +188,7 @@ function TurnError({ session }: { session: Session }) {
   const { kind, text } = session.turnError!;
   const said = text.split(/\n\s*\n/)[0].replace(/^API Error:\s*/, '');
   return (
-    <section className={styles.blocked} data-turn-error={kind}>
+    <section className={styles.blocked} data-turn-error={kind} data-ux-section="turn error">
       <div className={styles.errorText}>
         <p><strong>Claude's turn stopped on an error.</strong> {ERROR_ADVICE[kind]}</p>
         {said && <blockquote title={text}>{said}</blockquote>}
@@ -223,7 +223,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {session.interrupted && !archived && <Interrupted session={session} name={name} />}
           {stoppedOnError(session, attention) && <TurnError session={session} />}
           {working && (
-            <section className={styles.working}>
+            <section className={styles.working} data-ux-section="working">
               <span className={styles.spinner} aria-hidden />
               <div className={styles.step}>
                 <strong>{activity?.between ? 'Waiting on background work' : 'Claude is working'}</strong>
@@ -240,7 +240,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {!archived && attention === 'decide' && !busy.has(session.id) && <Queued session={session} name={name} box={!writing} />}
           <Findings session={session} />
           {!archived && attention === 'focus' && (
-            <section className={styles.blocked}>
+            <section className={styles.blocked} data-ux-section="terminal prompt">
               <p>Claude is showing <strong>{session.waitingFor ?? 'a prompt'}</strong> in its terminal. Answer it there.</p>
               <FocusButton session={session} />
             </section>
@@ -248,6 +248,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {(message || (writing && !archived)) && (
             <div
               className={styles.message}
+              data-ux-section="message box"
               onFocus={() => {
                 if (!writing) diag('overview-writing', { on: true, attention }); // DIAG(paste-loss)
                 setWriting(true);
@@ -270,7 +271,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               />
             </div>
           )}
-          <section className={styles.status}>
+          <section className={styles.status} data-ux-section="summary">
             <h3 className={styles.label} title="A short summary of the session, rewritten by a model after each of Claude's messages">
               Session summary {summary && <span>· updated {ago(summary.at)}</span>}
             </h3>
@@ -278,7 +279,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             {!!summary?.progress?.length && <ul>{summary.progress.map((k) => <li key={k}>{k}</li>)}</ul>}
           </section>
           {learnings.length > 0 && (
-            <section className={styles.know}>
+            <section className={styles.know} data-ux-section="worth knowing">
               <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing</h3>
               {learnings.map((k) => <p key={k}>{k}</p>)}
             </section>
@@ -286,7 +287,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} />}
         </div>
         <aside className={styles.aside}>
-          <section aria-label="Facts">
+          <section aria-label="Facts" data-ux-section="facts">
             <dl className={styles.facts}>
               {session.parent ? (
                 <>
@@ -348,12 +349,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </dl>
           </section>
           {links.length > 0 && (
-            <section data-links>
+            <section data-links data-ux-section="links">
               <h3 className={styles.label} title="Every web link Claude gave in this task, newest first; each opens in your default browser">Links</h3>
               <ul className={styles.links}>
                 {links.map((l) => (
                   <li key={l.url}>
-                    <a href={l.url} target="_blank" rel="noreferrer" title={l.context || l.url}>
+                    <a href={l.url} target="_blank" rel="noreferrer" title={l.context || l.url} data-ux="link">
                       <strong>{l.about || l.text || shortUrl(l.url)}</strong>
                       <span>{l.about || l.text ? `${shortUrl(l.url)} · ` : ''}{ago(l.at)}</span>
                     </a>
@@ -364,7 +365,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           )}
           <Subtasks session={session} />
           {session.history.length > 0 && (
-            <section>
+            <section data-ux-section="earlier conversations">
               <h3 className={styles.label} title="The conversations this task had before a /clear started the one it has now; claude --resume takes their ids">Earlier conversations</h3>
               <ul className={styles.history}>
                 {session.history.toReversed().map((h) => (
@@ -378,11 +379,11 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </section>
           )}
           {artifacts.length > 0 && (
-            <section>
+            <section data-ux-section="artifacts">
               <h3 className={styles.label} title="Visual explanations Claude made in this session">Artifacts</h3>
               <div className={styles.artifacts}>
                 {artifacts.map((a) => (
-                  <button key={a.id} type="button" onClick={() => showTab('artifacts', a.id)}>
+                  <button key={a.id} type="button" data-ux="artifact" onClick={() => showTab('artifacts', a.id)}>
                     <strong>{a.title}</strong>
                     <span>made {ago(a.at)}</span>
                   </button>

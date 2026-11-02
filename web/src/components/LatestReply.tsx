@@ -11,7 +11,7 @@ export function LatestReply({ text, prompt = null }: { text: string; prompt?: st
     setCut(!!el && el.scrollHeight > el.clientHeight);
   }, []);
   return (
-    <section className={styles.reply}>
+    <section className={styles.reply} data-ux-section="latest reply">
       <h3>Claude's latest reply</h3>
       {prompt && (
         <blockquote className={styles.prompt} data-prompt data-full={full || undefined}>

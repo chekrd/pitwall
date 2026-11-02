@@ -70,7 +70,7 @@ export function Conversation({ session }: { session: Session }) {
                 {e.artifacts.some((id) => artifacts.has(id)) && (
                   <div className={styles.artifacts}>
                     {e.artifacts.filter((id) => artifacts.has(id)).map((id) => (
-                      <button key={id} type="button" onClick={() => showTab('artifacts', id)}>
+                      <button key={id} type="button" data-ux="artifact" onClick={() => showTab('artifacts', id)}>
                         <span>Artifact</span>
                         <strong>{artifacts.get(id)!.title}</strong>
                       </button>

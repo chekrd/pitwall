@@ -86,13 +86,13 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
       </header>
       <ParentCrumb session={session} />
       <BranchMark session={session} branch={branch} />
-      <a className={styles.name} href={sessionPath(session.id)} onClick={follow}>{name}</a>
+      <a className={styles.name} href={sessionPath(session.id)} onClick={follow} data-ux="task">{name}</a>
       <p className={styles.text}>{textOf(session, attention)}</p>
       {restarted.length > 0 && (
         <ul className={styles.restarted} aria-label="Subtasks ended by restart">
           {restarted.map((o) => (
             <li key={o.id} data-restart-subtask={o.id}>
-              <button type="button" title="Open this subtask; Resume all or Continue brings it back" onClick={() => openSheet(o.id)}>
+              <button type="button" data-ux="subtask" title="Open this subtask; Resume all or Continue brings it back" onClick={() => openSheet(o.id)}>
                 <span className={styles.restartedLabel}>Ended by restart</span>
                 <span className={styles.restartedName}>{sessionLabel(o, locate(repos, o).branch)}</span>
               </button>

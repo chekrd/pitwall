@@ -153,7 +153,7 @@ function PriorityPicker({ session }: { session: Session }) {
 
 function Item({ label, note, danger = false, onClick }: { label: string; note: string; danger?: boolean; onClick: () => void }) {
   return (
-    <button type="button" className={styles.item} data-danger={danger || undefined} onClick={onClick}>
+    <button type="button" className={styles.item} data-ux={label} data-danger={danger || undefined} onClick={onClick}>
       <span className={styles.label}>{label}</span>
       <span className={styles.note}>{note}</span>
     </button>

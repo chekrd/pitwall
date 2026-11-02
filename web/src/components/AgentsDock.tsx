@@ -100,6 +100,7 @@ function CapsuleView({ capsule: c, repos, fresh }: { capsule: Capsule; repos: Re
       <button
         type="button"
         className={styles.open}
+        data-ux="agent"
         onClick={() => {
           hide();
           openSheet(s.id);

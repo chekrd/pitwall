@@ -38,8 +38,13 @@ export interface Check {
   // The page's timers and dates run faster (FAST_CLOCK times), so the 5 s hold, the 0.9 s guard and the like pass
   // quickly. The check waits with wait(), not sleep(), for anything timed by the page.
   clock?: 'fast';
+  // New task as it first opens: More folded on Current checkout. Every other check starts with More open on New
+  // worktree, the prompt focused, as a stored choice would have it.
+  newTask?: 'default';
   run: (t: Context) => Promise<void>;
 }
+
+export const NEW_TASK_MORE = `try { localStorage.getItem('pitwall:new-task-choices') || localStorage.setItem('pitwall:new-task-choices', '{"existing":false,"more":true}'); } catch {}`;
 
 const logged = (mock: Mock, what: string, match: (e: Entry) => boolean, timeout = 5000) =>
   until(`${what} in the mock's log`, async () => {
@@ -1787,7 +1792,7 @@ export const checks: Check[] = [
       await openFromWall(page, mock, 's-invoice');
       await page.click('#task-sheet [role="tab"]', 'Conversation');
       const shown = await page.until('the conversation with its picture', log);
-      assert.deepEqual([shown.tab, shown.tabs], ['Conversation 2', ['Overview 1', 'Conversation 2', 'Diff 3', 'Artifacts (1) 4']]);
+      assert.deepEqual([shown.tab, shown.tabs], ['Conversation 2', ['Overview 1', 'Conversation 2', 'Diff 7 3', 'Artifacts (1) 4']]);
       assert.equal(shown.cleared, 2);
       assert.deepEqual(shown.items.map((i) => [i.prompt, i.images, i.artifacts]), [
         ['Start with the failing test.', 0, []],
@@ -1877,7 +1882,7 @@ export const checks: Check[] = [
       await page.eval(submit);
       const error = await page.until('the inline error', () => document.querySelector('dialog#new-task [role="alert"]')?.textContent);
       assert.match(error, /cannot be created here/);
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('dialog#new-task textarea, dialog#new-task input:not([data-repo-picker] *, [type="radio"])')].map((f) => f.value)), ['Try a refused name', 'fail', '', '']);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('dialog#new-task textarea, dialog#new-task input:not([data-repo-picker] *, [type="radio"])')].map((f) => f.value)), ['fail', 'Try a refused name', '', '']);
 
       const extra = () => [...document.querySelectorAll('dialog#new-task label > span')].map((c) => c.textContent).filter((t) => t === 'Branch' || t === 'Worktree path');
       assert.deepEqual(await page.eval(extra), ['Branch', 'Worktree path'], 'New worktree shows its branch and path');
@@ -5714,7 +5719,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'M1 New task across a folder of repos: the picker lists the folder first, which hides the worktree options and says where Claude starts; ⌘↵ starts it in an empty task folder; the worktrees Claude opens show in the facts, each PR it opens shows as its own chip named by its repository and linked, the Diff groups them by repository, the tile names the folder, and Clear task names each worktree and its loss and clears them all',
+    name: 'M1 New task across a folder of repos: the picker lists the folder first, which hides the worktree options and says where Claude starts; ⌘↵ starts it in an empty task folder; the worktrees Claude opens show in the facts, each PR it opens shows as its own chip named by its repository and linked, the Diff groups them by repository, the tile names the repositories it works in and their branch, and Clear task names each worktree and its loss and clears them all',
     async run({ page, mock, shot }) {
       const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
       await page.goto(`${mock.url}/wall`);
@@ -5788,7 +5793,7 @@ export const checks: Check[] = [
 
       await page.goto(`${mock.url}/wall`);
       const where = await page.until('its tile', (task: string) => document.querySelector(`[data-tile][data-session="${task}"] [class*="where"]`)?.textContent, id);
-      assert.equal(where, 'code · cart-api');
+      assert.equal(where, 'storefront, billing-api · cart-api');
       await page.click(`[data-tile][data-session="${id}"] button[aria-label="Session actions"]`);
       await page.until('its menu', menuItems);
       await page.click(':popover-open button', 'Clear task');
@@ -5831,6 +5836,159 @@ export const checks: Check[] = [
       assert.ok(events.some((e) => e.name === 'click' && e.data?.control === 'option' && e.data.area === 'queue/menu'), 'the option clicked');
       assert.ok(events.some((e) => e.name === 'card-shown' && e.data?.task === 's-cart' && e.data.decision && e.data.deck > 0), 'the card shown, with its decision and the deck size');
       assert.ok(label && !JSON.stringify(events).includes(label), `the option's text "${label}" is not recorded`);
+    },
+  },
+  {
+    name: 'UX.names every control on the Wall, a task\'s Overview, Diff and Conversation, its ⋯ menu and New task with its pickers open is recorded without the task, finding, file, branch, repository or link it names',
+    scenario: 'findings',
+    async run({ page, mock }) {
+      const state = await mock.get('/api/state');
+      const content = new Set<string>();
+      const add = (v: unknown) => {
+        if (typeof v === 'string' && v.trim().length >= 4) content.add(v.trim());
+      };
+      for (const s of state.sessions) {
+        [s.title, s.firstPrompt, s.worktree, s.worktree.split('/').at(-1), s.summary?.text, s.parent?.title].forEach(add);
+        for (const f of s.findings?.items ?? []) [f.title, f.location].forEach(add);
+        for (const l of s.links ?? []) [l.url, l.about, l.text, l.context].forEach(add);
+        for (const a of s.artifacts ?? []) add(a.title);
+      }
+      for (const r of state.repos) {
+        add(r.name);
+        for (const w of r.worktrees) [w.path, w.branch].forEach(add);
+      }
+      const COMMON = new Set(['main', 'master']);
+      // Only the recorder sees these clicks: this listener, added after it on the window, stops them before the board
+      // and cancels what a link or a popover button would do.
+      const clickAll = (selector: string) => {
+        const stop = (e: Event) => {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        };
+        addEventListener('click', stop, true);
+        try {
+          for (const el of document.querySelectorAll(selector)) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+        } finally {
+          removeEventListener('click', stop, true);
+        }
+        return document.querySelectorAll(selector).length;
+      };
+      const CONTROLS = 'button, a[href], summary, select, [role="tab"], [role="option"], [role="menuitem"], input[type="checkbox"], input[type="radio"]';
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the Wall', () => document.querySelectorAll('[data-tile]').length > 3);
+      let clicked = await page.eval(clickAll, CONTROLS);
+      // In-page navigation keeps the page and its unsent events.
+      const go = (path: string) => page.eval((to: string) => void window.navigation.navigate(to), path);
+      for (const tab of ['', '/diff', '/conversation']) {
+        await go(`/s/s-review${tab}`);
+        await page.until('the task page', () => !!document.querySelector('#task-sheet [role="tabpanel"] *'));
+        if (tab === '/diff') await page.until('the file list', () => !!document.querySelector('#task-sheet [data-ux="file"]'));
+        if (!tab) await page.click('#task-sheet button[aria-label="Session actions"]');
+        clicked += await page.eval(clickAll, CONTROLS);
+      }
+      await go('/wall');
+      await page.until('the task page to close', () => !document.querySelector('#task-sheet [role="tabpanel"]'));
+      await page.click('header button[aria-label="New task"]');
+      await page.click('dialog#new-task button[aria-haspopup="listbox"]');
+      clicked += await page.eval(clickAll, '#new-task [role="option"], #new-task button[aria-haspopup]');
+      if (!(await page.eval(() => !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open))) await page.click('header button[aria-label="New task"]');
+      await page.click('dialog#new-task fieldset label', 'Current checkout');
+      await page.click('dialog#new-task [data-branch-field] input');
+      await page.until('the branch list', () => !!document.querySelector('#new-task [data-branch-picker]:popover-open button'));
+      clicked += await page.eval(clickAll, '#new-task [data-branch-picker] button');
+      // The page sends what it recorded every 15 s.
+      const events = await until('the recorded clicks', async () => {
+        const all: { name: string; data?: Record<string, any> }[] = await mock.get('/mock/ux');
+        const clicks = all.filter((e) => e.name === 'click');
+        return clicks.length >= clicked ? clicks : null;
+      }, 20_000);
+      const leaks = events.map((e) => String(e.data?.control)).filter((name) => /[/~]/.test(name) || [...content].some((c) => !COMMON.has(c) && name.includes(c)));
+      assert.deepEqual([...new Set(leaks)], [], 'no control is recorded by what it names');
+      assert.ok(events.some((e) => e.data?.control === 'finding') && events.some((e) => e.data?.control === 'file') && events.some((e) => e.data?.control === 'repository option'), 'content controls by their kind');
+    },
+  },
+  {
+    name: 'UX.reading an action records the Overview sections in view before it, for how long, and the screen time leaves out what passed with no one at the board',
+    scenario: 'findings',
+    clock: 'fast',
+    async run({ page, mock, wait }) {
+      await page.goto(`${mock.url}/s/s-review`);
+      await page.until('the Overview', () => !!document.querySelector('[data-ux-section="findings"]'));
+      await page.pointAt(400, 300);
+      await wait(3000);
+      await page.click('#task-sheet [role="tab"]', 'Diff');
+      const read = await until('the reading before the click', async () => {
+        const all: { name: string; data?: Record<string, any> }[] = await mock.get('/mock/ux');
+        return all.find((e) => e.name === 'read' && e.data?.control === 'Diff') ?? null;
+      });
+      assert.equal(read.data!.screen, 'task/overview');
+      assert.equal(read.data!.action, 'click');
+      assert.ok(read.data!.sections.findings >= 2000, `findings were in view for ${read.data!.sections.findings} ms`);
+      assert.ok(!('links' in read.data!.sections), 'a section the task does not have is not read');
+    },
+  },
+  {
+    name: 'diff-tab the Diff tab counts the changed files, with their lines on hover, and says none when the worktree has no changes',
+    scenario: 'findings',
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/s/s-review`);
+      const tab = () => {
+        const t = [...document.querySelectorAll<HTMLElement>('#task-sheet [role="tab"]')].find((b) => b.innerText.startsWith('Diff'));
+        return t ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.title, changes: t.dataset.changes ?? null } : null;
+      };
+      assert.deepEqual(await page.until('the Diff tab', tab), { text: 'Diff 5 3', title: '5 files changed: +96 −12', changes: '5' });
+      await shot('diff-tab-changes');
+      await mock.post('/mock/patch', { id: 's-review', patch: { diffstat: { files: 0, insertions: 0, deletions: 0 } } });
+      assert.deepEqual(await page.until('the tab with no changes', () => {
+        const t = [...document.querySelectorAll<HTMLElement>('#task-sheet [role="tab"]')].find((b) => b.innerText.startsWith('Diff'));
+        return t?.innerText.includes('none') ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.title, changes: t.dataset.changes ?? null } : null;
+      }), { text: 'Diff none 3', title: 'No changes against the base branch', changes: null });
+    },
+  },
+  {
+    name: 'new-task.default New task first opens on Current checkout with the default branch picked and focused, More folded; Enter creates there; the repository, mode and More outlast a reload; More opens the prompt, model and effort, and names what is set in them while folded',
+    newTask: 'default',
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/wall`);
+      await page.click('header button[aria-label="New task"]');
+      const form = () => {
+        const d = document.querySelector<HTMLDialogElement>('dialog#new-task');
+        if (!d?.open) return null;
+        const branch = d.querySelector<HTMLInputElement>('[data-branch-field] input');
+        if (!branch?.value) return null;
+        return {
+          mode: d.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.parentElement?.innerText.trim() ?? null,
+          branch: branch?.value ?? null,
+          focused: document.activeElement === branch ? 'branch' : document.activeElement?.tagName.toLowerCase() ?? null,
+          prompt: !!d.querySelector('textarea'),
+          more: d.querySelector<HTMLElement>('[data-more]')?.innerText.trim() ?? null,
+        };
+      };
+      assert.deepEqual(await page.until('New task', form), { mode: 'Current checkout', branch: 'main', focused: 'branch', prompt: false, more: 'More' });
+      await shot('new-task-folded');
+      await page.click('dialog#new-task [data-more]');
+      await page.until('the prompt', () => !!document.querySelector('dialog#new-task textarea'));
+      await page.eval(() => {
+        const select = document.querySelectorAll<HTMLSelectElement>('dialog#new-task select')[0];
+        select.value = select.options[1].value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.click('dialog#new-task [data-more]');
+      const folded = await page.until('More folded, naming the model', () => {
+        const m = document.querySelector<HTMLElement>('dialog#new-task [data-more]');
+        return m && !document.querySelector('dialog#new-task textarea') ? m.innerText.trim() : null;
+      });
+      assert.match(folded, /^More\s*\S+/);
+      await page.click('dialog#new-task [data-more]');
+      await shot('new-task-more');
+      await page.click('dialog#new-task [data-more]');
+      await page.goto(`${mock.url}/wall`);
+      await page.click('header button[aria-label="New task"]');
+      assert.equal((await page.until('New task after the reload', form))!.mode, 'Current checkout');
+      await page.until('the branch focused', () => document.activeElement === document.querySelector('dialog#new-task [data-branch-field] input'));
+      await page.key('Enter');
+      const [made] = await logged(mock, 'the task made', (e) => e.method === 'POST' && e.path === '/api/worktrees');
+      assert.deepEqual([made.body.existingBranch, made.body.branch, made.body.prompt], [true, 'main', '']);
     },
   },
   {

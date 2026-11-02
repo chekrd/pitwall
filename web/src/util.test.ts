@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { menu, options, question, session, turn } from './testing.ts';
 import type { RepoView } from './types.ts';
-import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, menuStuck, modelName, openSubtasks, settledAs, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
+import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, locate, menuStuck, modelName, openSubtasks, settledAs, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
 
 test('a decision is the open question or end-of-turn choice, and one the board answered is closed at once', () => {
   const asked = session('s', { question: question('q1') });
@@ -116,4 +116,21 @@ test('a model id reads as its family and version', () => {
   assert.equal(modelName('claude-haiku-4-5-20251001'), 'Haiku 4.5');
   assert.equal(modelName('claude-fable-5'), 'Fable 5');
   assert.equal(modelName('opus'), 'opus');
+});
+
+test('a task is placed in its repository on its branch; a removed worktree reads as its task folder, not the repository folder git-wt ends it with', () => {
+  const repo = { id: 1, path: '/g/client', name: 'client', worktrees: [{ path: '/g/client', branch: 'main' }, { path: '/g/worktrees/asset/client', branch: 'asset' }] } as RepoView;
+  const at = (worktree: string, repoId: number | null = 1) => locate([repo], session('s', { repoId, worktree }));
+  assert.deepEqual([at('/g/worktrees/asset/client').place, at('/g/worktrees/asset/client').branch], ['client', 'asset']);
+  assert.equal(at('/g/worktrees/gone/client').branch, 'gone');
+  assert.equal(at('/g/worktrees/spike').branch, 'spike');
+});
+
+test('a folder task is placed in the repositories it opened worktrees in, on their branches, and in its folder before it opened any', () => {
+  const client = { id: 1, path: '/k/client', name: 'client', worktrees: [{ path: '/k/client', branch: 'main', isMain: true }, { path: '/k/worktrees/fix/client', branch: 'fix', isMain: false }] } as RepoView;
+  const api = { id: 2, path: '/k/api', name: 'api', worktrees: [{ path: '/k/api', branch: 'main', isMain: true }, { path: '/k/worktrees/fix/api', branch: 'fix-api', isMain: false }] } as RepoView;
+  const fix = locate([client, api], session('s', { repoId: null, worktree: '/k/worktrees/fix' }));
+  assert.deepEqual([fix.place, fix.branch], ['client, api', 'fix, fix-api']);
+  const fresh = locate([client, api], session('s', { repoId: null, worktree: '/k/worktrees/new' }));
+  assert.deepEqual([fresh.place, fresh.branch], ['k', 'new']);
 });

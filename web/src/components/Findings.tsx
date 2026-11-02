@@ -45,7 +45,7 @@ export function Findings({ session, compact = false }: { session: Session; compa
     <Item key={`${findings.basis}:${x.index}`} session={session} basis={findings.basis} {...x} compact={compact || !!x.settled} />
   );
   return (
-    <section className={styles.findings} data-findings aria-label="Findings">
+    <section className={styles.findings} data-findings aria-label="Findings" data-ux-section="findings">
       <h3 className={styles.label}>
         Findings <span data-settled-count>· {settled.length ? (open.length ? `${open.length} of ${items.length} open` : `all ${items.length} settled`) : items.length}</span>
       </h3>
@@ -108,7 +108,7 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
 
   return (
     <li className={styles.item} data-finding={n} data-rejected={rejected || undefined} data-settled={settled ?? undefined}>
-      <button type="button" className={styles.head} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+      <button type="button" className={styles.head} data-ux="finding" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         <span className={styles.n}>{n}</span>
         <strong>{finding.title}</strong>
         {finding.location && <code className={styles.where}>{finding.location}</code>}
@@ -162,7 +162,7 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
             const shown = shownOf(o, busy);
             return (
               <li key={o.id}>
-                <button type="button" data-subtask={o.id} title={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
+                <button type="button" data-ux="subtask" data-subtask={o.id} title={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
                   <StateMark state={o.archived ? 'archived' : shown} size={8} />
                   <span>{SUBTASK_LABELS[o.parent!.kind]}</span>
                   <span className={styles.state}>{stateLabel(o, shown)}</span>
@@ -197,7 +197,7 @@ export function ParentCrumb({ session }: { session: Session }) {
       {chain.length ? chain.map((task, i) => (
         <span key={task.id} className={styles.crumbStep}>
           {i > 0 && <span className={styles.crumbSep} aria-hidden>›</span>}
-          <button type="button" title="Open this task" onClick={() => openSheet(task.id)}>
+          <button type="button" data-ux="task" title="Open this task" onClick={() => openSheet(task.id)}>
             <StateMark state={task.archived ? 'archived' : shownOf(task, busy)} size={7} />
             {sessionLabel(task, locate(repos, task).branch)}
           </button>
@@ -217,11 +217,11 @@ export function SubtaskOf({ session }: { session: Session }) {
   const siblings = sessions.filter((o) => o.id !== session.id && o.parent?.id === p.id && o.parent.basis === p.basis && o.parent.finding === p.finding);
   const taskState = task ? (task.archived ? 'archived' : shownOf(task, busy)) : null;
   return (
-    <section className={styles.origin} aria-label="Subtask of">
+    <section className={styles.origin} aria-label="Subtask of" data-ux-section="subtask of">
       <div className={styles.originTask}>
         <span className={styles.label}><Icon name="subtask" size={14} />Subtask of</span>
         {task ? (
-          <button type="button" className={styles.originName} title="Open the task this subtask belongs to" onClick={() => openSheet(task.id)}>
+          <button type="button" className={styles.originName} data-ux="task" title="Open the task this subtask belongs to" onClick={() => openSheet(task.id)}>
             {name}
           </button>
         ) : <strong className={styles.originName}>{name}</strong>}
@@ -255,7 +255,7 @@ export function SubtaskOf({ session }: { session: Session }) {
             const shown = shownOf(o, busy);
             return (
               <li key={o.id}>
-                <button type="button" data-subtask={o.id} title={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
+                <button type="button" data-ux="subtask" data-subtask={o.id} title={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
                   <StateMark state={o.archived ? 'archived' : shown} size={8} />
                   <span>{SUBTASK_LABELS[o.parent!.kind]}</span>
                   <span className={styles.state}>{stateLabel(o, shown)}</span>
@@ -317,7 +317,7 @@ export function Subtasks({ session }: { session: Session }) {
     return (
       <li key={o.id} data-depth={depth} data-resolution={o.resolution?.state} style={{ '--depth': depth } as CSSProperties}>
         {depth > 0 && <Icon name="subtask" size={14} />}
-        <button type="button" data-subtask={o.id} data-attention={state} onClick={() => openSheet(o.id)}>
+        <button type="button" data-ux="subtask" data-subtask={o.id} data-attention={state} onClick={() => openSheet(o.id)}>
           <StateMark state={state} size={8} />
           <strong>{sessionLabel(o, locate(repos, o).branch)}</strong>
           <span className={styles.listState}>{stateLabel(o, shownOf(o, busy))}</span>
@@ -327,7 +327,7 @@ export function Subtasks({ session }: { session: Session }) {
     );
   };
   return (
-    <section className={styles.list} aria-label="Subtasks" data-subtask-list>
+    <section className={styles.list} aria-label="Subtasks" data-subtask-list data-ux-section="subtasks">
       <h3 className={styles.label}>Subtasks <span data-open-count>· {open.length ? `${open.length} of ${total} open` : `all ${total} solved or dropped`}</span></h3>
       {open.length > 0 && <ul>{open.map(row)}</ul>}
       {settled.length > 0 && (

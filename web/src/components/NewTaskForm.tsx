@@ -20,6 +20,8 @@ interface Fields {
   existing: boolean;
   model: string;
   effort: string;
+  // The prompt, model and effort, folded away by default since a task usually starts without them.
+  more: boolean;
 }
 
 // What each choice of model comes to, '' being what Claude Code picks by itself, and the effort it starts with.
@@ -37,21 +39,30 @@ interface Branch {
 
 const DIALOG = 'new-task';
 const STORED = 'pitwall:new-task';
-const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: false, model: '', effort: '' };
+const CHOICES = 'pitwall:new-task-choices';
+const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: '', effort: '', more: false };
+const choicesOf = ({ repoId, folder, existing, model, effort, more }: Fields) => ({ repoId, folder, existing, model, effort, more });
 
 const NAME = /^[A-Za-z0-9._/-]+$/;
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
-function stored(): Fields {
+const read = (storage: () => Storage, key: string) => {
   try {
-    const raw = sessionStorage.getItem(STORED);
-    return raw ? { ...EMPTY, ...JSON.parse(raw) } : EMPTY;
+    return JSON.parse(storage().getItem(key) ?? '{}');
   } catch {
-    return EMPTY;
+    return {};
   }
+};
+
+function stored(): Fields {
+  const { prompt, branch, path } = read(() => sessionStorage, STORED);
+  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '' };
+  return { ...EMPTY, ...read(() => localStorage, CHOICES), ...draft };
 }
 
 // A prompt begun and closed is there when New task opens again, and a reload keeps it; the name starts empty each time.
+// The repository, the mode, the model and effort and whether More is open outlast the tab, as the next task usually
+// starts where the last one did.
 let fields = stored();
 // They share the branch list too: both are mounted at once, and one read serves them.
 let branches: { repoId: number; list: Branch[] } | null = null;
@@ -69,7 +80,8 @@ const notify = () => {
 function edit(patch: Partial<Fields>) {
   fields = { ...fields, ...patch };
   try {
-    sessionStorage.setItem(STORED, JSON.stringify(fields));
+    sessionStorage.setItem(STORED, JSON.stringify({ prompt: fields.prompt, branch: fields.branch, path: fields.path }));
+    localStorage.setItem(CHOICES, JSON.stringify(choicesOf(fields)));
   } catch {
     // A page without storage keeps them in memory only.
   }
@@ -117,10 +129,10 @@ export function openNewTask() {
   if (!dialog) return;
   if (!dialog.open) {
     opened++;
-    edit({ name: '' });
+    edit({ name: '', ...(fields.prompt.trim() && { more: true }) });
     dialog.showModal();
   }
-  dialog.querySelector('textarea')?.focus();
+  dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
 }
 
 // Typing on the closed button opens the list with that letter already in the filter.
@@ -174,7 +186,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
 
   return (
     <>
-      <button type="button" className={styles.repo} popoverTarget={`${id}-list`} aria-haspopup="listbox" aria-label={`${repo.kind === 'folder' ? 'Folder' : 'Repository'}: ${repo.name}`} onKeyDown={onButtonKey}>
+      <button type="button" className={styles.repo} data-ux={repo.kind === 'folder' ? 'folder' : 'repository'} popoverTarget={`${id}-list`} aria-haspopup="listbox" aria-label={`${repo.kind === 'folder' ? 'Folder' : 'Repository'}: ${repo.name}`} onKeyDown={onButtonKey}>
         <span className={styles.caption}>{repo.kind === 'folder' ? 'Folder' : 'Repository'}</span>
         <strong>{repo.name}</strong>
         <Icon name="chevron-down" size={14} />
@@ -209,6 +221,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
               aria-selected={r.key === repo.key}
               data-active={i === at || undefined}
               data-folder={r.kind === 'folder' || undefined}
+              data-ux={r.kind === 'folder' ? 'folder option' : 'repository option'}
               onPointerMove={() => setActive(i)}
               onClick={() => choose(r)}
             >
@@ -225,7 +238,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
 }
 
 // The list opens on a click, a typed letter or ↓, and scrolls inside itself, so many branches never push the form away.
-function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | null; value: string; pick: (name: string) => void; where: (b: Branch) => string }) {
+function BranchPicker({ branches, value, pick, where, first }: { branches: Branch[] | null; value: string; pick: (name: string) => void; where: (b: Branch) => string; first: boolean }) {
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -279,6 +292,7 @@ function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | n
       <label className={styles.field} data-branch-field>
         <span className={styles.caption}>Branch</span>
         <input
+          data-autofocus={first || undefined}
           role="combobox"
           aria-expanded={open}
           aria-controls={`${id}-list`}
@@ -308,6 +322,7 @@ function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | n
               tabIndex={-1}
               aria-selected={b.name.toLowerCase() === q}
               data-active={i === at || undefined}
+              data-ux="branch option"
               onMouseDown={(e) => e.preventDefault()}
               onPointerMove={() => setActive(i)}
               onClick={() => choose(b)}
@@ -340,6 +355,9 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   useEffect(() => {
     if (opening && !pickedFolder) readBranches(repo.id);
   }, [repo.id, opening, pickedFolder]);
+  useEffect(() => {
+    if (fields.existing && !fields.branch.trim()) edit({ branch: defaultBranch(repo) });
+  }, [repo.id, opening]);
   useEffect(() => readModels(target.key, pickedFolder ? `/api/folders/models?path=${encodeURIComponent(pickedFolder.path)}` : `/api/repos/${repo.id}/models`), [target.key]);
   const existing = f.existing && !pickedFolder;
 
@@ -363,7 +381,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         const result = await api<{ path: string; sessionId: string }>('POST', '/api/folder-tasks', {
           folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, model: now.model, effort: now.effort,
         });
-        edit({ ...EMPTY, folder: pickedFolder.path, model: now.model, effort: now.effort });
+        edit({ ...EMPTY, ...choicesOf(now) });
         track('new-task', { ...chose, ok: true });
         done?.();
         openSheet(result.sessionId);
@@ -379,7 +397,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         model: now.model,
         effort: now.effort,
       });
-      edit({ ...EMPTY, repoId: repo.id, existing: now.existing, branch: now.existing ? defaultBranch(repo) : '', model: now.model, effort: now.effort });
+      edit({ ...EMPTY, ...choicesOf(now), repoId: repo.id, branch: now.existing ? defaultBranch(repo) : '' });
       track('new-task', { ...chose, ok: true });
       done?.();
       if (result.sessionId) openSheet(result.sessionId);
@@ -390,10 +408,10 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
     }
   }, null);
 
-  const onPromptKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onFormKey = (e: KeyboardEvent<HTMLFormElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      if (valid && !pending) e.currentTarget.form?.requestSubmit();
+      if (valid && !pending) e.currentTarget.requestSubmit();
     }
   };
 
@@ -410,17 +428,10 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
+  const chosen = [f.prompt.trim() && 'prompt', f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+
   return (
-    <form className={styles.form} action={create}>
-      <textarea
-        className={styles.prompt}
-        rows={1}
-        aria-label="What should Claude work on?"
-        placeholder="What should Claude work on?"
-        value={f.prompt}
-        onChange={(e) => edit({ prompt: e.currentTarget.value })}
-        onKeyDown={onPromptKey}
-      />
+    <form className={styles.form} action={create} onKeyDown={onFormKey}>
       <div className={styles.row}>
         <RepoPicker
           repos={targets}
@@ -430,34 +441,22 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         {!pickedFolder && (
           <fieldset className={styles.mode}>
             <legend>Where Claude runs</legend>
-            <label><input type="radio" name="mode" checked={!f.existing} onChange={() => edit({ existing: false, branch: '' })} />New worktree</label>
             <label><input type="radio" name="mode" checked={f.existing} onChange={() => edit({ existing: true, branch: defaultBranch(repo) })} />Current checkout</label>
+            <label><input type="radio" name="mode" checked={!f.existing} onChange={() => edit({ existing: false, branch: '' })} />New worktree</label>
           </fieldset>
         )}
         {existing ? (
-          <BranchPicker branches={list} value={f.branch} pick={(b) => edit({ branch: b })} where={where} />
+          <BranchPicker branches={list} value={f.branch} pick={(b) => edit({ branch: b })} where={where} first={!f.more} />
         ) : (
           <label className={styles.field} title={pickedFolder ? 'Names the task folder, and the branch of every worktree Claude opens' : 'Names the worktree folder, and the branch unless you set one'}>
             <span className={styles.caption}>Name</span>
-            <input value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder="fix-login-redirect" spellCheck={false} autoComplete="off" />
+            <input data-autofocus={!f.more || undefined} value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder="fix-login-redirect" spellCheck={false} autoComplete="off" />
           </label>
         )}
         <button type="submit" className={styles.create} disabled={!valid || pending}>
           {pending ? 'Creating…' : 'Create'} <kbd>⌘↵</kbd>
         </button>
       </div>
-      {!existing && !pickedFolder && (
-        <div className={styles.options}>
-          <label className={styles.input} title="The new branch; defaults to the name">
-            <span>Branch</span>
-            <input value={f.branch} onChange={(e) => edit({ branch: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder={name || 'same as name'} spellCheck={false} />
-          </label>
-          <label className={styles.input} title="Where the worktree is created; defaults to the repository's worktree folder">
-            <span>Worktree path</span>
-            <input value={f.path} onChange={(e) => edit({ path: e.currentTarget.value })} placeholder={`${tilde(repo.worktreeRoot ?? repo.defaultWorktreeRoot, home)}/${name || '<name>'}/${folder}`} spellCheck={false} />
-          </label>
-        </div>
-      )}
       <div className={styles.foot}>
         <p className={styles.hint} data-hint>
           {pickedFolder ? (
@@ -479,21 +478,52 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
               </>
           )}
         </p>
-        <label className={styles.select} title="The model Claude starts with; the first is the one your Claude Code settings pick">
-          <span className={styles.caption}>Model</span>
-          <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
-            {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-          <Icon name="chevron-down" size={14} />
-        </label>
-        <label className={styles.select} title="How hard Claude thinks; the first is the one your Claude Code settings give that model">
-          <span className={styles.caption}>Effort</span>
-          <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
-            {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-          <Icon name="chevron-down" size={14} />
-        </label>
+        <button type="button" className={styles.more} aria-expanded={f.more} data-more onClick={() => edit({ more: !f.more })}>
+          More{!f.more && chosen && <span>{chosen}</span>}
+          <Icon name={f.more ? 'chevron-down' : 'chevron-right'} size={14} />
+        </button>
       </div>
+      {f.more && (
+        <div className={styles.extra} data-more-options>
+          <textarea
+            data-autofocus
+            className={styles.prompt}
+            rows={1}
+            aria-label="What should Claude work on?"
+            placeholder="What should Claude work on? (optional)"
+            value={f.prompt}
+            onChange={(e) => edit({ prompt: e.currentTarget.value })}
+          />
+          <div className={styles.options}>
+            {!existing && !pickedFolder && (
+              <>
+                <label className={styles.input} title="The new branch; defaults to the name">
+                  <span>Branch</span>
+                  <input value={f.branch} onChange={(e) => edit({ branch: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder={name || 'same as name'} spellCheck={false} />
+                </label>
+                <label className={styles.input} title="Where the worktree is created; defaults to the repository's worktree folder">
+                  <span>Worktree path</span>
+                  <input value={f.path} onChange={(e) => edit({ path: e.currentTarget.value })} placeholder={`${tilde(repo.worktreeRoot ?? repo.defaultWorktreeRoot, home)}/${name || '<name>'}/${folder}`} spellCheck={false} />
+                </label>
+              </>
+            )}
+            <label className={styles.select} title="The model Claude starts with; the first is the one your Claude Code settings pick">
+              <span className={styles.caption}>Model</span>
+              <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
+                {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <Icon name="chevron-down" size={14} />
+            </label>
+            <label className={styles.select} title="How hard Claude thinks; the first is the one your Claude Code settings give that model">
+              <span className={styles.caption}>Effort</span>
+              <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
+                {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <Icon name="chevron-down" size={14} />
+            </label>
+          </div>
+        </div>
+      )}
       {error && <p className={styles.error} role="alert">{error}</p>}
     </form>
   );

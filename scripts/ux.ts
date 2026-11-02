@@ -64,6 +64,10 @@ export function report(rows: Row[]) {
     table('Clicks', count(clicks, (r) => `${r.data.area} › ${r.data.control}`), 30),
     table('Sends', count(sends, (r) => `${r.data.action}${r.data.command ? ' (command)' : (r.data.option ?? r.data.choice) ? ' (option)' : (r.data.ownText ?? r.data.text) ? ' (own text)' : ''}${r.data.files ? ' +files' : ''}`)),
     table('Requests the page made (everything but reads)', count(of('api'), (r) => `${r.data.method} ${r.data.path}`)),
+    table('What was read before an action (the sections in view the longest, then the action)', count(of('read'), (r) => {
+      const read = Object.entries(r.data.sections as Record<string, number>).toSorted((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k).join(' + ');
+      return `${r.data.screen}: ${read} → ${r.data.action === 'click' ? '' : `${r.data.action} `}${r.data.control ?? ''}`;
+    }), 20),
     table('Errors shown', count(of('error'), (r) => r.data.error ?? r.data.message)),
     table('Window sizes', count(of('load'), (r) => `${Math.round(r.data.width / 100) * 100} × ${Math.round(r.data.height / 100) * 100}`), 5),
   ].join('\n');

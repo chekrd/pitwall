@@ -28,7 +28,7 @@ export function Artifacts({ session, item }: { session: Session; item: string | 
     <div className={styles.artifacts}>
       <div className={styles.list} role="tablist" aria-label="Artifacts" aria-orientation="vertical">
         {list.map((a) => (
-          <button key={a.id} type="button" role="tab" aria-selected={a.id === shown.id} onClick={() => showTab('artifacts', a.id)}>
+          <button key={a.id} type="button" role="tab" data-ux="artifact" aria-selected={a.id === shown.id} onClick={() => showTab('artifacts', a.id)}>
             <strong>{a.title}</strong>
             <span>made {ago(a.at)}</span>
           </button>

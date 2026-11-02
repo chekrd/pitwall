@@ -73,6 +73,7 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
   const { repo, worktree, branch } = locate(repos, session);
   const attention = shownOf(session, useBusy());
   const { open, total } = openSubtasks(useStore().sessions, session.id);
+  const stat = session.diffstat;
   const tabs: { key: Tab; label: string; kbd: string }[] = [
     { key: 'overview', label: 'Overview', kbd: '1' },
     { key: 'conversation', label: 'Conversation', kbd: '2' },
@@ -106,9 +107,24 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
         </div>
         <nav className={styles.tabs} role="tablist" aria-label="Task">
           {tabs.map((t) => (
-            <button key={t.key} type="button" role="tab" aria-selected={t.key === current} onClick={() => showTab(t.key)}>
-              {t.label} <kbd>{t.kbd}</kbd>
-            </button>
+            t.key === 'diff' && stat ? (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={t.key === current}
+                data-changes={stat.files || undefined}
+                data-ux="Diff"
+                title={stat.files ? `${stat.files} ${stat.files === 1 ? 'file' : 'files'} changed: +${stat.insertions} −${stat.deletions}` : 'No changes against the base branch'}
+                onClick={() => showTab(t.key)}
+              >
+                {t.label} {stat.files > 0 ? <span className={styles.changes}>{stat.files}</span> : <span className={styles.clean}>none</span>} <kbd>{t.kbd}</kbd>
+              </button>
+            ) : (
+              <button key={t.key} type="button" role="tab" aria-selected={t.key === current} onClick={() => showTab(t.key)}>
+                {t.label} <kbd>{t.kbd}</kbd>
+              </button>
+            )
           ))}
         </nav>
         <SessionMenu session={session} worktree={worktree} name={name} />
