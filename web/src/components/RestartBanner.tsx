@@ -15,7 +15,61 @@ export function interruptedAs(s: Session) {
   return attentionOf({ ...s, status: i.status, waitingFor: i.waitingFor, menu: i.menu });
 }
 
-export const cutShort = (s: Session) => !!s.interrupted && s.status !== 'exited';
+export const cutShort = (s: Session) => !!s.interrupted && s.interrupted.cause !== 'pause' && s.status !== 'exited';
+
+export const paused = (s: Session) => s.interrupted?.cause === 'pause' && s.status !== 'working';
+
+type Resumed = { resumed: number; failed: { id: string; error: string }[] };
+
+const notResumed = ({ failed }: Resumed) => {
+  for (const f of failed) toast('error', `Not resumed: ${f.error}`, { session: f.id });
+};
+
+export async function pauseAll() {
+  try {
+    const { stopping, failed } = await api<{ stopping: number; failed: { id: string; error: string }[] }>('POST', '/api/pause');
+    for (const f of failed) toast('error', `Not paused: ${f.error}`, { session: f.id });
+    if (!stopping && !failed.length) toast('info', 'No Claude is at work, so it is safe to close the laptop.');
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+export const resumePaused = (id?: string) => api<Resumed>('POST', '/api/pause/resume', id ? { id } : {}).then(notResumed);
+
+function PauseBanner() {
+  const { sessions, pause } = useStore();
+  const [resuming, setResuming] = useState(false);
+  const stopping = sessions.filter((s) => pause.stopping.includes(s.id));
+  const done = sessions.filter(paused);
+  if (!stopping.length && !done.length) return null;
+  const resume = async () => {
+    setResuming(true);
+    await resumePaused().catch(reportError);
+    setResuming(false);
+  };
+  const dismiss = () => api('POST', '/api/pause/dismiss').catch(reportError);
+  if (stopping.length) {
+    return (
+      <section className={styles.banner} data-pause="stopping" aria-live="polite">
+        <p>
+          <strong>Pausing</strong>{done.length > 0 && <> · {done.length} paused</>} · stopping <TaskLinks tasks={stopping} />: each ends its turn and its background tasks.
+        </p>
+        <button type="button" onClick={dismiss} title="Stop pausing; whatever has stopped stays stopped">Cancel</button>
+      </section>
+    );
+  }
+  return (
+    <section className={styles.banner} data-pause="paused" aria-live="polite">
+      <p>
+        <strong>Paused {tally(done)}</strong>: <TaskLinks tasks={done} />. Safe to close the laptop.
+        {' '}Resume all has each one start its background tasks again and carry on.
+      </p>
+      <button type="button" data-variant="primary" disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>
+      <button type="button" onClick={dismiss} title="Forget the pause; the tasks wait for you as any other">Dismiss</button>
+    </section>
+  );
+}
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -77,10 +131,19 @@ function Preparing({ safeAt, sessions }: { safeAt: number | null; sessions: Sess
 }
 
 export function RestartBanner() {
+  return (
+    <>
+      <PauseBanner />
+      <Recovery />
+    </>
+  );
+}
+
+function Recovery() {
   const { sessions, restart } = useStore();
   const [resuming, setResuming] = useState(false);
   if (restart.preparing) return <Preparing {...restart.preparing} sessions={sessions} />;
-  const ended = sessions.filter((s) => s.status === 'exited' && s.interrupted && !s.archived);
+  const ended = sessions.filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
   const midTurn = sessions.filter((s) => cutShort(s) && !s.archived);
   if (!ended.length && !midTurn.length) return null;
 

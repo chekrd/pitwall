@@ -15,6 +15,7 @@ import { checkDecision, decisionKey, openDecision, Refusal } from '../../server/
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { busy, pickedUp, type Preparing } from '../../server/restart.ts';
+import { pauser } from '../../server/pause.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
@@ -109,6 +110,16 @@ let announced: string | null = null;
 let preparing: Preparing | null = null;
 let drift: Drift[] = [];
 
+// As the server's: Esc stops a turn, and the pause prompt runs a short turn that stops the background tasks.
+const pausing = pauser({
+  escape: async (id) => later(400, () => update(id, { status: 'idle', activity: null })),
+  type: async (id) => {
+    later(400, () => update(id, { status: 'working', activity: { step: 'Stopping its background tasks', since: Date.now() } }));
+    later(1400, () => update(id, { status: 'idle', activity: null }));
+  },
+  mark: (id, interrupted) => update(id, { interrupted }),
+});
+
 const clients = new Set<WebSocket>();
 let pushing = false;
 
@@ -130,7 +141,7 @@ const taskWorktrees = (taskFolder: string) =>
 
 const snapshot = () => ({
   home: '/Users/me', roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders() }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
-  ...(!args.legacy && { usage: state.usage, restart: { preparing }, drift }),
+  ...(!args.legacy && { usage: state.usage, restart: { preparing }, pause: { stopping: pausing.stopping() }, drift }),
 });
 
 // As the server's restart.watch, without the notification.
@@ -153,6 +164,7 @@ function push() {
   queueMicrotask(() => {
     pushing = false;
     watchRestart();
+    pausing.step(state.sessions);
     const message = JSON.stringify({ ...snapshot(), ...(!args.legacy && { uiEntry: announced ?? ui.settled() }) });
     for (const ws of clients) ws.send(message);
   });
@@ -170,6 +182,7 @@ function load(name: string) {
   dropUntil = 0;
   announced = null;
   preparing = null;
+  pausing.cancel();
   drift = [];
   state = make(Date.now());
   if (args.legacy) for (const s of state.sessions) s.answered = null;
@@ -759,6 +772,22 @@ route('POST', '/api/restart/resume', () => {
 });
 route('POST', '/api/restart/dismiss', () => {
   for (const s of state.sessions) s.interrupted = null;
+  push();
+  return NONE;
+});
+route('POST', '/api/pause', () => pausing.start(state.sessions));
+route('POST', '/api/pause/resume', ({ body }) => {
+  const tasks = state.sessions.filter((s) => s.interrupted?.cause === 'pause' && s.status !== 'working' && (!body.id || s.id === body.id));
+  const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map((s) => ({ id: s.id, error: 'conversation not found in this worktree' }));
+  for (const s of tasks.filter((s) => !flagged(s.id, 'resumeFails'))) {
+    resume(s);
+    claudeWorks(s.id);
+  }
+  return { resumed: tasks.length - failed.length, failed };
+});
+route('POST', '/api/pause/dismiss', () => {
+  pausing.cancel();
+  for (const s of state.sessions) if (s.interrupted?.cause === 'pause') s.interrupted = null;
   push();
   return NONE;
 });

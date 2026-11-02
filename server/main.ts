@@ -54,7 +54,7 @@ app.onError((err, c) => {
 
 const usage = watchUsage(USAGE_FILE, notify);
 onDrift(notify);
-const state = () => ({ ...snapshot(), usage: usage.current(), restart: restartState(), drift: drift() });
+const state = () => ({ ...snapshot(), usage: usage.current(), restart: restartState(), pause: S.pauseState(), drift: drift() });
 
 app.get('/api/state', (c) => c.json(state()));
 
@@ -293,6 +293,18 @@ app.post('/api/restart/dismiss', (c) => {
   return c.body(null, 204);
 });
 
+app.post('/api/pause', async (c) => c.json(await S.pause()));
+
+app.post('/api/pause/resume', async (c) => {
+  const { id } = await c.req.json().catch(() => ({}));
+  return c.json(await S.resumePaused(typeof id === 'string' ? id : undefined));
+});
+
+app.post('/api/pause/dismiss', (c) => {
+  S.dismissInterrupted(true);
+  return c.body(null, 204);
+});
+
 app.post('/api/uploads', async (c) => {
   const path = await saveUpload(decodeURIComponent(c.req.header('x-filename') ?? 'file'), await c.req.arrayBuffer());
   return c.json({ path });
@@ -388,7 +400,7 @@ app.get('*', async (c) => {
 
 await refreshWorkspace({ scan: true });
 await sync();
-setInterval(() => void sync().catch((err) => console.warn('session sync failed', err)), 1500);
+setInterval(() => void sync().then(S.pauseStep).catch((err) => console.warn('session sync failed', err)), 1500);
 setInterval(() => void refreshWorkspace({ scan: true }).catch((err) => console.warn('workspace refresh failed', err)), 30_000);
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT, websocket: { server: new WebSocketServer({ noServer: true }) } }, () => {

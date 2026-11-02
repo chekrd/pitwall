@@ -5,7 +5,7 @@ import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
-import { answering } from './answering.ts';
+import { answering, liveTty } from './answering.ts';
 import { listCommands } from './commands.ts';
 import { alive, conversationMeta, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, transcriptFile, type ConversationLog } from './conversations.ts';
 import { report } from './claudeFormat.ts';
@@ -22,6 +22,7 @@ import { scheduleRerank, trackDecisions } from './priority.ts';
 import { notify, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
 import { sync } from './ingest.ts';
+import { pauser, RESUME_PROMPT } from './pause.ts';
 import { checkUploads } from './uploads.ts';
 
 const run = promisify(execFile);
@@ -56,7 +57,7 @@ export async function startClaude(opts: { repoId: number | null; worktree: strin
 }
 
 // `continueId` names a conversation; a task that ran it, now or before a /clear, picks it up again.
-export async function continueConversation(opts: { repoId: number | null; worktree: string; continueId: string; cwd?: string }) {
+export async function continueConversation(opts: { repoId: number | null; worktree: string; continueId: string; cwd?: string; prompt?: string }) {
   const id = opts.continueId;
   const cwd = opts.cwd ?? opts.worktree;
   const existing = taskOf(sessions.all(), id);
@@ -77,9 +78,9 @@ export async function continueConversation(opts: { repoId: number | null; worktr
   if (existing) {
     sessions.update(existing.id, {
       ...(existing.conversation !== id && handOver(existing, id, Date.now())),
-      pid: null, tty: null, status: 'idle', archived: false,
+      pid: null, tty: null, status: opts.prompt ? 'working' : 'idle', archived: false,
     });
-    await launch(existing.id, existing.cwd, ['--resume', id]);
+    await launch(existing.id, existing.cwd, ['--resume', id, ...(opts.prompt ? ['--', opts.prompt] : [])]);
     notify();
     return existing.id;
   }
@@ -95,7 +96,7 @@ export async function continueConversation(opts: { repoId: number | null; worktr
 // After a restart of the Mac, every task it cut short comes back in a hidden terminal, as Continue would bring it.
 export async function resumeInterrupted() {
   const failed: { id: string; error: string }[] = [];
-  const tasks = sessions.all().filter((s) => s.status === 'exited' && s.interrupted && !s.archived);
+  const tasks = sessions.all().filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
   for (const s of tasks) {
     try {
       await continueConversation({ repoId: s.repoId, worktree: s.worktree, cwd: s.cwd, continueId: s.conversation });
@@ -107,9 +108,37 @@ export async function resumeInterrupted() {
 }
 
 // Ended ones stay ended as any other, and resumed ones wait for you as any other.
-export function dismissInterrupted() {
-  for (const s of sessions.all()) if (s.interrupted) sessions.update(s.id, { interrupted: null });
+export function dismissInterrupted(paused = false) {
+  if (paused) pausing.cancel();
+  for (const s of sessions.all()) if (s.interrupted && (s.interrupted.cause === 'pause') === paused) sessions.update(s.id, { interrupted: null });
   notify();
+}
+
+export async function pause() {
+  const result = await pausing.start(sessions.all());
+  notify();
+  return result;
+}
+
+export const pauseState = () => ({ stopping: pausing.stopping() });
+
+export function pauseStep() {
+  if (pausing.step(sessions.all())) notify();
+}
+
+// Each paused task is asked to carry on; one whose Claude ended meanwhile, by a restart too, comes back on that prompt.
+export async function resumePaused(only?: string) {
+  const failed: { id: string; error: string }[] = [];
+  const tasks = sessions.all().filter((s) => s.interrupted?.cause === 'pause' && s.status !== 'working' && (!only || s.id === only));
+  for (const s of tasks) {
+    try {
+      if (s.status === 'exited') await continueConversation({ repoId: s.repoId, worktree: s.worktree, cwd: s.cwd, continueId: s.conversation, prompt: RESUME_PROMPT });
+      else await answers.type(s.id, RESUME_PROMPT);
+    } catch (err) {
+      failed.push({ id: s.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { resumed: tasks.length - failed.length, failed };
 }
 
 export async function openShell(worktree: string) {
@@ -142,6 +171,15 @@ function decided() {
 const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided, isCommand, checkUploads });
 
 export const { answer, answerMenu, acceptAdvice, dismiss } = answers;
+
+const pausing = pauser({
+  escape: async (id) => {
+    await answers.settled(id);
+    await terminal.keys(liveTty(must(id)), [{ key: 'escape' }]);
+  },
+  type: answers.type,
+  mark: (id, interrupted) => sessions.update(id, { interrupted }),
+});
 
 // A running Claude keeps its name in memory and writes it back to the transcript, so a live
 // session is renamed with its own /rename (it runs even mid-turn); an ended one in the file.

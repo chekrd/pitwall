@@ -21,6 +21,8 @@ interface State {
   sessions: Session[];
   usage: Usage | null;
   restart: { preparing: Preparing | null };
+  // Tasks Pause is still bringing to a stop.
+  pause: { stopping: string[] };
   drift: Drift[];
   link: Link;
   // The top bar offers to reload into a new build: in 15 s no moment came when reloading would lose nothing, or
@@ -31,7 +33,7 @@ interface State {
 const RELOAD_CAP_MS = 15_000;
 const RELOADED_FOR = 'pitwall:reloaded-for';
 
-let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], usage: null, restart: { preparing: null }, drift: [], link: 'connecting', newVersion: false };
+let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], usage: null, restart: { preparing: null }, pause: { stopping: [] }, drift: [], link: 'connecting', newVersion: false };
 const subscribers = new Set<() => void>();
 let order = '';
 

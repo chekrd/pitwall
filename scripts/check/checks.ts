@@ -5992,6 +5992,40 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P1 Pause stops every Claude at work and its background tasks, says when it is safe to close the laptop; Resume on a task page or Resume all carries on',
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
+      const all = (await mock.get('/api/state')).sessions as { id: string; status: string; title: string | null; parent: unknown; interrupted: { cause?: string } | null }[];
+      const working = all.filter((s) => s.status === 'working');
+      assert.ok(working.length > 1);
+      await page.click('header button[data-pause]');
+      const pausing = await page.until('the pausing banner', () => document.querySelector<HTMLElement>('[data-pause="stopping"]')?.innerText ?? null);
+      assert.match(pausing, /Pausing .*stopping .*each ends its turn and its background tasks/);
+      for (const s of working) if (s.title) assert.ok(pausing.includes(s.title), `names ${s.title}`);
+      const paused = await page.until('Safe to close the laptop', () => document.querySelector<HTMLElement>('[data-pause="paused"]')?.innerText ?? null);
+      assert.match(paused, /Paused .*Safe to close the laptop\./);
+      const state = (await mock.get('/api/state')).sessions as typeof all;
+      assert.deepEqual(state.filter((s) => s.interrupted?.cause === 'pause').map((s) => s.id).sort(), working.map((s) => s.id).sort());
+      assert.equal(state.filter((s) => s.status === 'working').length, 0, 'nothing runs any more');
+      const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
+      assert.equal(labels.filter((l) => l.endsWith(', Paused')).length, working.filter((s) => !s.parent).length);
+      await shot('paused');
+
+      const first = working.find((s) => s.title && !s.parent)!;
+      await page.click('[data-pause="paused"] button', first.title!);
+      await page.click('#task-sheet [data-interrupted="paused"] button', 'Resume');
+      const [one] = await logged(mock, 'the resume of one', (e) => e.path === '/api/pause/resume');
+      assert.equal(one.body.id, first.id);
+      await page.until('its note to go once Claude works', () => !document.querySelector('#task-sheet [data-interrupted]'));
+      await page.goto(`${mock.url}/wall`);
+      await page.click('[data-pause="paused"] button', 'Resume all');
+      await page.until('the banner to go once every Claude works', () => !document.querySelector('section[data-pause]'));
+      const after = (await mock.get('/api/state')).sessions as typeof all;
+      assert.equal(after.filter((s) => s.interrupted).length, 0);
+    },
+  },
+  {
     name: 'R1 after a restart the banner counts the tasks it ended; Resume all brings them back, the ones cut short mid-turn stay marked until Continue the turn',
     scenario: 'restarted',
     clock: 'fast',

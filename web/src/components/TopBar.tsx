@@ -8,6 +8,7 @@ import { clock } from '../util.ts';
 import { Icon } from './Icon.tsx';
 import { Meter } from './Meter.tsx';
 import { openNewTask } from './NewTaskForm.tsx';
+import { pauseAll } from './RestartBanner.tsx';
 import { ThemeMenu } from './ThemeMenu.tsx';
 import styles from './TopBar.module.css';
 import { Usage } from './Usage.tsx';
@@ -31,7 +32,7 @@ function ConnectionPill({ link }: { link: Link }) {
 }
 
 export function TopBar({ route, deck }: { route: Route; deck: readonly Session[] }) {
-  const { repos, link, newVersion, restart } = useStore();
+  const { repos, link, newVersion, restart, pause } = useStore();
   const { shown } = useQueue();
   const onQueue = route.view === 'queue';
   return (
@@ -51,6 +52,18 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
       <div className={styles.usage}><Usage /></div>
       <div className={styles.theme}><ThemeMenu /></div>
       <div className={styles.end}>
+        <button
+          type="button"
+          className={`${styles.ghost} ${styles.restart}`}
+          data-pause
+          aria-label="Pause"
+          aria-pressed={pause.stopping.length > 0}
+          title="Pause before you close the laptop: every Claude at work stops its turn and its background tasks; Resume carries on"
+          onClick={() => void pauseAll()}
+        >
+          <Icon name="pause" size={17} />
+          <span className={styles.label}>Pause</span>
+        </button>
         <button
           type="button"
           className={`${styles.ghost} ${styles.restart}`}

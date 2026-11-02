@@ -214,7 +214,7 @@ async function syncLive() {
     if (s.pid === null && Date.now() - s.updatedAt < STARTUP_GRACE_MS) continue;
     // The process lives on in another conversation after a /resume; this task is done. A /clear took the task with it.
     // After a restart the pid may be another process's.
-    const interrupted = interruption(s, await bootTime());
+    const interrupted = s.interrupted?.cause === 'pause' ? null : interruption(s, await bootTime());
     const replaced = !interrupted && s.pid !== null && livePids.has(s.pid);
     sessions.update(s.id, { status: 'exited', pid: null, waitingFor: null, menu: null, ...(interrupted && { interrupted }), ...(replaced && { archived: true }) });
     await readTranscript(s);

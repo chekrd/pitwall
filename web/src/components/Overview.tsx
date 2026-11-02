@@ -16,7 +16,7 @@ import { Icon } from './Icon.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { MenuBody } from './MenuBody.tsx';
 import { Options } from './Options.tsx';
-import { interruptedAs } from './RestartBanner.tsx';
+import { interruptedAs, resumePaused } from './RestartBanner.tsx';
 import styles from './Overview.module.css';
 import { SecondOpinion } from './SecondOpinion.tsx';
 import { STATE_LABELS, stoppedOnError } from './Status.tsx';
@@ -156,7 +156,21 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
 
 const CONTINUE_TURN = 'The Mac restarted while you were working and cut your last turn short. Check where you got to, then carry on.';
 
+function Paused({ session }: { session: Session }) {
+  if (session.status === 'working') return null;
+  return (
+    <section className={styles.blocked} data-interrupted="paused" data-ux-section="paused">
+      <p>
+        You paused this task mid-turn{session.status === 'exited' && ', and its Claude has ended since'}.
+        {' '}<strong>Resume</strong> has it start its background tasks again, check where it got to and carry on.
+      </p>
+      <button type="button" data-variant="primary" onClick={() => void resumePaused(session.id).catch(reportError)}>Resume</button>
+    </section>
+  );
+}
+
 function Interrupted({ session, name }: { session: Session; name: string }) {
+  if (session.interrupted!.cause === 'pause') return <Paused session={session} />;
   const was = STATE_LABELS[interruptedAs(session)].toLowerCase();
   const { waitingFor, menu } = session.interrupted!;
   const asked = waitingFor ?? (menu && `its question “${menu.questions.map((q) => q.question).join(' · ')}”`);

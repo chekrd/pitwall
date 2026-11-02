@@ -155,10 +155,11 @@ export interface EarlierConversation {
   until: number;
 }
 
-// What a task was doing when a restart of the Mac killed its Claude. Kept after it is resumed until there is nothing
-// left to pick up: a turn cut short stays until Claude works again.
+// What a task was doing when a restart of the Mac killed its Claude, or Pause stopped its turn. Kept after it is resumed
+// until there is nothing left to pick up: a turn cut short stays until Claude works again.
 export interface Interrupted {
   at: number;
+  cause?: 'pause';
   status: Exclude<SessionStatus, 'exited'>;
   waitingFor: string | null;
   menu: Menu | null;

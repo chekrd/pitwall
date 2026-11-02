@@ -44,12 +44,12 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
   const own = shownOf(session, busy);
   // A task that waits on its subtasks is in progress while any of them works.
   const shown = !archived && (own === 'idle' || own === 'exited') && unsettled.some((o) => !o.archived && shownOf(o, busy) === 'working') ? 'working' : own;
-  const label = archived ? 'Archived' : shown === 'exited' && session.interrupted ? 'Ended by restart' : labelOf(session, shown);
+  const label = archived ? 'Archived' : session.interrupted?.cause === 'pause' && session.status !== 'working' ? 'Paused' : shown === 'exited' && session.interrupted ? 'Ended by restart' : labelOf(session, shown);
   const working = !archived && attention === 'working';
   const asked = attention === 'decide' ? openDecision(session)?.askedAt : undefined;
   const tag = shown === 'decide' && !archived ? adviceTag(session) : null;
   const wanting = unsettled.filter((o) => !o.archived && WANTS.includes(shownOf(o, busy))).sort((a, b) => WANTS.indexOf(shownOf(a, busy)) - WANTS.indexOf(shownOf(b, busy)));
-  const restarted = unsettled.filter((o) => o.status === 'exited' && o.interrupted && !o.archived);
+  const restarted = unsettled.filter((o) => o.status === 'exited' && o.interrupted && o.interrupted.cause !== 'pause' && !o.archived);
   const wants = wanting.length && !archived && WANTS.indexOf(shownOf(wanting[0], busy)) < rank(shown) ? shownOf(wanting[0], busy) : undefined;
 
   const show = () => openSheet(session.id);
