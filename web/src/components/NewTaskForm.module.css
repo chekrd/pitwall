@@ -263,6 +263,15 @@
 
   .error { font-size: 14px; color: var(--danger); }
 
+  .when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    .field input { width: auto; color-scheme: inherit; }
+    .hint { flex-basis: 100%; }
+  }
+
   @media (max-width: 760px) {
     .dialog { width: calc(100% - 16px); margin-top: 104px; }
     .field { flex: 1 1 200px; }

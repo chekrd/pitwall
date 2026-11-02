@@ -14,6 +14,8 @@ test('a new database gets every step and the full schema', () => {
   for (const name of ['conversation', 'turn_error', 'last_prompt', 'priority']) assert.ok(sessions.some((c) => c.name === name), name);
   assert.equal(sessions.find((c) => c.name === 'repo_id')!.notnull, false);
   assert.ok(columns(db, 'repos').some((c) => c.name === 'hidden'));
+  assert.ok(sessions.some((c) => c.name === 'scheduled'));
+  assert.ok(columns(db, 'schedules').length);
 });
 
 test('a database from before numbered steps keeps its rows and reaches the same schema', () => {

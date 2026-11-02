@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -10,7 +11,7 @@ import { WebSocketServer } from 'ws';
 import { handleAdvisorMcp, retryAdvice, stopAdvice } from './advisor.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
 import { HOST, PORT, ROOT, USAGE_FILE, WEB_DIST } from './config.ts';
-import { repos, roots, sessions, uxEvents } from './db.ts';
+import { repos, roots, schedules, sessions, uxEvents } from './db.ts';
 import { listCommands } from './commands.ts';
 import { openDecision, Refusal } from './decision.ts';
 import { elaborate } from './explain.ts';
@@ -28,6 +29,7 @@ import { drift, onDrift } from './claudeFormat.ts';
 import { boardAnswer, boardTracker, cleanBatch, cleanEvent, KEEP_DAYS, type Data } from './uxlog.ts';
 import { folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
 import { folderDiff, makeTaskFolder } from './folderTasks.ts';
+import { nextRun, parseSchedule, repeats, scheduler, type Scheduled, type TaskRequest } from './schedule.ts';
 
 const run = promisify(execFile);
 const app = new Hono();
@@ -53,7 +55,7 @@ app.onError((err, c) => {
 
 const usage = watchUsage(USAGE_FILE, notify);
 onDrift(notify);
-const state = () => ({ ...snapshot(), usage: usage.current(), pause: S.pauseState(), drift: drift(), pitwall: ROOT });
+const state = () => ({ ...snapshot(), schedules: schedules.all(), usage: usage.current(), pause: S.pauseState(), drift: drift(), pitwall: ROOT });
 
 app.get('/api/state', (c) => c.json(state()));
 
@@ -146,49 +148,102 @@ const chosenModel = (body: { model?: string; effort?: string }) => {
   return { model, effort };
 };
 
-// A task across a folder of repos starts in an empty task folder; Claude opens a worktree in each repo it changes.
-app.post('/api/folder-tasks', async (c) => {
-  const body = await c.req.json<{ folder: string; name: string; prompt?: string; model?: string; effort?: string }>();
-  const { model, effort } = chosenModel(body);
-  const name = body.name.trim();
-  if (!name) throw new Error('name is required');
-  const path = await makeTaskFolder(body.folder, name);
-  const { model: fallback, real, effortOf } = await resolve(body.folder);
-  const running = model ? real(model) : fallback;
-  const sessionId = await S.startClaude({
-    repoId: null, worktree: path, prompt: body.prompt, title: name, model, effort, running: { model: running, effort: effort ?? effortOf(running) },
-  });
-  return c.json({ path, sessionId });
-});
+type NewTask = TaskRequest & { name: string; scheduled?: Scheduled };
 
-app.post('/api/worktrees', async (c) => {
-  const body = await c.req.json<{ repoId: number; name: string; branch?: string; path?: string; prompt?: string; existingBranch?: boolean; model?: string; effort?: string }>();
-  const repo = repoView(body.repoId);
+// A task across a folder of repos starts in an empty task folder; Claude opens a worktree in each repo it changes.
+async function startTask(req: NewTask) {
+  const { model, effort } = chosenModel(req);
+  const name = req.name.trim();
+  const prompt = req.prompt || undefined;
+  if (req.kind === 'folder') {
+    if (!name) throw new Error('name is required');
+    const path = await makeTaskFolder(req.folder, name);
+    const { model: fallback, real, effortOf } = await resolve(req.folder);
+    const running = model ? real(model) : fallback;
+    const sessionId = await S.startClaude({
+      repoId: null, worktree: path, prompt, title: name, model, effort, running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled,
+    });
+    return { path, sessionId };
+  }
+  const repo = repoView(req.repoId);
   if (!repo) throw new Error('unknown repo');
-  const { model, effort } = chosenModel(body);
-  const name = body.name.trim();
-  const branch = body.branch?.trim();
+  const branch = req.branch?.trim();
   let path: string;
-  if (body.existingBranch) {
+  if (req.existingBranch) {
     if (!branch) throw new Error('pick a branch');
     path = await S.checkoutExistingBranch(repo, branch);
   } else {
     if (!name) throw new Error('name is required');
-    const wanted = body.path?.trim().replace(/^~(?=\/|$)/, homedir()) || undefined;
+    const wanted = req.path?.trim().replace(/^~(?=\/|$)/, homedir()) || undefined;
     if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
     path = await addWorktree(repo.path, {
       branch: branch || name, task: name, base: repo.base, root: repo.defaultWorktreeRoot, path: wanted,
     });
   }
   await refreshWorkspace();
-  const setup = body.existingBranch ? null : repo.setupCommand;
+  const setup = req.existingBranch ? null : repo.setupCommand;
   const { model: fallback, real, effortOf } = await resolve(repo.path);
   const running = model ? real(model) : fallback;
   const sessionId = await S.startClaude({
-    repoId: repo.id, worktree: path, prompt: body.prompt, title: name, setup, model, effort, running: { model: running, effort: effort ?? effortOf(running) },
+    repoId: repo.id, worktree: path, prompt, title: req.scheduled || !req.existingBranch ? name : '', setup, model, effort,
+    running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled,
   });
-  return c.json({ path, sessionId });
+  return { path, sessionId };
+}
+
+app.post('/api/folder-tasks', async (c) => {
+  const body = await c.req.json<{ folder: string; name: string; prompt?: string; model?: string; effort?: string }>();
+  return c.json(await startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
 });
+
+app.post('/api/worktrees', async (c) => {
+  const body = await c.req.json<{ repoId: number; name: string; branch?: string; path?: string; prompt?: string; existingBranch?: boolean; model?: string; effort?: string }>();
+  return c.json(await startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
+});
+
+// Every name a run could clash with: tasks, their worktree folders and the branches checked out.
+const takenNames = () => new Set([
+  ...sessions.all().flatMap((s) => [s.title ?? '', s.worktree.split('/').at(-1)!]),
+  ...workspace().flatMap((r) => r.worktrees.flatMap((w) => [w.branch ?? '', w.path.split('/').at(-2)!])),
+]);
+
+const plan = scheduler({
+  list: schedules.all,
+  save: (s) => {
+    schedules.save(s);
+    notify();
+  },
+  start: async (s, name, scheduled) => (await startTask({ ...s.task, name, scheduled })).sessionId,
+  taken: takenNames,
+});
+
+app.post('/api/schedules', async (c) => {
+  const now = Date.now();
+  const { name, task, when } = parseSchedule(await c.req.json(), now);
+  const schedule = { id: randomUUID(), name, task, when, next: nextRun(when, now), paused: false, last: null, createdAt: now };
+  schedules.save(schedule);
+  notify();
+  return c.json(schedule);
+});
+
+app.patch('/api/schedules/:id', async (c) => {
+  const s = schedules.all().find((x) => x.id === c.req.param('id'));
+  if (!s) throw new Error('unknown schedule');
+  const { paused } = await c.req.json<{ paused: boolean }>();
+  // A repeating schedule picks up again at its next time after now, not at the runs it missed while paused.
+  const next = !paused && repeats(s.when) ? nextRun(s.when, Date.now()) : s.next;
+  schedules.save({ ...s, paused: !!paused, next });
+  notify();
+  return c.body(null, 204);
+});
+
+app.delete('/api/schedules/:id', (c) => {
+  schedules.remove(c.req.param('id'));
+  notify();
+  return c.body(null, 204);
+});
+
+app.post('/api/schedules/:id/run', async (c) => c.json(await plan.runNow(c.req.param('id'))));
 
 app.delete('/api/worktrees', async (c) => {
   const body = await c.req.json<{ repoId: number; path: string; force?: boolean; deleteBranch?: boolean }>();
@@ -399,8 +454,12 @@ app.get('*', async (c) => {
 await refreshWorkspace({ scan: true });
 await sync();
 setInterval(() => void sync().then(S.pauseStep).catch((err) => console.warn('session sync failed', err)), 1500);
+// A timer does not run while the Mac sleeps; the first step after it wakes starts what came due meanwhile.
+setInterval(() => void plan.step().catch((err) => console.warn('schedules failed', err)), 15_000);
 setInterval(() => void refreshWorkspace({ scan: true }).catch((err) => console.warn('workspace refresh failed', err)), 30_000);
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT, websocket: { server: new WebSocketServer({ noServer: true }) } }, () => {
   console.log(`pitwall listening on http://${HOST}:${PORT}`);
+  // Only now, as the Claude a schedule starts connects to the MCP server here.
+  void plan.step().catch((err) => console.warn('schedules failed', err));
 });

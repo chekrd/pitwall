@@ -19,6 +19,7 @@ import { MenuBody } from './MenuBody.tsx';
 import { Options } from './Options.tsx';
 import { interruptedAs, resumePaused } from './RestartBanner.tsx';
 import styles from './Overview.module.css';
+import { scheduledNote } from '../schedules.ts';
 import { SecondOpinion } from './SecondOpinion.tsx';
 import { STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { FocusButton } from './SessionMenu.tsx';
@@ -299,6 +300,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
                 <>
                   <dt>Task</dt>
                   <dd>{session.firstPrompt ?? '—'}</dd>
+                </>
+              )}
+              {session.scheduled && (
+                <>
+                  <dt title="The schedule that started this task">Schedule</dt>
+                  <dd data-scheduled>{scheduledNote(session.scheduled)}</dd>
                 </>
               )}
               {repo && (

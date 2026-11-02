@@ -16,6 +16,7 @@ import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
+import { nextRun, parseSchedule, repeats, scheduler, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
@@ -108,6 +109,7 @@ let delayMs = 0;
 let dropUntil = 0;
 let announced: string | null = null;
 let drift: Drift[] = [];
+let schedules: Schedule[] = [];
 
 // As the server's: Esc stops a turn, and the pause prompt runs a short turn that stops the background tasks.
 const pausing = pauser({
@@ -139,7 +141,7 @@ const taskWorktrees = (taskFolder: string) =>
   state.repos.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && parentOf(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
 
 const snapshot = () => ({
-  home: '/Users/me', roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders() }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
+  home: '/Users/me', roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders(), schedules }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
   ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: '~/git/github/pitwall' }),
 });
 
@@ -174,6 +176,7 @@ function load(name: string) {
   announced = null;
   pausing.cancel();
   drift = [];
+  schedules = [];
   state = make(Date.now());
   if (args.legacy) for (const s of state.sessions) s.answered = null;
   answers = answeringFor(state);
@@ -478,7 +481,7 @@ const MODELS: { models: Record<string, string>; efforts: Record<string, string |
   efforts: { '': 'medium', fable: 'high', opus: 'medium', sonnet: 'high', haiku: null },
 };
 
-function startSession(repoId: number | null, worktree: string, o: { id?: string; title?: string | null; prompt?: string | null; model?: string; effort?: string }) {
+function startSession(repoId: number | null, worktree: string, o: { id?: string; title?: string | null; prompt?: string | null; model?: string; effort?: string; scheduled?: Scheduled }) {
   const now = Date.now();
   const id = o.id ?? randomUUID();
   const working = !!o.prompt;
@@ -487,7 +490,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
     firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, rank: null, rankReason: null, priority: null, diffstat: null,
     lastMessage: null, lastPrompt: null, lastTurn: null, waitingFor: null, dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null,
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null,
-    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, archived: false, createdAt: now, updatedAt: now,
+    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, archived: false, createdAt: now, updatedAt: now,
   });
   push();
   return id;
@@ -638,22 +641,74 @@ route('DELETE', '/api/repos/:id', ({ params }) => {
 });
 route('GET', '/api/repos/:id/branches', ({ params }) => branches(mustRepo(Number(params[0]))));
 route('GET', '/api/repos/:id/models', () => MODELS);
-route('POST', '/api/worktrees', ({ body }) => {
-  const repo = mustRepo(body.repoId);
-  const path = addWorktree(repo, body);
+// As the server's startTask: what New task posts, and what a schedule starts when due.
+function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
+  const model = MODELS.models[req.model ?? ''] ?? req.model;
+  const effort = req.effort || MODELS.efforts[req.model ?? ''] || undefined;
+  const name = String(req.name ?? '').trim();
+  if (req.kind === 'folder') {
+    const folder = folders().find((f) => f.path === req.folder);
+    if (!folder) throw new Error('unknown folder');
+    if (!name) throw new Error('name is required');
+    const path = `${folder.path}/worktrees/${name}`;
+    if (state.sessions.some((s) => s.worktree === path) || taskWorktrees(path).length) throw new Error(`${path} already exists; pick another name`);
+    return { path, sessionId: startSession(null, path, { title: name, prompt: req.prompt, model, effort, scheduled: req.scheduled }) };
+  }
+  const repo = mustRepo(req.repoId);
+  const path = addWorktree(repo, req);
   push();
-  return { path, sessionId: startSession(repo.id, path, { title: String(body.name ?? '').trim(), prompt: body.prompt, model: MODELS.models[body.model ?? ''] ?? body.model, effort: body.effort || MODELS.efforts[body.model ?? ''] || undefined }) };
-});
+  return { path, sessionId: startSession(repo.id, path, { title: req.scheduled || !req.existingBranch ? name : '', prompt: req.prompt, model, effort, scheduled: req.scheduled }) };
+}
+
+route('POST', '/api/worktrees', ({ body }) => startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
 route('GET', '/api/folders/models', () => MODELS);
-// As the server: the task folder starts empty, and Claude opens worktrees in it (/mock/open-worktree here).
-route('POST', '/api/folder-tasks', ({ body }) => {
-  const folder = folders().find((f) => f.path === body.folder);
-  if (!folder) throw new Error('unknown folder');
-  const name = String(body.name ?? '').trim();
-  if (!name) throw new Error('name is required');
-  const path = `${folder.path}/worktrees/${name}`;
-  if (state.sessions.some((s) => s.worktree === path) || taskWorktrees(path).length) throw new Error(`${path} already exists; pick another name`);
-  return { path, sessionId: startSession(null, path, { title: name, prompt: body.prompt, model: MODELS.models[body.model ?? ''] ?? body.model, effort: body.effort || MODELS.efforts[body.model ?? ''] || undefined }) };
+route('POST', '/api/folder-tasks', ({ body }) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
+
+// The server's scheduler over the mock's tasks; /mock/schedules/step runs a step as if the clock read `at`.
+let clockAt: number | null = null;
+const plan = scheduler({
+  list: () => schedules,
+  save: (s) => {
+    schedules = schedules.map((x) => (x.id === s.id ? s : x));
+    push();
+  },
+  start: async (s, name, scheduled) => startTask({ ...s.task, name, scheduled }).sessionId,
+  taken: () => new Set([
+    ...state.sessions.flatMap((s) => [s.title ?? '', s.worktree.split('/').at(-1)!]),
+    ...state.repos.flatMap((r) => r.worktrees.flatMap((w) => [w.branch ?? '', w.path.split('/').at(-2)!])),
+  ]),
+  now: () => clockAt ?? Date.now(),
+});
+route('POST', '/api/schedules', ({ body }) => {
+  const now = Date.now();
+  const { name, task, when } = parseSchedule(body, now);
+  const schedule: Schedule = { id: randomUUID(), name, task, when, next: nextRun(when, now), paused: false, last: null, createdAt: now };
+  schedules.push(schedule);
+  push();
+  return schedule;
+});
+route('PATCH', '/api/schedules/:id', ({ params, body }) => {
+  const s = schedules.find((x) => x.id === params[0]);
+  if (!s) throw new Error('unknown schedule');
+  s.paused = !!body.paused;
+  if (!s.paused && repeats(s.when)) s.next = nextRun(s.when, Date.now());
+  push();
+  return NONE;
+});
+route('DELETE', '/api/schedules/:id', ({ params }) => {
+  schedules = schedules.filter((x) => x.id !== params[0]);
+  push();
+  return NONE;
+});
+route('POST', '/api/schedules/:id/run', ({ params }) => plan.runNow(params[0]));
+route('POST', '/mock/schedules/step', async ({ body }) => {
+  clockAt = Number(body.at);
+  try {
+    await plan.step();
+  } finally {
+    clockAt = null;
+  }
+  return schedules;
 });
 route('DELETE', '/api/worktrees', ({ body }) => {
   removeWorktree(mustRepo(body.repoId), body.path);

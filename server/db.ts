@@ -5,6 +5,7 @@ import type { Activity, Menu, TurnError } from './conversations.ts';
 import type { DiffStat } from './git.ts';
 import type { MenuAnswer } from './menu.ts';
 import { migrate } from './migrations.ts';
+import type { Schedule, Scheduled } from './schedule.ts';
 import { migrateUx, uxStore } from './uxlog.ts';
 
 mkdirSync(DATA_DIR, { recursive: true });
@@ -209,6 +210,7 @@ export interface Session {
   effort: string | null;
   interrupted: Interrupted | null;
   turnError: TurnError | null;
+  scheduled: Scheduled | null;
   archived: boolean;
   createdAt: number;
   updatedAt: number;
@@ -266,6 +268,7 @@ const toSession = (r: Row): Session => ({
   effort: r.effort,
   interrupted: r.interrupted ? JSON.parse(r.interrupted) : null,
   turnError: r.turn_error ? JSON.parse(r.turn_error) : null,
+  scheduled: r.scheduled ? JSON.parse(r.scheduled) : null,
   archived: !!r.archived,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -330,6 +333,7 @@ const columns: Record<string, string> = {
   effort: 'effort',
   interrupted: 'interrupted',
   turnError: 'turn_error',
+  scheduled: 'scheduled',
   archived: 'archived',
   conversation: 'conversation',
   history: 'history',
@@ -354,7 +358,7 @@ export const sessions = {
       ON CONFLICT(id) DO UPDATE SET pid = excluded.pid, tty = excluded.tty, status = excluded.status, archived = 0, updated_at = excluded.updated_at`)
       .run(s.id, s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');
@@ -364,6 +368,14 @@ export const sessions = {
   },
   remove: (id: string) => db.prepare('DELETE FROM sessions WHERE id = ?').run(id),
   removeByWorktree: (worktree: string) => db.prepare('DELETE FROM sessions WHERE worktree = ?').run(worktree),
+};
+
+export const schedules = {
+  all: (): Schedule[] => db.prepare('SELECT data FROM schedules ORDER BY created_at').all().map((r) => JSON.parse(String(r.data))),
+  save: (s: Schedule) =>
+    db.prepare('INSERT INTO schedules (id, data, created_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
+      .run(s.id, JSON.stringify(s), s.createdAt),
+  remove: (id: string) => db.prepare('DELETE FROM schedules WHERE id = ?').run(id),
 };
 
 migrateUx(db);

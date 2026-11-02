@@ -6,9 +6,10 @@ import { attentionOf } from '../util.ts';
 import { Icon } from './Icon.tsx';
 import styles from './Wall.module.css';
 import { WallTile } from './WallTile.tsx';
+import { ScheduledLink, Schedules } from './Schedules.tsx';
 
 export function Wall({ deck }: { deck: readonly Session[] }) {
-  const { repos, sessions, link } = useStore();
+  const { repos, sessions, schedules, link } = useStore();
   if (link === 'connecting') {
     return (
       <main className={styles.wall}>
@@ -30,6 +31,7 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
         <div className={styles.titles}>
           <h1>{title}</h1>
           {sub && <p>{sub}</p>}
+          {schedules.length > 0 && <ScheduledLink />}
         </div>
         {deck.length > 0 && (
           <a className={styles.back} href="/">
@@ -46,6 +48,7 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
       <div className={styles.tiles}>
         {active.map((s) => <WallTile key={s.id} session={s} repos={repos} />)}
       </div>
+      <Schedules />
       {archived.length > 0 && (
         <details className={styles.archived}>
           <summary><Icon name="chevron-right" size={14} />Archived ({archived.length})</summary>

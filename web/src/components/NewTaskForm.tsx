@@ -5,6 +5,9 @@ import { keepUnderLayer } from '../layers.ts';
 import { openSheet } from '../router.ts';
 import type { FolderView, RepoView } from '../types.ts';
 import { useStore } from '../store.ts';
+import { DAYS, describeWhen } from '../schedules.ts';
+import type { Schedule, When } from '../types.ts';
+import { toast } from './Toasts.tsx';
 import { EFFORTS, effortName, modelName, tilde, untilde } from '../util.ts';
 import { Icon } from './Icon.tsx';
 import styles from './NewTaskForm.module.css';
@@ -22,6 +25,11 @@ interface Fields {
   effort: string;
   // The prompt, model and effort, folded away by default since a task usually starts without them.
   more: boolean;
+  // Now, or a schedule: once at `at` (a datetime-local value), or at `time` on `days` (0 is Sunday).
+  start: 'now' | 'once' | 'repeat';
+  at: string;
+  time: string;
+  days: number[];
 }
 
 // What each choice of model comes to, '' being what Claude Code picks by itself, and the effort it starts with.
@@ -40,10 +48,31 @@ interface Branch {
 const DIALOG = 'new-task';
 const STORED = 'pitwall:new-task';
 const CHOICES = 'pitwall:new-task-choices';
-const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: '', effort: '', more: false };
+const WHEN = { start: 'now', at: '', time: '09:00', days: [1, 2, 3, 4, 5] } as const satisfies Partial<Fields>;
+const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: '', effort: '', more: false, ...WHEN, days: [...WHEN.days] };
 const choicesOf = ({ repoId, folder, existing, model, effort, more }: Fields) => ({ repoId, folder, existing, model, effort, more });
 
 const NAME = /^[A-Za-z0-9._/-]+$/;
+// Monday first.
+const WEEK = [1, 2, 3, 4, 5, 6, 0];
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// The next whole hour, at least ten minutes away.
+const soon = () => {
+  const d = new Date(Date.now() + 10 * 60_000);
+  d.setHours(d.getHours() + 1, 0, 0, 0);
+  return localInput(d);
+};
+
+function whenOf(f: Fields): When | null {
+  if (f.start === 'once') {
+    const at = new Date(f.at).getTime();
+    return Number.isFinite(at) && at > Date.now() ? { at } : null;
+  }
+  if (f.start === 'repeat') return /^\d\d:\d\d$/.test(f.time) && f.days.length ? { time: f.time, days: f.days.toSorted() } : null;
+  return null;
+}
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
 const read = (storage: () => Storage, key: string) => {
@@ -55,8 +84,8 @@ const read = (storage: () => Storage, key: string) => {
 };
 
 function stored(): Fields {
-  const { prompt, branch, path } = read(() => sessionStorage, STORED);
-  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '' };
+  const { prompt, branch, path, start, at, time, days } = read(() => sessionStorage, STORED);
+  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '', start: start ?? 'now', at: at ?? '', time: time ?? WHEN.time, days: days ?? [...WHEN.days] };
   return { ...EMPTY, ...read(() => localStorage, CHOICES), ...draft };
 }
 
@@ -80,7 +109,8 @@ const notify = () => {
 function edit(patch: Partial<Fields>) {
   fields = { ...fields, ...patch };
   try {
-    sessionStorage.setItem(STORED, JSON.stringify({ prompt: fields.prompt, branch: fields.branch, path: fields.path }));
+    const { prompt, branch, path, start, at, time, days } = fields;
+    sessionStorage.setItem(STORED, JSON.stringify({ prompt, branch, path, start, at, time, days }));
     localStorage.setItem(CHOICES, JSON.stringify(choicesOf(fields)));
   } catch {
     // A page without storage keeps them in memory only.
@@ -368,7 +398,10 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
 
   const name = f.name.trim();
   const branch = f.branch.trim();
-  const valid = existing ? !!branch : pickedFolder ? NAME.test(name) && !name.includes('/') : NAME.test(name);
+  const scheduling = f.start !== 'now';
+  const when = whenOf(f);
+  const valid = (existing ? !!branch : pickedFolder ? NAME.test(name) && !name.includes('/') : NAME.test(name))
+    && (!scheduling || (!!f.prompt.trim() && !!when && (existing || !name.includes('/'))));
   const main = repo.worktrees.find((w) => w.isMain);
   const list = read?.repoId === repo.id ? read.list : null;
   const picked = list?.find((b) => b.name === branch);
@@ -382,6 +415,17 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length,
     };
     try {
+      if (now.start !== 'now') {
+        const task = pickedFolder
+          ? { kind: 'folder', folder: pickedFolder.path, prompt: now.prompt, model: now.model, effort: now.effort }
+          : { kind: 'repo', repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, model: now.model, effort: now.effort };
+        const schedule = await api<Schedule>('POST', '/api/schedules', { name: now.existing && !pickedFolder ? '' : now.name.trim(), task, when: whenOf(now) });
+        edit({ ...EMPTY, ...choicesOf(now), repoId: pickedFolder ? now.repoId : repo.id, branch: now.existing && !pickedFolder ? defaultBranch(repo) : '' });
+        track('new-task', { ...chose, schedule: now.start, ok: true });
+        done?.();
+        toast('info', `Scheduled ${schedule.name}: ${describeWhen(schedule.when)}. It is on the Wall.`);
+        return null;
+      }
       if (pickedFolder) {
         const result = await api<{ path: string; sessionId: string }>('POST', '/api/folder-tasks', {
           folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, model: now.model, effort: now.effort,
@@ -408,7 +452,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       if (result.sessionId) openSheet(result.sessionId);
       return null;
     } catch (err) {
-      track('new-task', { ...chose, ok: false });
+      track('new-task', { ...chose, ...(now.start !== 'now' && { schedule: now.start }), ok: false });
       return (err as Error).message;
     }
   }, null);
@@ -433,7 +477,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
-  const chosen = [f.prompt.trim() && 'prompt', f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+  const chosen = [when && describeWhen(when), f.prompt.trim() && 'prompt', f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
   return (
     <form className={styles.form} action={create} onKeyDown={onFormKey}>
@@ -459,7 +503,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           </label>
         )}
         <button type="submit" className={styles.create} disabled={!valid || pending}>
-          {pending ? 'Creating…' : 'Create'} <kbd>⌘↵</kbd>
+          {pending ? (scheduling ? 'Scheduling…' : 'Creating…') : scheduling ? 'Schedule' : 'Create'} <kbd>⌘↵</kbd>
         </button>
       </div>
       <div className={styles.foot}>
@@ -494,7 +538,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
             className={styles.prompt}
             rows={1}
             aria-label="What should Claude work on?"
-            placeholder="What should Claude work on? (optional)"
+            placeholder={scheduling ? 'What should Claude work on? (a scheduled task needs a prompt)' : 'What should Claude work on? (optional)'}
             value={f.prompt}
             onChange={(e) => edit({ prompt: e.currentTarget.value })}
           />
@@ -525,6 +569,50 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
               </select>
               <Icon name="chevron-down" size={14} />
             </label>
+          </div>
+          <div className={styles.when} data-when>
+            <fieldset className={styles.mode}>
+              <legend>When Claude starts</legend>
+              {(['now', 'once', 'repeat'] as const).map((start) => (
+                <label key={start}>
+                  <input type="radio" name="start" checked={f.start === start} onChange={() => edit({ start, ...(start === 'once' && !f.at && { at: soon() }) })} />
+                  {{ now: 'Now', once: 'Once', repeat: 'Repeat' }[start]}
+                </label>
+              ))}
+            </fieldset>
+            {f.start === 'once' && (
+              <label className={styles.field}>
+                <span className={styles.caption}>At</span>
+                <input type="datetime-local" aria-label="Start at" value={f.at} min={soon()} onChange={(e) => edit({ at: e.currentTarget.value })} />
+              </label>
+            )}
+            {f.start === 'repeat' && (
+              <>
+                <label className={styles.field}>
+                  <span className={styles.caption}>At</span>
+                  <input type="time" aria-label="Start at" value={f.time} onChange={(e) => edit({ time: e.currentTarget.value })} />
+                </label>
+                <fieldset className={styles.mode} data-days>
+                  <legend>On</legend>
+                  {WEEK.map((d) => (
+                    <label key={d} title={DAYS[d]}>
+                      <input
+                        type="checkbox"
+                        checked={f.days.includes(d)}
+                        onChange={(e) => edit({ days: e.currentTarget.checked ? [...f.days, d] : f.days.filter((x) => x !== d) })}
+                      />
+                      {DAYS[d].slice(0, 2)}
+                    </label>
+                  ))}
+                </fieldset>
+              </>
+            )}
+            {scheduling && (
+              <p className={styles.hint}>
+                {!when ? (f.start === 'once' ? 'Pick a time to come.' : 'Pick at least one day.')
+                  : <>{existing ? 'Starts' : 'Creates the worktree and starts'} Claude {describeWhen(when)}{f.start === 'repeat' && !existing && <>, a new one each time, named <code>{name || '<name>'}-</code> and the date</>}. A run missed while the Mac sleeps starts when it wakes.</>}
+              </p>
+            )}
           </div>
         </div>
       )}

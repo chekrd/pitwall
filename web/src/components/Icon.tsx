@@ -18,6 +18,13 @@ const shapes = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   pause: <path d="M9 5.5v13M15 5.5v13" />,
+  play: <path d="M8 5.5v13l10.5-6.5z" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </>
+  ),
   bug: (
     <>
       <rect x="7.5" y="8" width="9" height="12" rx="4.5" />

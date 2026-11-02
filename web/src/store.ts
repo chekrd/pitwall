@@ -4,7 +4,7 @@ import { wsUrl } from './api.ts';
 import { orderKey } from './order.ts';
 import { active } from './outbox.ts';
 import { sends } from './sends.ts';
-import type { Drift, FolderView, RepoView, Session, Usage } from './types.ts';
+import type { Drift, FolderView, RepoView, Schedule, Session, Usage } from './types.ts';
 import { menuOpen } from './layers.ts';
 import { isEditable } from './useKeys.ts';
 import { record } from './recorder.ts';
@@ -19,6 +19,7 @@ interface State {
   repos: RepoView[];
   folders: FolderView[];
   sessions: Session[];
+  schedules: Schedule[];
   usage: Usage | null;
   // Tasks Pause is still bringing to a stop, and those of them still finishing a turn.
   pause: { stopping: string[]; finishing: string[] };
@@ -34,7 +35,7 @@ interface State {
 const RELOAD_CAP_MS = 15_000;
 const RELOADED_FOR = 'pitwall:reloaded-for';
 
-let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], usage: null, pause: { stopping: [], finishing: [] }, drift: [], pitwall: '', link: 'connecting', newVersion: false };
+let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], schedules: [], usage: null, pause: { stopping: [], finishing: [] }, drift: [], pitwall: '', link: 'connecting', newVersion: false };
 const subscribers = new Set<() => void>();
 let order = '';
 

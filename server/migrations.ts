@@ -71,6 +71,13 @@ export const migrations: Migration[] = [
     }
     if (!columnsOf(db, 'repos').includes('hidden')) db.exec('ALTER TABLE repos ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0');
   },
+  // 2: scheduled tasks, and the schedule each task was started by.
+  (db) => {
+    db.exec(`
+      CREATE TABLE schedules (id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL);
+      ALTER TABLE sessions ADD COLUMN scheduled TEXT;
+    `);
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

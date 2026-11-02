@@ -2381,11 +2381,11 @@ export const checks: Check[] = [
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
-      await page.eval(() => [...document.querySelectorAll<HTMLSelectElement>('dialog#new-task select')].at(-1)!.focus());
+      await page.eval(() => document.querySelector<HTMLInputElement>('dialog#new-task [data-when] input:checked')!.focus());
       await page.key('Tab');
       await page.until('the repository button, after the last field', focused, button);
       await page.key('Tab', { shift: true });
-      await page.until('the last field again', () => document.activeElement === [...document.querySelectorAll('dialog#new-task select')].at(-1));
+      await page.until('the last field again', () => document.activeElement === document.querySelector('dialog#new-task [data-when] input:checked'));
       await page.key('Tab');
       await page.until('the repository button', focused, button);
 
@@ -5931,7 +5931,7 @@ export const checks: Check[] = [
       await page.type('cart api');
       const form = await page.eval(() => ({
         target: document.querySelector('dialog#new-task button[aria-haspopup="listbox"]')?.getAttribute('aria-label'),
-        mode: !!document.querySelector('dialog#new-task fieldset'),
+        mode: !!document.querySelector('dialog#new-task input[name="mode"]'),
         branch: !!document.querySelector('dialog#new-task input[placeholder="cart-api"]'),
         hint: document.querySelector('dialog#new-task [data-hint]')?.textContent,
       }));
@@ -6482,6 +6482,135 @@ export const checks: Check[] = [
 
       await mock.post('/mock/patch', { id: s.id, patch: { turnError: null } });
       await page.until('the error to go once Claude replies', () => !document.querySelector('#task-sheet [data-turn-error], #task-sheet [data-error]'));
+    },
+  },
+  {
+    name: 'S1 New task can repeat: Repeat under More offers weekdays at 09:00, needs a prompt, and the button reads Schedule; ⌘↵ posts the schedule, says so in a toast and lists it under Scheduled on the Wall with its next run; Run now opens a task named by the date whose facts name the schedule; Pause and Resume, and Delete with Undo',
+    async run({ page, mock, shot }) {
+      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      assert.equal(await page.eval(() => !!document.querySelector('[data-schedules]')), false, 'no Scheduled list without a schedule');
+      await openNewTask(page);
+      await pickRepo(page, 'storefront');
+      await page.click('dialog#new-task input[placeholder="fix-login-redirect"]');
+      await page.type('nightly-review');
+      await page.click('dialog#new-task [data-when] label', 'Repeat');
+      const form = await page.until('the repeat fields', () => {
+        const when = document.querySelector('dialog#new-task [data-when]');
+        const time = when?.querySelector<HTMLInputElement>('input[type="time"]');
+        const button = document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!;
+        return time && {
+          time: time.value,
+          days: [...when!.querySelectorAll<HTMLInputElement>('[data-days] input')].map((i) => i.checked),
+          button: button.textContent, disabled: button.disabled,
+        };
+      });
+      assert.deepEqual(form, { time: '09:00', days: [true, true, true, true, true, false, false], button: 'Schedule ⌘↵', disabled: true });
+      await typeInPrompt(page);
+      await page.type('Review the open PRs and summarise what needs me');
+      await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
+      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when] p')!.textContent!), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
+      await shot('new-task-repeat');
+      await page.eval(submit);
+      const [posted] = await logged(mock, 'the schedule', (e) => e.method === 'POST' && e.path === '/api/schedules');
+      assert.equal(posted.status, 200);
+      assert.deepEqual(posted.body.when, { time: '09:00', days: [1, 2, 3, 4, 5] });
+      assert.deepEqual({ ...posted.body.task, name: posted.body.name }, {
+        kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Review the open PRs and summarise what needs me', model: '', effort: '', name: 'nightly-review',
+      });
+      await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#new-task')!.open);
+      await page.until('the toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => /Scheduled nightly-review: weekdays at 09:00/.test(t.textContent!)));
+      const row = await page.until('the schedule on the Wall', () => {
+        const r = document.querySelector<HTMLElement>('[data-schedules] [data-schedule="nightly-review"]');
+        return r && { text: r.innerText, next: r.querySelector('[data-next]')!.textContent };
+      });
+      assert.match(row.text, /storefront · weekdays at 09:00/);
+      assert.match(row.next!, /^Next .+ at 09:00$/);
+      assert.match(await page.eval(() => document.querySelector('[data-scheduled-link]')!.textContent!), /^1 scheduled, next .+ at 09:00$/);
+      await page.click('[data-scheduled-link]');
+      await page.until('the list scrolled into view', () => {
+        const r = document.querySelector('[data-schedules]')!.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= innerHeight;
+      });
+      await page.eval(() => document.querySelector('[data-schedules]')!.scrollIntoView({ block: 'center' }));
+      await shot('wall-scheduled');
+
+      await page.click('[data-schedule="nightly-review"] button', 'Run now');
+      const d = new Date();
+      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      await page.until('the run\'s sheet', (name: string) => !!document.querySelector('#task-sheet') && document.querySelector('#task-sheet h2')?.textContent === name, `nightly-review-${today}`);
+      const facts = await page.until('its facts', () => {
+        const dl = document.querySelector('#task-sheet dl');
+        return dl && Object.fromEntries([...dl.querySelectorAll('dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]));
+      });
+      assert.match(facts.Schedule ?? '', /^nightly-review, started with Run now today at \d\d:\d\d$/);
+      await page.click('#task-sheet button[aria-label^="Back to"]');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the last run', () => /^Ran today at/.test(document.querySelector('[data-schedule="nightly-review"] [data-last="ran"]')?.textContent ?? ''));
+
+      await page.click('[data-schedule="nightly-review"] button', 'Pause');
+      await page.until('paused', () => document.querySelector('[data-schedule="nightly-review"]')?.hasAttribute('data-paused') &&
+        document.querySelector('[data-schedule="nightly-review"] [data-next]')?.textContent === 'Paused');
+      await page.click('[data-schedule="nightly-review"] button', 'Resume');
+      await page.until('resumed', () => /^Next /.test(document.querySelector('[data-schedule="nightly-review"] [data-next]')?.textContent ?? ''));
+
+      await page.click('[data-schedule="nightly-review"] button[aria-label="Delete nightly-review"]');
+      await page.until('the list gone', () => !document.querySelector('[data-schedules]'));
+      await page.click('[data-toast] button', 'Undo');
+      await page.until('the schedule back', () => !!document.querySelector('[data-schedule="nightly-review"]'));
+    },
+  },
+  {
+    name: 'S2 a one-off missed while the Mac slept starts once when it wakes: its task says it started late and why, and the schedule reads Done with the run; a step after starts nothing more',
+    async run({ page, mock, shot }) {
+      const due = Date.now() + 3_600_000;
+      const schedule = await mock.post('/api/schedules', {
+        name: 'after-lunch', when: { at: due },
+        task: { kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Bump the dependencies', model: '', effort: '' },
+      });
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the schedule', () => /^Next (today|tomorrow) at/.test(document.querySelector('[data-schedule="after-lunch"] [data-next]')?.textContent ?? ''));
+      const before = (await mock.get('/api/state')).sessions.length;
+      await mock.post('/mock/schedules/step', { at: due - 60_000 });
+      assert.equal((await mock.get('/api/state')).sessions.length, before, 'not before it is due');
+      await mock.post('/mock/schedules/step', { at: due + 3 * 3_600_000 });
+      await mock.post('/mock/schedules/step', { at: due + 3 * 3_600_000 + 60_000 });
+      const { sessions, schedules } = await mock.get('/api/state');
+      assert.equal(sessions.length, before + 1, 'one task for the missed run');
+      const [s] = schedules;
+      assert.equal(s.id, schedule.id);
+      assert.equal(s.next, null);
+      assert.equal(s.last.due, due);
+      await page.until('Done, with the run', () => document.querySelector('[data-schedule="after-lunch"] [data-next]')?.textContent === 'Done' &&
+        !!document.querySelector('[data-schedule="after-lunch"] [data-last="ran"]'));
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('[data-schedule="after-lunch"] button:not([data-last])')].map((b) => b.textContent || b.getAttribute('aria-label'))), ['Run now', 'Delete after-lunch']);
+      await page.eval(() => document.querySelector('[data-schedules]')!.scrollIntoView({ block: 'center' }));
+      await shot('wall-scheduled-done');
+      await page.click('[data-schedule="after-lunch"] [data-last="ran"]');
+      const note = await page.until('the schedule fact', () => document.querySelector('#task-sheet [data-scheduled]')?.textContent);
+      assert.match(note!, /^after-lunch, due (today|tomorrow) at \d\d:\d\d; started (today|tomorrow) at \d\d:\d\d, as the Mac was asleep or Pitwall was not running then$/);
+    },
+  },
+  {
+    name: 'S3 narrow: a schedule on the Wall fits the window, its Run now, Pause and Delete in reach',
+    narrow: true,
+    async run({ page, mock, shot }) {
+      await mock.post('/api/schedules', {
+        name: 'weekly-dependency-bump', when: { time: '07:30', days: [1] },
+        task: { kind: 'repo', repoId: 1, existingBranch: true, branch: 'main', path: '', prompt: 'Bump the dependencies and open a PR when the checks pass', model: '', effort: '' },
+      });
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the schedule', () => !!document.querySelector('[data-schedule="weekly-dependency-bump"]'));
+      const fit = await page.eval(() => {
+        const row = document.querySelector('[data-schedule="weekly-dependency-bump"]')!.getBoundingClientRect();
+        const buttons = [...document.querySelectorAll('[data-schedule="weekly-dependency-bump"] button')].map((b) => b.getBoundingClientRect());
+        return { scroll: document.documentElement.scrollWidth <= innerWidth, row: row.left >= 0 && row.right <= innerWidth, buttons: buttons.every((b) => b.left >= 0 && b.right <= innerWidth) };
+      });
+      assert.deepEqual(fit, { scroll: true, row: true, buttons: true });
+      assert.match(await page.eval(() => document.querySelector('[data-schedule="weekly-dependency-bump"]')!.textContent!), /on main · Mondays at 07:30/);
+      await page.eval(() => document.querySelector('[data-schedules]')!.scrollIntoView({ block: 'center' }));
+      await shot('wall-scheduled-narrow');
     },
   },
 ];
