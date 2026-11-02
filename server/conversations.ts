@@ -402,7 +402,7 @@ function background(entries: Record<string, any>[], carried: readonly [string, s
 // A command may first change into the repository it is for: `cd <dir> && …` or `cd <dir>; …`.
 const ENV_PREFIX = String.raw`^\s*(?:cd\s+("[^"]+"|'[^']+'|[^\s;&]+)\s*(?:&&|;)\s*)?(?:\w+=\S*\s+)*`;
 const WATCH_PR = new RegExp(`${ENV_PREFIX}\\S*pr-to-green/watch-pr\\.sh\\s+(\\d+)(?:\\s+"([^"]*)")?`);
-const CREATE_PR = new RegExp(`${ENV_PREFIX}az repos pr create\\b`);
+const CREATE_PR = new RegExp(`${ENV_PREFIX}az repos pr create\\b`, 'm');
 const REPOSITORY_ARG = /\s(?:--repository|-r)\s+("[^"]+"|'[^']+'|\S+)/;
 const RESULT_LINE = /^(RUNNING|PASSED|FAILED|CLOSED|ERROR)\b.*$/m;
 
@@ -476,7 +476,8 @@ async function prFlows(entries: Record<string, any>[]): Promise<{ flows: PrRead[
       if (b.type !== 'tool_result') continue;
       const text = resultText(entry, b);
       const created = creators.get(b.tool_use_id);
-      const id = created && Number(text.match(/"pullRequestId":\s*(\d+)/)?.[1]);
+      // Without its JSON, the output is az's id reduced by --query or a script, first on its first line.
+      const id = created && Number(text.match(/"pullRequestId":\s*(\d+)/)?.[1] ?? text.match(/^\s*(\d+)\b/)?.[1]);
       if (created && id) {
         const repository = created.repository ?? text.match(/"repository":\s*\{[^{}]*?"name":\s*"([^"]+)"/)?.[1] ?? null;
         const f = created.id === null && !flows.some((o) => o.id === id) ? created : withId(id, entry.timestamp);

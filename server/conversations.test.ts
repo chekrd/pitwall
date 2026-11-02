@@ -286,6 +286,15 @@ test('pr-to-green: the created PR and the last watch-pr.sh result', async () => 
   assert.equal(m.prs[0]?.watching, false);
 });
 
+test('a PR created after a heredoc, its id reduced to a line by a script', async () => {
+  const m = await meta([
+    prompt('open a PR'),
+    assistant([toolUse('c', 'Bash', { command: "cat > pr.md <<'EOF'\n## Why\nEOF\naz repos pr create --repository client --title x -o json | python3 -c \"print(p['pullRequestId'],p['status'])\"" })]),
+    toolResult('c', '23893 active'),
+  ]);
+  assert.deepEqual(m.prs.map(({ id, repository }) => ({ id, repository })), [{ id: 23893, repository: 'client' }]);
+});
+
 test('a watcher still running in the background keeps watching', async () => {
   const m = await meta([
     prompt('ship it'),
