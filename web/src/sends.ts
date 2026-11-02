@@ -75,10 +75,11 @@ export const sends = createOutbox<Restore>({
 const short = (text: string) => (text.length > 120 ? `${text.slice(0, 119).trimEnd()}…` : text);
 const quote = (text: string) => `“${short(text)}”`;
 
+// The toast keeps one line of a set width, so the task leads and the message is cut to what fits.
 function heldText(i: Item<Restore>) {
-  if (i.command) return `Sending ${short(i.label)} to ${i.restore.name}`;
+  if (i.command) return `Sending to ${i.restore.name}: ${short(i.label)}`;
   if (i.action === 'dismiss') return `Dismissing ${quote(i.label)}`;
-  return `Sending ${quote(i.label)} to ${i.restore.name}`;
+  return `Sending to ${i.restore.name}: ${quote(i.label)}`;
 }
 
 // A card whose send failed waits right after the card being read; Show brings it to the front, or opens the task when

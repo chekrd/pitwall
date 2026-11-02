@@ -108,12 +108,10 @@ export function Toasts() {
   return createPortal(
     <div ref={ref} popover="manual" className={styles.toasts} aria-live="polite">
       {list.map((t) => (
-        <div key={t.id} className={styles.toast} data-toast data-kind={t.kind} data-session={t.session} role={t.kind === 'error' ? 'alert' : 'status'}>
+        <div key={t.id} className={styles.toast} data-toast data-kind={t.kind} data-counting={t.until !== undefined || undefined} data-session={t.session} role={t.kind === 'error' ? 'alert' : 'status'}>
           <span className={styles.mark} aria-hidden />
-          <span className={styles.message}>
-            {t.message}
-            {t.until !== undefined && <> <Countdown until={t.until} from={t.at} /></>}
-          </span>
+          <span className={styles.message} title={t.until !== undefined ? t.message : undefined}>{t.message}</span>
+          {t.until !== undefined && <Countdown until={t.until} from={t.at} />}
           {t.action && (
             <button
               type="button"

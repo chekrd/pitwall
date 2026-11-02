@@ -36,6 +36,11 @@
     box-shadow: 0 0 0 1px light-dark(transparent, rgb(255 255 255 / 0.14)), var(--shadow);
     animation: toast-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
     :focus-visible { outline-color: var(--toast-ink); }
+    /* Read against a countdown, so it never changes size or moves its Undo. */
+    &[data-counting] {
+      width: min(520px, 100%);
+      .message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+    }
   }
 
   @keyframes toast-in {
@@ -54,7 +59,7 @@
 
   .message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
-  .count { font-variant-numeric: tabular-nums; white-space: nowrap; opacity: 0.75; }
+  .count { flex: none; margin-left: -6px; font-variant-numeric: tabular-nums; white-space: nowrap; opacity: 0.75; }
 
   .action {
     flex: none;
