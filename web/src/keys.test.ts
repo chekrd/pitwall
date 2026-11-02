@@ -88,7 +88,8 @@ test('in the sheet 1 to 4 switch tabs (4 when there are artifacts), J and K act 
   const diff = ctx({ sheet: { tab: 'diff', artifacts: false } });
   assert.deepEqual(keyAction(diff, key('j')), { type: 'file', step: 1 });
   assert.deepEqual(keyAction(diff, key('K', { repeat: true })), { type: 'file', step: -1 });
-  for (const k of ['v', 'n', 'Enter', 'ArrowRight', 'w']) assert.equal(keyAction(diff, key(k)), null, `${k} in the sheet`);
+  for (const k of ['v', 'Enter', 'ArrowRight', 'w']) assert.equal(keyAction(diff, key(k)), null, `${k} in the sheet`);
+  assert.deepEqual(keyAction(diff, key('n')), { type: 'new-task' });
   assert.deepEqual(keyAction(diff, key('Escape')), { type: 'back' });
   assert.deepEqual(keyAction(diff, key('?')), { type: 'keys' });
 });

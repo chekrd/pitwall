@@ -3009,6 +3009,20 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P5.1.20b N opens New task over a task page too, its prompt focused, and Esc closes it back to the task page',
+    async run({ page, mock }) {
+      await openQueue(page, mock);
+      await page.key('o');
+      await page.until('the task page', () => location.pathname === '/s/s-cart/overview' && !!document.querySelector('#task-sheet'));
+      await page.until('the task page to settle', settled);
+      await page.key('n');
+      await page.until('New task over the task page, its prompt focused', () => !!document.querySelector('dialog#new-task:modal') && document.activeElement === document.querySelector('dialog#new-task textarea'));
+      await page.key('Escape');
+      await page.until('the dialog to close', () => !document.querySelector('dialog#new-task[open]'));
+      assert.deepEqual(await page.eval(() => [location.pathname, !!document.querySelector('#task-sheet')]), ['/s/s-cart/overview', true]);
+    },
+  },
+  {
     name: 'P5.1.21 typing in New task over the empty queue while a session arrives: "we fix 3 x" and Enter stay in the prompt, which keeps focus while the card comes up under the dialog; nothing is held, archived or undone',
     scenario: 'zero',
     async run({ page, mock, shot }) {
@@ -6006,7 +6020,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'new-task.default New task first opens on Current checkout with the default branch picked and focused, More folded; Enter creates there; the repository, mode and More outlast a reload; More opens the prompt, model and effort, and names what is set in them while folded',
+    name: 'new-task.default New task first opens on Current checkout with the default branch picked and the repository focused, More folded; ⌘↵ creates there; the repository, mode and More outlast a reload; More opens the prompt, model and effort, and names what is set in them while folded',
     newTask: 'default',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
@@ -6019,12 +6033,12 @@ export const checks: Check[] = [
         return {
           mode: d.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.parentElement?.innerText.trim() ?? null,
           branch: branch?.value ?? null,
-          focused: document.activeElement === branch ? 'branch' : document.activeElement?.tagName.toLowerCase() ?? null,
+          focused: document.activeElement === d.querySelector('button[aria-haspopup="listbox"]') ? 'repository' : document.activeElement?.tagName.toLowerCase() ?? null,
           prompt: !!d.querySelector('textarea'),
           more: d.querySelector<HTMLElement>('[data-more]')?.innerText.trim() ?? null,
         };
       };
-      assert.deepEqual(await page.until('New task', form), { mode: 'Current checkout', branch: 'main', focused: 'branch', prompt: false, more: 'More' });
+      assert.deepEqual(await page.until('New task', form), { mode: 'Current checkout', branch: 'main', focused: 'repository', prompt: false, more: 'More' });
       await shot('new-task-folded');
       await page.click('dialog#new-task [data-more]');
       await page.until('the prompt', () => !!document.querySelector('dialog#new-task textarea'));
@@ -6045,8 +6059,8 @@ export const checks: Check[] = [
       await page.goto(`${mock.url}/wall`);
       await page.click('header button[aria-label="New task"]');
       assert.equal((await page.until('New task after the reload', form))!.mode, 'Current checkout');
-      await page.until('the branch focused', () => document.activeElement === document.querySelector('dialog#new-task [data-branch-field] input'));
-      await page.key('Enter');
+      await page.until('the repository focused', () => document.activeElement === document.querySelector('dialog#new-task button[aria-haspopup="listbox"]'));
+      await page.eval(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true })));
       const [made] = await logged(mock, 'the task made', (e) => e.method === 'POST' && e.path === '/api/worktrees');
       assert.deepEqual([made.body.existingBranch, made.body.branch, made.body.prompt], [true, 'main', '']);
     },
@@ -6077,6 +6091,7 @@ export const checks: Check[] = [
       await logged(mock, 'Stop now', (e) => e.path === '/api/pause/now');
       const paused = await page.until('Safe to close the laptop', () => document.querySelector<HTMLElement>('[data-pause="paused"]')?.innerText ?? null);
       assert.match(paused, /Paused .*Safe to close the laptop or restart the Mac\./);
+      assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1, 'no restart, so the pause has its own banner');
       const state = (await mock.get('/api/state')).sessions as Row[];
       assert.deepEqual(state.filter((s) => s.interrupted?.cause === 'pause').map((s) => s.id).sort(), working.map((s) => s.id).sort());
       assert.equal(state.filter((s) => s.status === 'working').length, 0, 'nothing runs any more');
@@ -6110,6 +6125,8 @@ export const checks: Check[] = [
       await page.goto(`${mock.url}/wall`);
       const banner = await page.until('the recovery banner', () => document.querySelector<HTMLElement>('[data-restart="recover"]')?.innerText ?? null);
       assert.match(banner, new RegExp(`The Mac restarted and ended ${ended.length - subtasks} tasks and ${subtasks} subtasks with it: .*\\d+ in progress`));
+      assert.doesNotMatch(banner, /Paused/, 'nothing was paused, so the banner reads as before');
+      assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1);
       const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
       assert.equal(labels.filter((l) => l.endsWith(', Ended by restart')).length, ended.length - subtasks, 'subtasks have no tile of their own');
       assert.equal(labels.filter((l) => l.endsWith(', Ended')).length, 2, 'the two that had ended before the restart');
@@ -6118,6 +6135,7 @@ export const checks: Check[] = [
       await page.click('[data-restart="recover"] button', 'Resume all');
       const [resumed] = await logged(mock, 'the resume', (e) => e.path === '/api/restart/resume');
       assert.equal(resumed.status, 200);
+      assert.equal(resumed.body.paused, undefined);
       const cut = await page.until('the mid-turn banner', () => {
         const b = document.querySelector<HTMLElement>('[data-restart="recover"]');
         return b?.innerText.includes('cut short mid-turn') ? [...b.querySelectorAll('button')].map((x) => x.textContent) : null;
@@ -6159,8 +6177,67 @@ export const checks: Check[] = [
       assert.match(text, /Resume all/);
       await page.click('[data-restart="recover"] button', 'Dismiss');
       await page.until('the banner to go', () => !document.querySelector('[data-restart]'));
+      const [dismissed] = await logged(mock, 'the dismiss', (e) => e.path === '/api/restart/dismiss');
+      assert.equal(dismissed.body.paused, undefined);
       const state = (await mock.get('/api/state')).sessions as { interrupted: unknown }[];
       assert.equal(state.filter((s) => s.interrupted).length, 0);
+    },
+  },
+  {
+    name: 'R6 after a restart that followed a pause, one banner names the paused tasks and counts the ones the restart ended; one Resume all has the paused ones carry on on the resume prompt and brings the others back as they were, the ones cut short mid-turn still marked',
+    scenario: 'restartedPaused',
+    async run({ page, mock, shot }) {
+      type Row = { id: string; title: string | null; status: string; archived: boolean; parent: unknown; interrupted: { status: string; cause?: string } | null };
+      const before = (await mock.get('/api/state')).sessions as Row[];
+      const held = before.filter((s) => s.interrupted?.cause === 'pause');
+      const ended = before.filter((s) => s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
+      const midTurn = ended.filter((s) => s.interrupted!.status !== 'idle');
+      assert.ok(held.length > 1 && held.some((s) => s.parent) && ended.length > 1 && midTurn.length > 0, 'the scenario has paused tasks, a paused subtask and tasks the restart ended');
+      await page.goto(`${mock.url}/wall`);
+      const banner = await page.until('the one banner', () => document.querySelector<HTMLElement>('[data-restart="recover"][data-paused]')?.innerText ?? null);
+      assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1, 'the pause has no banner of its own');
+      const tasks = (list: Row[]) => list.filter((s) => !s.parent).length;
+      assert.match(banner, new RegExp(`^The Mac restarted and ended ${tasks(ended)} tasks with it: .+\\. Paused ${tasks(held)} tasks and 1 subtask: `));
+      for (const s of held) assert.ok(banner.includes(s.title!), `names ${s.title}`);
+      assert.match(banner, /Resume all has each paused one start its background tasks again and carry on, and continues the others where they were\./);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('[data-restart="recover"] > button')].map((b) => b.textContent)), ['Resume all', 'Dismiss'], 'one Resume all, one Dismiss');
+      const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
+      assert.equal(labels.filter((l) => l.endsWith(', Paused')).length, tasks(held));
+      assert.equal(labels.filter((l) => l.endsWith(', Ended by restart')).length, tasks(ended));
+      await shot('restart-after-pause');
+
+      await page.click('[data-restart="recover"] button', 'Resume all');
+      const [resumed] = await logged(mock, 'the resume', (e) => e.path === '/api/restart/resume');
+      assert.deepEqual([resumed.status, resumed.body.paused], [200, true]);
+      const cut = await page.until('the mid-turn banner', () => {
+        const b = document.querySelector<HTMLElement>('[data-restart="recover"]');
+        return b?.innerText.includes('cut short mid-turn') ? b.innerText : null;
+      });
+      assert.doesNotMatch(cut, /Paused/);
+      const state = (await mock.get('/api/state')).sessions as Row[];
+      assert.equal(state.filter((s) => [...held, ...ended].some((o) => o.id === s.id) && s.status === 'exited').length, 0, 'every task came back');
+      assert.deepEqual(state.filter((s) => held.some((o) => o.id === s.id)).map((s) => [s.status, s.interrupted]), held.map(() => ['working', null]), 'the paused ones carry on');
+      assert.equal(state.filter((s) => s.interrupted).length, midTurn.length, 'the ones that only waited for you are as they were');
+      assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause]').length), 0);
+    },
+  },
+  {
+    name: 'R7 after a restart that followed a pause, a task Resume all cannot bring back says why in a toast; one Dismiss forgets the restart and the pause',
+    scenario: 'restartedPausedFails',
+    async run({ page, mock }) {
+      await page.goto(`${mock.url}/wall`);
+      await page.click('[data-restart="recover"][data-paused] button', 'Resume all');
+      const message = await page.until('the toast', () => document.querySelector<HTMLElement>('[data-toast]')?.innerText ?? null);
+      assert.match(message, /Not resumed: conversation not found in this worktree/);
+      await page.until('the banner for the one left', () => /Resume all/.test(document.querySelector<HTMLElement>('[data-restart="recover"]')?.innerText ?? '') || null);
+      const left = (await mock.get('/api/state')).sessions as { interrupted: { cause?: string } | null; status: string }[];
+      assert.ok(left.some((s) => s.interrupted && s.status === 'exited'), 'the one that failed stays ended');
+      await page.click('[data-restart="recover"] button', 'Dismiss');
+      const [dismissed] = await logged(mock, 'the dismiss', (e) => e.path === '/api/restart/dismiss');
+      assert.equal(dismissed.body.paused, true);
+      await page.until('every banner to go', () => !document.querySelector('section[data-restart], section[data-pause]'));
+      const state = (await mock.get('/api/state')).sessions as { interrupted: unknown }[];
+      assert.equal(state.filter((s) => s.interrupted).length, 0, 'the pause is forgotten too');
     },
   },
   {
@@ -6172,6 +6249,13 @@ export const checks: Check[] = [
       await page.until('Resume all in reach', reachable, '[data-restart] button', 'Resume all');
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await shot('narrow-restart-recover');
+      await mock.post('/mock/scenario/restartedPaused', {});
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the banner after a pause', () => !!document.querySelector('[data-restart="recover"][data-paused]'));
+      await page.until('Resume all in reach', reachable, '[data-restart] button', 'Resume all');
+      await page.until('Dismiss in reach', reachable, '[data-restart] button', 'Dismiss');
+      assert.deepEqual(await page.eval(sidewaysScroll), []);
+      await shot('narrow-restart-after-pause');
     },
   },
   {
@@ -6209,7 +6293,7 @@ export const checks: Check[] = [
         { tile: task.id, id: 's-restart-fix', text: 'ENDED BY RESTART Fix #1 retry backoff' },
         { tile: task.id, id: 's-restart-look', text: 'ENDED BY RESTART Second look #1.1 backoff cap' },
       ]);
-      assert.match(await page.eval(() => document.querySelector<HTMLElement>('[data-restart="recover"]')!.innerText), / tasks and 2 subtasks with it: /);
+      assert.match(await page.eval(() => document.querySelector<HTMLElement>('[data-restart="recover"]:not([data-paused])')!.innerText), / tasks and 2 subtasks with it: /);
       await shot('restart-subtasks-tile');
 
       await mock.post('/mock/patch', { id: 's-restart-look', patch: { archived: true } });

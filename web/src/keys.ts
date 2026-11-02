@@ -123,7 +123,7 @@ export const KEYS: readonly Row[] = [
   { keys: 'X', help: 'Archive a finished task', scopes: ['queue'], guarded: true, matches: named('x'), act: (ctx) => (ctx.card?.kind === 'idle' ? { type: 'archive' } : null) },
   { keys: 'Z', help: 'Take back the last send while it waits to go out', scopes: ['queue', 'wall', 'sheet'], matches: named('z'), act: () => ({ type: 'undo' }) },
   { keys: 'V', help: 'Switch between Queue and Wall', scopes: ['queue', 'wall'], matches: named('v'), act: (ctx) => ({ type: 'view', to: ctx.view === 'queue' ? 'wall' : 'queue' }) },
-  { keys: 'N', help: 'New task', scopes: ['queue', 'wall'], matches: named('n'), act: (ctx) => (ctx.repos ? { type: 'new-task' } : null) },
+  { keys: 'N', help: 'New task', scopes: ['queue', 'wall', 'sheet'], matches: named('n'), act: (ctx) => (ctx.repos ? { type: 'new-task' } : null) },
   {
     keys: '1 / 2 / 3 / 4', help: 'In an open task: Overview, Conversation, Diff, Artifacts', scopes: ['sheet'], matches: (e) => digit(e) > 0 && digit(e) <= 4,
     act: (ctx, e) => (digit(e) === 1 ? { type: 'tab', tab: 'overview' } : digit(e) === 2 ? { type: 'tab', tab: 'conversation' } : digit(e) === 3 ? { type: 'tab', tab: 'diff' }

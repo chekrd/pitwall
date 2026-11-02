@@ -136,7 +136,7 @@ export function openNewTask() {
 }
 
 // Typing on the closed button opens the list with that letter already in the filter.
-function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick: (t: Target) => void }) {
+function RepoPicker({ repos, repo, pick, first }: { repos: Target[]; repo: Target; pick: (t: Target) => void; first: boolean }) {
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
   const filter = useRef<HTMLInputElement>(null);
@@ -191,7 +191,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
 
   return (
     <>
-      <button type="button" className={styles.repo} data-ux={repo.kind === 'folder' ? 'folder' : 'repository'} popoverTarget={`${id}-list`} aria-haspopup="listbox" aria-label={`${repo.kind === 'folder' ? 'Folder' : 'Repository'}: ${repo.name}`} onKeyDown={onButtonKey}>
+      <button type="button" data-autofocus={first || undefined} className={styles.repo} data-ux={repo.kind === 'folder' ? 'folder' : 'repository'} popoverTarget={`${id}-list`} aria-haspopup="listbox" aria-label={`${repo.kind === 'folder' ? 'Folder' : 'Repository'}: ${repo.name}`} onKeyDown={onButtonKey}>
         <span className={styles.caption}>{repo.kind === 'folder' ? 'Folder' : 'Repository'}</span>
         <strong>{repo.name}</strong>
         <Icon name="chevron-down" size={14} />
@@ -243,7 +243,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
 }
 
 // The list opens on a click, a typed letter or ↓, and scrolls inside itself, so many branches never push the form away.
-function BranchPicker({ branches, value, pick, where, first }: { branches: Branch[] | null; value: string; pick: (name: string) => void; where: (b: Branch) => string; first: boolean }) {
+function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | null; value: string; pick: (name: string) => void; where: (b: Branch) => string }) {
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -297,7 +297,6 @@ function BranchPicker({ branches, value, pick, where, first }: { branches: Branc
       <label className={styles.field} data-branch-field>
         <span className={styles.caption}>Branch</span>
         <input
-          data-autofocus={first || undefined}
           role="combobox"
           aria-expanded={open}
           aria-controls={`${id}-list`}
@@ -441,6 +440,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         <RepoPicker
           repos={targets}
           repo={target}
+          first={!f.more}
           pick={(t) => edit(t.kind === 'folder' ? { folder: t.path, branch: '' } : { folder: null, repoId: t.repo.id, branch: f.existing ? defaultBranch(t.repo) : '' })}
         />
         {!pickedFolder && (
@@ -451,11 +451,11 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           </fieldset>
         )}
         {existing ? (
-          <BranchPicker branches={list} value={f.branch} pick={(b) => edit({ branch: b })} where={where} first={!f.more} />
+          <BranchPicker branches={list} value={f.branch} pick={(b) => edit({ branch: b })} where={where} />
         ) : (
           <label className={styles.field} title={pickedFolder ? 'Names the task folder, and the branch of every worktree Claude opens' : 'Names the worktree folder, and the branch unless you set one'}>
             <span className={styles.caption}>Name</span>
-            <input data-autofocus={!f.more || undefined} value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder="fix-login-redirect" spellCheck={false} autoComplete="off" />
+            <input value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder="fix-login-redirect" spellCheck={false} autoComplete="off" />
           </label>
         )}
         <button type="submit" className={styles.create} disabled={!valid || pending}>
