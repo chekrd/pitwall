@@ -27,9 +27,17 @@ const notResumed = ({ failed }: Resumed) => {
 
 export async function pauseAll() {
   try {
-    const { stopping, failed } = await api<{ stopping: number; failed: { id: string; error: string }[] }>('POST', '/api/pause');
-    for (const f of failed) toast('error', `Not paused: ${f.error}`, { session: f.id });
-    if (!stopping && !failed.length) toast('info', 'No Claude is at work, so it is safe to close the laptop.');
+    const { stopping } = await api<{ stopping: number }>('POST', '/api/pause');
+    if (!stopping) toast('info', 'No Claude is at work, so it is safe to close the laptop or restart.');
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+async function stopNow() {
+  try {
+    const { failed } = await api<{ failed: { id: string; error: string }[] }>('POST', '/api/pause/now');
+    for (const f of failed) toast('error', `Not stopped: ${f.error}`, { session: f.id });
   } catch (err) {
     reportError(err);
   }
@@ -41,6 +49,9 @@ function PauseBanner() {
   const { sessions, pause } = useStore();
   const [resuming, setResuming] = useState(false);
   const stopping = sessions.filter((s) => pause.stopping.includes(s.id));
+  const finishing = stopping.filter((s) => pause.finishing.includes(s.id));
+  const cleaning = stopping.filter((s) => !pause.finishing.includes(s.id));
+  const longest = finishing.reduce<Session | null>((a, s) => (!a || (s.activity?.since ?? Infinity) < (a.activity?.since ?? Infinity) ? s : a), null);
   const done = sessions.filter(paused);
   if (!stopping.length && !done.length) return null;
   const resume = async () => {
@@ -53,8 +64,14 @@ function PauseBanner() {
     return (
       <section className={styles.banner} data-pause="stopping" aria-live="polite">
         <p>
-          <strong>Pausing</strong>{done.length > 0 && <> · {done.length} paused</>} · stopping <TaskLinks tasks={stopping} />: each ends its turn and its background tasks.
+          <strong>Pausing</strong>{done.length > 0 && <> · {done.length} paused</>}
+          {finishing.length > 0 && (
+            <> · waiting for <TaskLinks tasks={finishing} /> to finish {finishing.length === 1 ? 'its turn' : 'their turns'}
+              {longest?.activity && <> (the longest has run <Clock since={longest.activity.since} />)</>}</>
+          )}
+          {cleaning.length > 0 && <> · stopping the background tasks of <TaskLinks tasks={cleaning} /></>}
         </p>
+        {finishing.length > 0 && <button type="button" data-stop-now onClick={() => void stopNow()} title="Stop the turns still running with Esc, as Esc in the terminal would">Stop now</button>}
         <button type="button" onClick={dismiss} title="Stop pausing; whatever has stopped stays stopped">Cancel</button>
       </section>
     );
@@ -62,7 +79,7 @@ function PauseBanner() {
   return (
     <section className={styles.banner} data-pause="paused" aria-live="polite">
       <p>
-        <strong>Paused {tally(done)}</strong>: <TaskLinks tasks={done} />. Safe to close the laptop.
+        <strong>Paused {tally(done)}</strong>: <TaskLinks tasks={done} />. Safe to close the laptop or restart the Mac.
         {' '}Resume all has each one start its background tasks again and carry on.
       </p>
       <button type="button" data-variant="primary" disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>
@@ -105,31 +122,6 @@ function TaskLinks({ tasks }: { tasks: Session[] }) {
   });
 }
 
-function Preparing({ safeAt, sessions }: { safeAt: number | null; sessions: Session[] }) {
-  const running = sessions.filter((s) => s.status !== 'exited');
-  // An archived Claude still at work would be cut short too, but Resume all brings back only the tasks on the board.
-  const working = running.filter((s) => s.status === 'working');
-  const live = running.filter((s) => !s.archived);
-  const longest = working.reduce<Session | null>((a, s) => (!a || (s.activity?.since ?? Infinity) < (a.activity?.since ?? Infinity) ? s : a), null);
-  const cancel = () => api('POST', '/api/restart/prepare', { on: false }).catch(reportError);
-  return (
-    <section className={styles.banner} data-restart={safeAt ? 'safe' : 'preparing'} aria-live="polite">
-      {safeAt ? (
-        <p>
-          <strong>Safe to restart.</strong>{' '}
-          {live.length ? <>No Claude is in the middle of a turn; after the restart, Resume all brings {live.length === 1 ? 'the task' : `the ${live.length} tasks`} back.</> : 'No Claude is running.'}
-        </p>
-      ) : (
-        <p>
-          <strong>Getting ready to restart</strong> · {live.filter((s) => s.status !== 'working').length} of {plural(live.length, 'task')} safe · waiting on <TaskLinks tasks={working} />
-          {longest?.activity && <> (the longest turn has run <Clock since={longest.activity.since} />)</>}
-        </p>
-      )}
-      <button type="button" onClick={cancel}>{safeAt ? 'Done' : 'Cancel'}</button>
-    </section>
-  );
-}
-
 export function RestartBanner() {
   return (
     <>
@@ -140,9 +132,8 @@ export function RestartBanner() {
 }
 
 function Recovery() {
-  const { sessions, restart } = useStore();
+  const { sessions } = useStore();
   const [resuming, setResuming] = useState(false);
-  if (restart.preparing) return <Preparing {...restart.preparing} sessions={sessions} />;
   const ended = sessions.filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
   const midTurn = sessions.filter((s) => cutShort(s) && !s.archived);
   if (!ended.length && !midTurn.length) return null;

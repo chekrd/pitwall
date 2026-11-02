@@ -142,6 +142,6 @@
     .label, .linkText { display: none; }
     .ghost, .toggle a, .newTask { padding: 0 9px; }
     /* A phone-sized window leaves no room for it beside the reload pill; its banner still shows. */
-    .restart { display: none; }
+    .pause { display: none; }
   }
 }

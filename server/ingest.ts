@@ -10,7 +10,7 @@ import { fullDiff, pullRequestUrl, repoRoot } from './git.ts';
 import * as terminal from './terminal.ts';
 import { askInput } from './mcp.ts';
 import { trackDecisions } from './priority.ts';
-import { bootTime, interruption, pickedUp, watch } from './restart.ts';
+import { bootTime, interruption, pickedUp } from './restart.ts';
 import { summarizeStale } from './summary.ts';
 import { describeLinks } from './linkAbout.ts';
 import { mergeLinks } from './links.ts';
@@ -222,7 +222,6 @@ async function syncLive() {
     changed = true;
   }
   trackDecisions();
-  if (watch(sessions.all())) changed = true;
   if (changed) notify();
   adviseOpen();
   void summarizeStale();

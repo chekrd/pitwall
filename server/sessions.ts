@@ -114,13 +114,19 @@ export function dismissInterrupted(paused = false) {
   notify();
 }
 
-export async function pause() {
-  const result = await pausing.start(sessions.all());
+export function pause() {
+  const result = pausing.start(sessions.all());
   notify();
   return result;
 }
 
-export const pauseState = () => ({ stopping: pausing.stopping() });
+export async function hurryPause() {
+  const result = await pausing.hurry(sessions.all());
+  notify();
+  return result;
+}
+
+export const pauseState = () => ({ stopping: pausing.stopping(), finishing: pausing.finishing() });
 
 export function pauseStep() {
   if (pausing.step(sessions.all())) notify();
@@ -172,6 +178,12 @@ const answers = answering({ store: sessions, send: terminal.send, keys: terminal
 
 export const { answer, answerMenu, acceptAdvice, dismiss } = answers;
 
+// Said in a notification, as the board may be out of sight.
+function notifyPaused() {
+  const script = 'display notification "No Claude is at work: safe to close the laptop or restart." with title "Pitwall" subtitle "Paused"';
+  run('/usr/bin/osascript', ['-e', script]).catch((err) => console.warn('pause notification failed', err));
+}
+
 const pausing = pauser({
   escape: async (id) => {
     await answers.settled(id);
@@ -179,6 +191,7 @@ const pausing = pauser({
   },
   type: answers.type,
   mark: (id, interrupted) => sessions.update(id, { interrupted }),
+  safe: notifyPaused,
 });
 
 // A running Claude keeps its name in memory and writes it back to the transcript, so a live

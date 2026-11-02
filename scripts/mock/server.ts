@@ -14,7 +14,7 @@ import type { Session, SubtaskKind } from '../../server/db.ts';
 import { checkDecision, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
-import { busy, pickedUp, type Preparing } from '../../server/restart.ts';
+import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
@@ -107,7 +107,6 @@ let failNext: { error: string; code?: string } | null = null;
 let delayMs = 0;
 let dropUntil = 0;
 let announced: string | null = null;
-let preparing: Preparing | null = null;
 let drift: Drift[] = [];
 
 // As the server's: Esc stops a turn, and the pause prompt runs a short turn that stops the background tasks.
@@ -141,15 +140,8 @@ const taskWorktrees = (taskFolder: string) =>
 
 const snapshot = () => ({
   home: '/Users/me', roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders() }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
-  ...(!args.legacy && { usage: state.usage, restart: { preparing }, pause: { stopping: pausing.stopping() }, drift }),
+  ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift }),
 });
-
-// As the server's restart.watch, without the notification.
-function watchRestart() {
-  if (!preparing) return;
-  const safe = busy(state.sessions).length === 0;
-  if (safe !== (preparing.safeAt !== null)) preparing = { ...preparing, safeAt: safe ? Date.now() : null };
-}
 
 // As in server/main.ts: every snapshot names the entry the polls have taken, and a socket that opens first reads
 // index.html, which can only cast doubt on it. On --legacy only a socket that opens is told an entry, what that read
@@ -163,7 +155,6 @@ function push() {
   pushing = true;
   queueMicrotask(() => {
     pushing = false;
-    watchRestart();
     pausing.step(state.sessions);
     const message = JSON.stringify({ ...snapshot(), ...(!args.legacy && { uiEntry: announced ?? ui.settled() }) });
     for (const ws of clients) ws.send(message);
@@ -181,7 +172,6 @@ function load(name: string) {
   delayMs = 0;
   dropUntil = 0;
   announced = null;
-  preparing = null;
   pausing.cancel();
   drift = [];
   state = make(Date.now());
@@ -759,11 +749,6 @@ route('GET', '/api/diff', async ({ url }) => {
   return diff;
 });
 
-route('POST', '/api/restart/prepare', ({ body }) => {
-  preparing = body.on === false ? null : { since: Date.now(), safeAt: null };
-  push();
-  return NONE;
-});
 route('POST', '/api/restart/resume', () => {
   const tasks = state.sessions.filter((s) => s.status === 'exited' && s.interrupted && !s.archived);
   const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map((s) => ({ id: s.id, error: 'conversation not found in this worktree' }));
@@ -775,7 +760,16 @@ route('POST', '/api/restart/dismiss', () => {
   push();
   return NONE;
 });
-route('POST', '/api/pause', () => pausing.start(state.sessions));
+route('POST', '/api/pause', () => {
+  const result = pausing.start(state.sessions);
+  push();
+  return result;
+});
+route('POST', '/api/pause/now', async () => {
+  const result = await pausing.hurry(state.sessions);
+  push();
+  return result;
+});
 route('POST', '/api/pause/resume', ({ body }) => {
   const tasks = state.sessions.filter((s) => s.interrupted?.cause === 'pause' && s.status !== 'working' && (!body.id || s.id === body.id));
   const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map((s) => ({ id: s.id, error: 'conversation not found in this worktree' }));

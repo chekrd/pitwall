@@ -6013,20 +6013,32 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P1 Pause stops every Claude at work and its background tasks, says when it is safe to close the laptop; Resume on a task page or Resume all carries on',
+    name: 'P1 Pause waits for every turn to end, Stop now cuts the rest short, each Claude stops its background tasks and the banner says it is safe to close the laptop or restart; Resume on a task page or Resume all carries on',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
-      const all = (await mock.get('/api/state')).sessions as { id: string; status: string; title: string | null; parent: unknown; interrupted: { cause?: string } | null }[];
-      const working = all.filter((s) => s.status === 'working');
-      assert.ok(working.length > 1);
+      type Row = { id: string; status: string; title: string | null; parent: unknown; archived: boolean; activity: { between?: true } | null; interrupted: { cause?: string } | null };
+      const all = (await mock.get('/api/state')).sessions as Row[];
+      const inTurn = all.filter((s) => s.status === 'working' && !s.activity?.between);
+      assert.ok(inTurn.length > 1);
+      const ends = inTurn[0];
       await page.click('header button[data-pause]');
-      const pausing = await page.until('the pausing banner', () => document.querySelector<HTMLElement>('[data-pause="stopping"]')?.innerText ?? null);
-      assert.match(pausing, /Pausing .*stopping .*each ends its turn and its background tasks/);
-      for (const s of working) if (s.title) assert.ok(pausing.includes(s.title), `names ${s.title}`);
+      const waiting = await page.until('the pausing banner', () => document.querySelector<HTMLElement>('[data-pause="stopping"]')?.innerText ?? null);
+      assert.match(waiting, /Pausing · waiting for .* to finish their turns \(the longest has run /);
+      for (const s of inTurn) if (s.title) assert.ok(waiting.includes(s.title), `names ${s.title}`);
+      await shot('pausing');
+      assert.equal((await mock.log()).filter((e) => e.path === '/api/pause/now').length, 0, 'no Esc until Stop now');
+
+      const idle = all.find((s) => s.status === 'idle' && !s.archived && !s.parent)!;
+      await mock.post('/mock/patch', { id: idle.id, patch: { status: 'working', activity: { step: null, since: Date.now() } } });
+      await mock.post('/mock/patch', { id: ends.id, patch: { status: 'idle', activity: null } });
+      const working = [...inTurn, idle, ...all.filter((s) => s.status === 'working' && s.activity?.between)];
+      await page.until('a turn you started is waited on too', (t: string) => document.querySelector<HTMLElement>('[data-pause="stopping"]')?.innerText.includes(t) || null, idle.title ?? idle.id);
+      await page.click('[data-pause="stopping"] button[data-stop-now]');
+      await logged(mock, 'Stop now', (e) => e.path === '/api/pause/now');
       const paused = await page.until('Safe to close the laptop', () => document.querySelector<HTMLElement>('[data-pause="paused"]')?.innerText ?? null);
-      assert.match(paused, /Paused .*Safe to close the laptop\./);
-      const state = (await mock.get('/api/state')).sessions as typeof all;
+      assert.match(paused, /Paused .*Safe to close the laptop or restart the Mac\./);
+      const state = (await mock.get('/api/state')).sessions as Row[];
       assert.deepEqual(state.filter((s) => s.interrupted?.cause === 'pause').map((s) => s.id).sort(), working.map((s) => s.id).sort());
       assert.equal(state.filter((s) => s.status === 'working').length, 0, 'nothing runs any more');
       const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
@@ -6113,36 +6125,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'R3 Restart in the top bar waits for every turn to end, names the tasks still working, and says Safe to restart once none is',
-    async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
-      await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
-      const all = (await mock.get('/api/state')).sessions as { id: string; status: string; title: string | null; archived: boolean }[];
-      // Archived, its Claude still runs, but Resume all would not bring it back.
-      const shelved = all.find((s) => s.status === 'idle' && !s.archived)!;
-      await mock.post('/mock/patch', { id: shelved.id, patch: { archived: true } });
-      const live = all.filter((s) => s.status !== 'exited' && !s.archived && s !== shelved);
-      const working = live.filter((s) => s.status === 'working');
-      assert.ok(working.length > 1);
-      await page.click('header button[data-prepare-restart]');
-      const text = await page.until('the preparing banner', () => document.querySelector<HTMLElement>('[data-restart="preparing"]')?.innerText ?? null);
-      assert.match(text, new RegExp(`Getting ready to restart · ${live.length - working.length} of ${live.length} tasks safe · waiting on `));
-      for (const s of working) if (s.title) assert.ok(text.includes(s.title), `names ${s.title}`);
-      assert.equal(await page.eval(() => document.querySelector('header button[data-prepare-restart]')?.getAttribute('aria-pressed')), 'true');
-      await shot('restart-preparing');
-      for (const s of working) await mock.post('/mock/patch', { id: s.id, patch: { status: 'idle', activity: null } });
-      const safe = await page.until('Safe to restart', () => document.querySelector<HTMLElement>('[data-restart="safe"]')?.innerText ?? null);
-      assert.match(safe, new RegExp(`Safe to restart\\. No Claude is in the middle of a turn; after the restart, Resume all brings the ${live.length} tasks back\\.`));
-      await shot('restart-safe');
-      await mock.post('/mock/patch', { id: working[0].id, patch: { status: 'working' } });
-      await page.until('waiting again on a new turn', () => document.querySelector('[data-restart="preparing"]') !== null);
-      await page.click('[data-restart] button', 'Cancel');
-      await page.until('the banner to go', () => !document.querySelector('[data-restart]'));
-      assert.equal(await page.eval(() => document.querySelector('header button[data-prepare-restart]')?.getAttribute('aria-pressed')), 'false');
-    },
-  },
-  {
-    name: 'R4 narrow: the restart banners fit the window, Resume all and Cancel stay in reach',
+    name: 'R4 narrow: the restart banner fits the window, Resume all stays in reach',
     narrow: true,
     scenario: 'restarted',
     async run({ page, mock, shot }) {
@@ -6150,11 +6133,21 @@ export const checks: Check[] = [
       await page.until('Resume all in reach', reachable, '[data-restart] button', 'Resume all');
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await shot('narrow-restart-recover');
-      await mock.post('/api/restart/prepare', { on: true });
-      const safe = await page.until('Done in reach', () => document.querySelector<HTMLElement>('[data-restart="safe"]')?.innerText ?? null);
-      assert.match(safe, /Safe to restart\. No Claude is running\./, 'every task had ended');
-      await page.until('Done in reach', reachable, '[data-restart] button', 'Done');
+    },
+  },
+  {
+    name: 'R3 narrow: the pausing banner fits the window, Stop now and Cancel stay in reach',
+    narrow: true,
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
+      await mock.post('/api/pause', {});
+      await page.until('Stop now in reach', reachable, '[data-pause] button', 'Stop now');
+      await page.until('Cancel in reach', reachable, '[data-pause] button', 'Cancel');
       assert.deepEqual(await page.eval(sidewaysScroll), []);
+      await shot('narrow-pausing');
+      await page.click('[data-pause] button', 'Cancel');
+      await page.until('the banner to go', () => !document.querySelector('section[data-pause]'));
     },
   },
   {

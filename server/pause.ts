@@ -6,9 +6,9 @@ export const RESUME_PROMPT = 'Resuming after the pause. Start again the backgrou
 // Typed, a pause prompt may wait this long for its turn to start before an idle Claude counts as paused anyway.
 const ASKED_MS = 60_000;
 
-type Row = Pick<Session, 'id' | 'status' | 'activity'>;
+type Row = Pick<Session, 'id' | 'status' | 'activity' | 'interrupted'>;
 
-type Step = 'interrupting' | 'asked' | 'stopping';
+type Step = 'finishing' | 'interrupting' | 'asked' | 'stopping';
 
 interface Stage {
   at: number;
@@ -20,16 +20,18 @@ export interface PauseDeps {
   escape: (id: string) => Promise<void>;
   type: (id: string, text: string) => Promise<void>;
   mark: (id: string, paused: Interrupted) => void;
+  safe?: () => void;
   now?: () => number;
 }
 
-const busy = (s: Row) => s.status === 'working' && !s.activity?.between;
+// Between turns with work running in the background, a Claude counts as working but has no turn to finish.
+const inTurn = (s: Row) => s.status === 'working' && !s.activity?.between;
 
 export const pauseMark = (at: number): Interrupted => ({ at, status: 'working', waitingFor: null, menu: null, cause: 'pause' });
 
-// Esc ends a turn but leaves background work running, so each Claude at work is also asked to stop its background
-// tasks itself; it is paused once that turn is over and nothing runs in the background.
-export function pauser({ escape, type, mark, now = Date.now }: PauseDeps) {
+// Each Claude at work finishes its turn, or has it stopped with Esc on hurry(), and is then asked to stop its
+// background tasks itself; it is paused once that turn is over and nothing runs in the background.
+export function pauser({ escape, type, mark, safe = () => {}, now = Date.now }: PauseDeps) {
   const stages = new Map<string, Stage>();
 
   const ask = (id: string, stage: Stage) => {
@@ -40,28 +42,40 @@ export function pauser({ escape, type, mark, now = Date.now }: PauseDeps) {
     });
   };
 
-  async function start(all: Row[]) {
-    const failed: { id: string; error: string }[] = [];
-    for (const s of all.filter((s) => s.status === 'working' && !stages.has(s.id))) {
+  // A turn that starts meanwhile, from a message you sent too, is waited on as well; one you resumed is left alone.
+  const follow = (all: Row[]) => {
+    for (const s of all.filter((s) => s.status === 'working' && !stages.has(s.id) && s.interrupted?.cause !== 'pause')) {
       const at = now();
+      const stage: Stage = { at, step: 'finishing', since: at };
+      stages.set(s.id, stage);
+      if (!inTurn(s)) ask(s.id, stage);
+    }
+  };
+
+  function start(all: Row[]) {
+    follow(all);
+    return { stopping: stages.size };
+  }
+
+  async function hurry(all: Row[]) {
+    const failed: { id: string; error: string }[] = [];
+    for (const [id, stage] of stages) {
+      const s = all.find((o) => o.id === id);
+      if (stage.step !== 'finishing' || !s || !inTurn(s)) continue;
       try {
-        if (busy(s)) {
-          await escape(s.id);
-          stages.set(s.id, { at, step: 'interrupting', since: at });
-        } else {
-          const stage: Stage = { at, step: 'asked', since: at };
-          stages.set(s.id, stage);
-          ask(s.id, stage);
-        }
+        await escape(id);
+        stage.step = 'interrupting';
       } catch (err) {
-        failed.push({ id: s.id, error: err instanceof Error ? err.message : String(err) });
+        failed.push({ id, error: err instanceof Error ? err.message : String(err) });
       }
     }
-    return { stopping: stages.size, failed };
+    return { failed };
   }
 
   // Moves each task on from what the latest sync saw; true when one became paused.
   function step(all: Row[]) {
+    if (!stages.size) return false;
+    follow(all);
     let changed = false;
     for (const [id, stage] of stages) {
       const s = all.find((o) => o.id === id);
@@ -72,20 +86,23 @@ export function pauser({ escape, type, mark, now = Date.now }: PauseDeps) {
       };
       if (!s) stages.delete(id);
       else if (s.status === 'exited') done();
-      else if (stage.step === 'interrupting') {
-        if (!busy(s) && s.status !== 'waiting') ask(id, stage);
+      else if (stage.step === 'finishing' || stage.step === 'interrupting') {
+        if (!inTurn(s) && s.status !== 'waiting') ask(id, stage);
       } else if (stage.step === 'asked') {
-        if (busy(s)) stage.step = 'stopping';
+        if (inTurn(s)) stage.step = 'stopping';
         else if (s.status === 'idle' && now() - stage.since > ASKED_MS) done();
       } else if (s.status === 'idle') done();
     }
+    if (changed && !stages.size) safe();
     return changed;
   }
 
   return {
     start,
+    hurry,
     step,
     stopping: () => [...stages.keys()],
+    finishing: () => [...stages].filter(([, s]) => s.step === 'finishing').map(([id]) => id),
     cancel: () => stages.clear(),
   };
 }

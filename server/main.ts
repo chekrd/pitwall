@@ -21,7 +21,6 @@ import { ALIASES, EFFORTS, resolver, settingsFor } from './models.ts';
 import * as S from './sessions.ts';
 import { sync } from './ingest.ts';
 import { deleteWorktree, deleteWorktreeLoss, removeWorktreeAndSessions } from './removal.ts';
-import { prepare, restartState } from './restart.ts';
 import { readEntry, watchEntry } from './uiEntry.ts';
 import { saveUpload } from './uploads.ts';
 import { watchUsage } from './usage.ts';
@@ -54,7 +53,7 @@ app.onError((err, c) => {
 
 const usage = watchUsage(USAGE_FILE, notify);
 onDrift(notify);
-const state = () => ({ ...snapshot(), usage: usage.current(), restart: restartState(), pause: S.pauseState(), drift: drift() });
+const state = () => ({ ...snapshot(), usage: usage.current(), pause: S.pauseState(), drift: drift() });
 
 app.get('/api/state', (c) => c.json(state()));
 
@@ -279,13 +278,6 @@ async function act(c: Context, id: string, action: string, body: any) {
   return c.body(null, 204);
 }
 
-app.post('/api/restart/prepare', async (c) => {
-  const { on } = await c.req.json().catch(() => ({}));
-  prepare(on !== false, sessions.all());
-  notify();
-  return c.body(null, 204);
-});
-
 app.post('/api/restart/resume', async (c) => c.json(await S.resumeInterrupted()));
 
 app.post('/api/restart/dismiss', (c) => {
@@ -293,7 +285,9 @@ app.post('/api/restart/dismiss', (c) => {
   return c.body(null, 204);
 });
 
-app.post('/api/pause', async (c) => c.json(await S.pause()));
+app.post('/api/pause', (c) => c.json(S.pause()));
+
+app.post('/api/pause/now', async (c) => c.json(await S.hurryPause()));
 
 app.post('/api/pause/resume', async (c) => {
   const { id } = await c.req.json().catch(() => ({}));
