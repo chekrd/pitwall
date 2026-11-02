@@ -1,6 +1,7 @@
 import type { Session } from '../../server/db.ts';
 import type { Usage } from '../../server/usage.ts';
 import { menuAnswerText } from '../../server/decision.ts';
+import { pauseMark } from '../../server/pause.ts';
 import type { RepoView } from '../../server/workspace.ts';
 import { addFromTemplate, queue, repos, ROOTS, session, titleOf, type Template } from './fixtures.ts';
 
@@ -48,10 +49,11 @@ function crowd(now: number, counts: { decide: number; prompt: number; idle: numb
   return scenario;
 }
 
-function restarted(now: number, fails: boolean): Scenario {
+// With `paused`, Pause had stopped the Claudes at work before the restart, so those carry its mark instead.
+function restarted(now: number, fails: boolean, paused = false): Scenario {
   const sessions = queue(now).map((s): Session => (s.status === 'exited' || s.archived ? s : {
     ...s, status: 'exited', pid: null, waitingFor: null, menu: null,
-    interrupted: { at: now - MIN, status: s.status, waitingFor: s.waitingFor, menu: s.menu },
+    interrupted: paused && s.status === 'working' ? pauseMark(now - 2 * MIN) : { at: now - MIN, status: s.status, waitingFor: s.waitingFor, menu: s.menu },
   }));
   // Two subtasks of one task, a fix cut off mid-turn and a review of it nested under the fix, which had finished.
   const parent = sessions.find((s) => s.interrupted && s.interrupted.status === 'idle' && !s.parent)!;
@@ -60,10 +62,10 @@ function restarted(now: number, fails: boolean): Scenario {
     parent: { id: of.id, basis: `t-${of.id}`, finding: 0, title, kind: status === 'working' ? 'accept' : 'second-look', text: '' },
     interrupted: { at: now - MIN, status, waitingFor: null, menu: null },
   });
-  const fix = subtask('s-restart-fix', parent, 'Fix #1 retry backoff', 'working');
+  const fix = { ...subtask('s-restart-fix', parent, 'Fix #1 retry backoff', 'working'), ...(paused && { interrupted: pauseMark(now - 2 * MIN) }) };
   sessions.push(fix, subtask('s-restart-look', fix, 'Second look #1.1 backoff cap', 'idle'));
   const scenario = base(now, sessions);
-  const first = sessions.find((s) => s.interrupted)!;
+  const first = sessions.find((s) => s.interrupted && (!paused || s.interrupted.cause === 'pause'))!;
   if (fails) scenario.flags[first.id] = [...(scenario.flags[first.id] ?? []), 'resumeFails'];
   return scenario;
 }
@@ -262,6 +264,9 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   // ended before stay as they were. `restartedFails` also has one that cannot be resumed.
   restarted: (now) => restarted(now, false),
   restartedFails: (now) => restarted(now, true),
+  // Paused before the restart: the Claudes that were at work carry the pause's mark, the rest the restart's.
+  restartedPaused: (now) => restarted(now, false, true),
+  restartedPausedFails: (now) => restarted(now, true, true),
 
   zero: (now) => base(now, queue(now).filter((s) => s.status === 'working' || (s.status === 'exited' && !s.archived))),
   empty: (now) => base(now, []),

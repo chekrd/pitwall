@@ -278,10 +278,14 @@ async function act(c: Context, id: string, action: string, body: any) {
   return c.body(null, 204);
 }
 
-app.post('/api/restart/resume', async (c) => c.json(await S.resumeInterrupted()));
+app.post('/api/restart/resume', async (c) => {
+  const { paused } = await c.req.json().catch(() => ({}));
+  return c.json(await S.resumeInterrupted(paused === true));
+});
 
-app.post('/api/restart/dismiss', (c) => {
-  S.dismissInterrupted();
+app.post('/api/restart/dismiss', async (c) => {
+  const { paused } = await c.req.json().catch(() => ({}));
+  S.dismissInterrupted(paused === true ? 'both' : 'restart');
   return c.body(null, 204);
 });
 
@@ -295,7 +299,7 @@ app.post('/api/pause/resume', async (c) => {
 });
 
 app.post('/api/pause/dismiss', (c) => {
-  S.dismissInterrupted(true);
+  S.dismissInterrupted('pause');
   return c.body(null, 204);
 });
 

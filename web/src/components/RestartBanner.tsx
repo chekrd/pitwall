@@ -45,7 +45,8 @@ async function stopNow() {
 
 export const resumePaused = (id?: string) => api<Resumed>('POST', '/api/pause/resume', id ? { id } : {}).then(notResumed);
 
-function PauseBanner() {
+// After a restart that ended tasks, the paused ones show in the restart's banner instead.
+function PauseBanner({ folded }: { folded: boolean }) {
   const { sessions, pause } = useStore();
   const [resuming, setResuming] = useState(false);
   const stopping = sessions.filter((s) => pause.stopping.includes(s.id));
@@ -53,7 +54,7 @@ function PauseBanner() {
   const cleaning = stopping.filter((s) => !pause.finishing.includes(s.id));
   const longest = finishing.reduce<Session | null>((a, s) => (!a || (s.activity?.since ?? Infinity) < (a.activity?.since ?? Infinity) ? s : a), null);
   const done = sessions.filter(paused);
-  if (!stopping.length && !done.length) return null;
+  if (!stopping.length && (!done.length || folded)) return null;
   const resume = async () => {
     setResuming(true);
     await resumePaused().catch(reportError);
@@ -122,38 +123,47 @@ function TaskLinks({ tasks }: { tasks: Session[] }) {
   });
 }
 
+const endedByRestart = (s: Session) => s.status === 'exited' && !!s.interrupted && s.interrupted.cause !== 'pause' && !s.archived;
+
 export function RestartBanner() {
+  const { sessions } = useStore();
+  const ended = sessions.filter(endedByRestart);
   return (
     <>
-      <PauseBanner />
-      <Recovery />
+      <PauseBanner folded={ended.length > 0} />
+      <Recovery ended={ended} />
     </>
   );
 }
 
-function Recovery() {
+function Recovery({ ended }: { ended: Session[] }) {
   const { sessions } = useStore();
   const [resuming, setResuming] = useState(false);
-  const ended = sessions.filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
   const midTurn = sessions.filter((s) => cutShort(s) && !s.archived);
+  const held = ended.length ? sessions.filter(paused) : [];
   if (!ended.length && !midTurn.length) return null;
+  const both = held.length ? { paused: true } : {};
 
   const resume = async () => {
     setResuming(true);
     try {
-      const { failed } = await api<{ resumed: number; failed: { id: string; error: string }[] }>('POST', '/api/restart/resume');
-      for (const f of failed) toast('error', `Not resumed: ${f.error}`, { session: f.id });
+      notResumed(await api<Resumed>('POST', '/api/restart/resume', both));
     } catch (err) {
       reportError(err);
     } finally {
       setResuming(false);
     }
   };
-  const dismiss = () => api('POST', '/api/restart/dismiss').catch(reportError);
+  const dismiss = () => api('POST', '/api/restart/dismiss', both).catch(reportError);
 
   return (
-    <section className={styles.banner} data-restart="recover" aria-live="polite">
-      {ended.length > 0 ? (
+    <section className={styles.banner} data-restart="recover" data-paused={held.length || undefined} aria-live="polite">
+      {held.length > 0 ? (
+        <p>
+          <strong>The Mac restarted</strong> and ended {tally(ended)} with it: {counts(ended)}. <strong>Paused {tally(held)}</strong>: <TaskLinks tasks={held} />.
+          {' '}Resume all has each paused one start its background tasks again and carry on, and continues the others where they were.
+        </p>
+      ) : ended.length > 0 ? (
         <p>
           <strong>The Mac restarted</strong> and ended {tally(ended)} with it: {counts(ended)}.
           {' '}Resume all continues each one in a hidden terminal, where it was.
@@ -165,7 +175,7 @@ function Recovery() {
         </p>
       )}
       {ended.length > 0 && <button type="button" data-variant="primary" disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>}
-      <button type="button" onClick={dismiss} title="Forget what the restart cut short; ended tasks stay on the Wall, Continue brings one back">Dismiss</button>
+      <button type="button" onClick={dismiss} title={held.length ? 'Forget the restart and the pause; ended tasks stay on the Wall, Continue brings one back' : 'Forget what the restart cut short; ended tasks stay on the Wall, Continue brings one back'}>Dismiss</button>
     </section>
   );
 }

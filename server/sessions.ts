@@ -93,8 +93,9 @@ export async function continueConversation(opts: { repoId: number | null; worktr
   return id;
 }
 
-// After a restart of the Mac, every task it cut short comes back in a hidden terminal, as Continue would bring it.
-export async function resumeInterrupted() {
+// After a restart of the Mac, every task it cut short comes back in a hidden terminal, as Continue would bring it,
+// and with `paused` every paused task carries on as its own Resume has it.
+export async function resumeInterrupted(paused = false) {
   const failed: { id: string; error: string }[] = [];
   const tasks = sessions.all().filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
   for (const s of tasks) {
@@ -104,13 +105,17 @@ export async function resumeInterrupted() {
       failed.push({ id: s.id, error: err instanceof Error ? err.message : String(err) });
     }
   }
-  return { resumed: tasks.length - failed.length, failed };
+  if (!paused) return { resumed: tasks.length - failed.length, failed };
+  const more = await resumePaused();
+  return { resumed: tasks.length - failed.length + more.resumed, failed: [...failed, ...more.failed] };
 }
 
 // Ended ones stay ended as any other, and resumed ones wait for you as any other.
-export function dismissInterrupted(paused = false) {
-  if (paused) pausing.cancel();
-  for (const s of sessions.all()) if (s.interrupted && (s.interrupted.cause === 'pause') === paused) sessions.update(s.id, { interrupted: null });
+export function dismissInterrupted(which: 'restart' | 'pause' | 'both') {
+  if (which !== 'restart') pausing.cancel();
+  for (const s of sessions.all()) {
+    if (s.interrupted && (which === 'both' || (s.interrupted.cause === 'pause') === (which === 'pause'))) sessions.update(s.id, { interrupted: null });
+  }
   notify();
 }
 

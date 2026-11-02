@@ -749,14 +749,30 @@ route('GET', '/api/diff', async ({ url }) => {
   return diff;
 });
 
-route('POST', '/api/restart/resume', () => {
-  const tasks = state.sessions.filter((s) => s.status === 'exited' && s.interrupted && !s.archived);
-  const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map((s) => ({ id: s.id, error: 'conversation not found in this worktree' }));
-  for (const s of tasks) if (!flagged(s.id, 'resumeFails')) resume(s);
+const notFound = (s: Session) => ({ id: s.id, error: 'conversation not found in this worktree' });
+
+// As the server's resumePaused: a paused task carries on, and one whose Claude ended comes back on the resume prompt.
+function resumePaused(only?: string) {
+  const tasks = state.sessions.filter((s) => s.interrupted?.cause === 'pause' && s.status !== 'working' && (!only || s.id === only));
+  const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map(notFound);
+  for (const s of tasks.filter((s) => !flagged(s.id, 'resumeFails'))) {
+    resume(s);
+    claudeWorks(s.id);
+  }
   return { resumed: tasks.length - failed.length, failed };
+}
+
+route('POST', '/api/restart/resume', ({ body }) => {
+  const tasks = state.sessions.filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
+  const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map(notFound);
+  for (const s of tasks) if (!flagged(s.id, 'resumeFails')) resume(s);
+  if (body.paused !== true) return { resumed: tasks.length - failed.length, failed };
+  const more = resumePaused();
+  return { resumed: tasks.length - failed.length + more.resumed, failed: [...failed, ...more.failed] };
 });
-route('POST', '/api/restart/dismiss', () => {
-  for (const s of state.sessions) s.interrupted = null;
+route('POST', '/api/restart/dismiss', ({ body }) => {
+  if (body.paused === true) pausing.cancel();
+  for (const s of state.sessions) if (body.paused === true || s.interrupted?.cause !== 'pause') s.interrupted = null;
   push();
   return NONE;
 });
@@ -770,15 +786,7 @@ route('POST', '/api/pause/now', async () => {
   push();
   return result;
 });
-route('POST', '/api/pause/resume', ({ body }) => {
-  const tasks = state.sessions.filter((s) => s.interrupted?.cause === 'pause' && s.status !== 'working' && (!body.id || s.id === body.id));
-  const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map((s) => ({ id: s.id, error: 'conversation not found in this worktree' }));
-  for (const s of tasks.filter((s) => !flagged(s.id, 'resumeFails'))) {
-    resume(s);
-    claudeWorks(s.id);
-  }
-  return { resumed: tasks.length - failed.length, failed };
-});
+route('POST', '/api/pause/resume', ({ body }) => resumePaused(body.id));
 route('POST', '/api/pause/dismiss', () => {
   pausing.cancel();
   for (const s of state.sessions) if (s.interrupted?.cause === 'pause') s.interrupted = null;

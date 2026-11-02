@@ -53,8 +53,8 @@ const logged = (mock: Mock, what: string, match: (e: Entry) => boolean, timeout 
   }, timeout);
 
 // A mock of its own over a copy of the build. `build()` writes a new build there, an index.html that names a copy of
-// the entry script, and returns that script.
-async function withOwnBuild(run: (own: Mock, build: () => string) => Promise<void>) {
+// the entry script, and returns that script. The page leaves before that mock stops, or its reconnect logs an error.
+async function withOwnBuild(page: Page, run: (own: Mock, build: () => string) => Promise<void>) {
   const dist = mkdtempSync(join(tmpdir(), 'pitwall-dist-'));
   let own: Mock | undefined;
   try {
@@ -69,6 +69,7 @@ async function withOwnBuild(run: (own: Mock, build: () => string) => Promise<voi
       return next;
     });
   } finally {
+    await page.goto('about:blank').catch(() => {});
     await own?.stop();
     rmSync(dist, { recursive: true, force: true });
   }
@@ -851,9 +852,15 @@ export const checks: Check[] = [
 
       await page.click('nav[aria-label="Changed files"] button[aria-label="Collapse server/"]');
       await page.until('server/ collapsed again', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 4);
-      await page.eval(() => document.querySelector('section[data-file="server/mcpGuard.test.ts"]')!.scrollIntoView());
-      await page.until('scrolling to a file in server/ opens it', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 12 &&
-        document.querySelector('nav[aria-label="Changed files"] [aria-current]')?.getAttribute('title')?.startsWith('server/'));
+      // Under load the view can land back at the top after one scroll, inside the first file, which is in server/ too, so
+      // nothing new comes into view; each try scrolls to the file again.
+      await page.until('scrolling to a file in server/ opens it', () => {
+        if (document.querySelectorAll('nav[aria-label="Changed files"] a').length === 12) {
+          return document.querySelector('nav[aria-label="Changed files"] [aria-current]')?.getAttribute('title')?.startsWith('server/') ?? false;
+        }
+        document.querySelector('section[data-file="server/mcpGuard.test.ts"]')!.scrollIntoView();
+        return false;
+      });
     },
   },
   {
@@ -1036,7 +1043,7 @@ export const checks: Check[] = [
   {
     name: 'P1b.ui-entry-build a build written into the folder the server serves reaches an open page: it reloads into the new entry once, and stays',
     async run({ page }) {
-      await withOwnBuild(async (own, build) => {
+      await withOwnBuild(page, async (own, build) => {
         const url = `${own.url}/`;
         await page.goto(url);
         await page.until('the first snapshot', () => document.querySelector('[data-link]')?.getAttribute('data-link') === 'live');
@@ -1056,7 +1063,7 @@ export const checks: Check[] = [
   {
     name: 'P1b.ui-entry-early a page loaded from a new build before the server has taken it loads once and stays: the snapshot on open and one pushed meanwhile name no entry, and the one when the build is taken names its entry',
     async run({ page }) {
-      await withOwnBuild(async (own, build) => {
+      await withOwnBuild(page, async (own, build) => {
         const url = `${own.url}/`;
         const next = build();
         await page.goto(url);
@@ -1150,7 +1157,7 @@ export const checks: Check[] = [
   },
   {
     name: 'P3.reload-offline a new build waits for the server: New task closing while the server cannot be reached does not reload the board, and it reloads once the server is back and names that build',
-    expectedErrors: [/WebSocket/, /ERR_CONNECTION/, /ERR_EMPTY_RESPONSE/],
+    expectedErrors: [/WebSocket/, /ERR_CONNECTION/, /ERR_EMPTY_RESPONSE/, /ERR_SOCKET_NOT_CONNECTED/],
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
@@ -6240,7 +6247,7 @@ export const checks: Check[] = [
       const banner = await page.until('the one banner', () => document.querySelector<HTMLElement>('[data-restart="recover"][data-paused]')?.innerText ?? null);
       assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1, 'the pause has no banner of its own');
       const tasks = (list: Row[]) => list.filter((s) => !s.parent).length;
-      assert.match(banner, new RegExp(`^The Mac restarted and ended ${tasks(ended)} tasks with it: .+\\. Paused ${tasks(held)} tasks and 1 subtask: `));
+      assert.match(banner, new RegExp(`^The Mac restarted and ended ${tasks(ended)} tasks and 1 subtask with it: .+\\. Paused ${tasks(held)} tasks and 1 subtask: `));
       for (const s of held) assert.ok(banner.includes(s.title!), `names ${s.title}`);
       assert.match(banner, /Resume all has each paused one start its background tasks again and carry on, and continues the others where they were\./);
       assert.deepEqual(await page.eval(() => [...document.querySelectorAll('[data-restart="recover"] > button')].map((b) => b.textContent)), ['Resume all', 'Dismiss'], 'one Resume all, one Dismiss');
@@ -6257,30 +6264,40 @@ export const checks: Check[] = [
         return b?.innerText.includes('cut short mid-turn') ? b.innerText : null;
       });
       assert.doesNotMatch(cut, /Paused/);
-      const state = (await mock.get('/api/state')).sessions as Row[];
+      const state = await until('the paused ones to carry on', async () => {
+        const all = (await mock.get('/api/state')).sessions as Row[];
+        return all.filter((s) => held.some((o) => o.id === s.id)).every((s) => s.status === 'working' && !s.interrupted) ? all : null;
+      });
       assert.equal(state.filter((s) => [...held, ...ended].some((o) => o.id === s.id) && s.status === 'exited').length, 0, 'every task came back');
-      assert.deepEqual(state.filter((s) => held.some((o) => o.id === s.id)).map((s) => [s.status, s.interrupted]), held.map(() => ['working', null]), 'the paused ones carry on');
       assert.equal(state.filter((s) => s.interrupted).length, midTurn.length, 'the ones that only waited for you are as they were');
       assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause]').length), 0);
     },
   },
   {
-    name: 'R7 after a restart that followed a pause, a task Resume all cannot bring back says why in a toast; one Dismiss forgets the restart and the pause',
+    name: 'R7 after a restart that followed a pause, one Dismiss forgets the restart and the pause; a paused task Resume all cannot bring back says why in a toast and stays paused',
     scenario: 'restartedPausedFails',
     async run({ page, mock }) {
+      await page.goto(`${mock.url}/wall`);
+      await page.click('[data-restart="recover"][data-paused] button', 'Dismiss');
+      const [dismissed] = await logged(mock, 'the dismiss', (e) => e.path === '/api/restart/dismiss');
+      assert.equal(dismissed.body.paused, true);
+      await page.until('every banner to go', () => !document.querySelector('section[data-restart], section[data-pause]'));
+      const state = (await mock.get('/api/state')).sessions as { id: string; title: string; status: string; interrupted: { cause?: string } | null }[];
+      assert.equal(state.filter((s) => s.interrupted).length, 0, 'the pause is forgotten too');
+
+      await mock.post('/mock/scenario/restartedPausedFails', {});
+      const failing = ((await mock.get('/api/state')).sessions as typeof state).find((s) => s.interrupted?.cause === 'pause' && !('parent' in s && s.parent))!;
       await page.goto(`${mock.url}/wall`);
       await page.click('[data-restart="recover"][data-paused] button', 'Resume all');
       const message = await page.until('the toast', () => document.querySelector<HTMLElement>('[data-toast]')?.innerText ?? null);
       assert.match(message, /Not resumed: conversation not found in this worktree/);
-      await page.until('the banner for the one left', () => /Resume all/.test(document.querySelector<HTMLElement>('[data-restart="recover"]')?.innerText ?? '') || null);
-      const left = (await mock.get('/api/state')).sessions as { interrupted: { cause?: string } | null; status: string }[];
-      assert.ok(left.some((s) => s.interrupted && s.status === 'exited'), 'the one that failed stays ended');
-      await page.click('[data-restart="recover"] button', 'Dismiss');
-      const [dismissed] = await logged(mock, 'the dismiss', (e) => e.path === '/api/restart/dismiss');
-      assert.equal(dismissed.body.paused, true);
-      await page.until('every banner to go', () => !document.querySelector('section[data-restart], section[data-pause]'));
-      const state = (await mock.get('/api/state')).sessions as { interrupted: unknown }[];
-      assert.equal(state.filter((s) => s.interrupted).length, 0, 'the pause is forgotten too');
+      const left = await page.until('the pause banner for the one left', () => {
+        const text = document.querySelector<HTMLElement>('[data-pause="paused"]')?.innerText ?? '';
+        return text.startsWith('Paused 1 task: ') ? text : null;
+      });
+      assert.ok(left.includes(failing.title), left);
+      const after = ((await mock.get('/api/state')).sessions as typeof state).find((s) => s.id === failing.id)!;
+      assert.deepEqual([after.status, after.interrupted?.cause], ['exited', 'pause']);
     },
   },
   {
