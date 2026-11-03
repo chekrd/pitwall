@@ -23,6 +23,7 @@ import { notify, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
 import { sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
+import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
 
@@ -182,7 +183,48 @@ function decided() {
 
 const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided, isCommand, checkUploads });
 
-export const { answer, answerMenu, acceptAdvice, dismiss } = answers;
+export const { answerMenu, acceptAdvice, dismiss } = answers;
+
+// A send from the board may carry drafts, which leave the task once it went out.
+export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: unknown }) {
+  await answers.answer(id, reply);
+  if (Array.isArray(reply.drafts) && reply.drafts.length) {
+    sessions.update(id, { parked: removeParked(must(id).parked, reply.drafts) });
+    notify();
+  }
+}
+
+export function park(id: string, body: { text?: unknown; auto?: unknown }) {
+  sessions.update(id, { parked: addParked(must(id).parked, body) });
+  notify();
+}
+
+export function editPark(id: string, body: { draft?: unknown; text?: unknown; auto?: unknown }) {
+  sessions.update(id, { parked: editParked(must(id).parked, body) });
+  notify();
+}
+
+export function unpark(id: string, draft: unknown) {
+  sessions.update(id, { parked: removeParked(must(id).parked, [draft]) });
+  notify();
+}
+
+const ends = turnEnds();
+const autoSending = new Set<string>();
+
+export function sendDueDrafts() {
+  for (const due of ends.observe(sessions.all(), pausing.stopping())) {
+    if (autoSending.has(due.id)) continue;
+    autoSending.add(due.id);
+    void answers.answer(due.id, { key: null, text: due.text }, false)
+      .then(() => {
+        sessions.update(due.id, { parked: removeParked(must(due.id).parked, due.ids) });
+        notify();
+      })
+      .catch((err) => console.warn('drafts not sent at the end of the turn', due.id, err))
+      .finally(() => autoSending.delete(due.id));
+  }
+}
 
 // Said in a notification, as the board may be out of sight.
 function notifyPaused() {

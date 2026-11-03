@@ -290,6 +290,11 @@ export function Card({ session, repos, deck, enter }: CardProps) {
             {session.artifacts.length > 0 && (
               <button type="button" onClick={() => openSheet(session.id, 'artifacts')}>Artifacts {session.artifacts.length}</button>
             )}
+            {session.parked.length > 0 && (
+              <button type="button" data-later-count title="Messages you kept for later, on its Overview" onClick={() => openSheet(session.id, 'overview')}>
+                Later {session.parked.length}
+              </button>
+            )}
             <span className={styles.more}><ClearButton session={session} /><SessionMenu session={session} worktree={worktree} name={name} /></span>
           </nav>
         </div>

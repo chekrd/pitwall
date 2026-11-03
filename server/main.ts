@@ -328,6 +328,9 @@ async function act(c: Context, id: string, action: string, body: any) {
     case 'resolve': S.resolve(id, body.state ?? null); break;
     case 'delete-worktree': await deleteWorktree(id); break;
     case 'finding': return c.json({ id: await respond(id, body) });
+    case 'park': S.park(id, body); break;
+    case 'edit-park': S.editPark(id, body); break;
+    case 'unpark': S.unpark(id, body.draft); break;
     default: return c.text('unknown action', 404);
   }
   return c.body(null, 204);
@@ -375,6 +378,7 @@ function recordServer(name: string, data: Data) {
 const tracker = boardTracker(recordServer);
 tracker.observe(sessions.all());
 onChange(() => tracker.observe(sessions.all()));
+onChange(S.sendDueDrafts);
 
 app.post('/api/ux', async (c) => {
   const batch = cleanBatch(await c.req.json().catch(() => null));
@@ -453,7 +457,10 @@ app.get('*', async (c) => {
 
 await refreshWorkspace({ scan: true });
 await sync();
-setInterval(() => void sync().then(S.pauseStep).catch((err) => console.warn('session sync failed', err)), 1500);
+setInterval(() => void sync().then(() => {
+  S.pauseStep();
+  S.sendDueDrafts();
+}).catch((err) => console.warn('session sync failed', err)), 1500);
 setInterval(() => void refreshWorkspace({ scan: true }).catch((err) => console.warn('workspace refresh failed', err)), 30_000);
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT, websocket: { server: new WebSocketServer({ noServer: true }) } }, () => {

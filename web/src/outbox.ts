@@ -14,6 +14,8 @@ export interface Body {
   toolUseId?: string;
   answers?: MenuAnswer[];
   adviceAt?: number;
+  // Drafts the send carries, which leave the task once it went out.
+  drafts?: string[];
 }
 
 export interface Request {
@@ -94,11 +96,14 @@ function fold(due: readonly Item[]): Folded[] {
     const group = due.filter((g) => g === h || (g.sessionId === h.sessionId && isNote(g)));
     const text = group.map((g) => g.body.text).filter(Boolean).join('\n\n');
     const files = group.flatMap((g) => g.body.files ?? []);
+    const drafts = group.flatMap((g) => g.body.drafts ?? []);
     const body: Body = { ...h.body };
     delete body.text;
     delete body.files;
+    delete body.drafts;
     if (text) body.text = text;
     if (files.length) body.files = files;
+    if (drafts.length) body.drafts = drafts;
     out.push({ sessionId: h.sessionId, action: h.action, body, ids: group.map((g) => g.id) });
   }
   return out;

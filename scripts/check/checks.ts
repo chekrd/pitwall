@@ -3883,34 +3883,34 @@ export const checks: Check[] = [
     name: 'P5.2.27 the sheet\'s reply box stays the field you write in: a task that starts asking while you are in Message Claude keeps that very box, with focus, so a dictation that started in it still lands; the decision\'s own box comes once you leave it',
     async run({ page, mock }) {
       await openFromWall(page, mock, 's-invoice');
-      await page.click('#task-sheet textarea');
+      await page.click('#task-sheet textarea[data-draft]');
       await page.type('Round');
-      await page.eval(() => void (document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!.dataset.mark = 'first'));
+      await page.eval(() => void (document.querySelector<HTMLTextAreaElement>('#task-sheet textarea[data-draft]')!.dataset.mark = 'first'));
       await mock.post('/mock/patch', {
         id: 's-invoice',
         patch: { status: 'idle', activity: null, question: { toolUseId: 'toolu_inv', category: 'plan-problem', askedAt: Date.now(), title: 'Round half cents to even?', details: '', options: [{ label: 'Yes' }, { label: 'No' }] } },
       });
       await page.until('the decision', () => !!document.querySelector('#task-sheet [data-queued] h3'));
       await page.type(' half up');
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLTextAreaElement>('#task-sheet textarea')].map((t) => [t.dataset.mark ?? null, t.value, t === document.activeElement])), [['first', 'Round half up', true]]);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLTextAreaElement>('#task-sheet textarea[data-draft]')].map((t) => [t.dataset.mark ?? null, t.value, t === document.activeElement])), [['first', 'Round half up', true]]);
       await page.eval(() => document.getElementById('task-sheet')!.focus());
-      await page.until('the decision\'s own box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-queued] textarea')?.value === 'Round half up');
-      assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet textarea').length), 1, 'Message Claude gone once left');
+      await page.until('the decision\'s own box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-queued] textarea[data-draft]')?.value === 'Round half up');
+      assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet textarea[data-draft]').length), 1, 'Message Claude gone once left');
     },
   },
   {
     name: 'P5.2.28 a permission prompt while you are in Message Claude keeps that very box, with focus and its text, until you leave it',
     async run({ page, mock }) {
       await openFromWall(page, mock, 's-invoice');
-      await page.click('#task-sheet textarea');
+      await page.click('#task-sheet textarea[data-draft]');
       await page.type('Round');
-      await page.eval(() => void (document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')!.dataset.mark = 'first'));
+      await page.eval(() => void (document.querySelector<HTMLTextAreaElement>('#task-sheet textarea[data-draft]')!.dataset.mark = 'first'));
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'waiting', waitingFor: 'a permission prompt for Bash(pnpm test)' } });
       await page.until('the prompt notice', () => !!document.querySelector('#task-sheet p strong')?.textContent?.includes('pnpm test'));
       await page.type(' half');
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLTextAreaElement>('#task-sheet textarea')].map((t) => [t.dataset.mark ?? null, t.value, t === document.activeElement])), [['first', 'Round half', true]]);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLTextAreaElement>('#task-sheet textarea[data-draft]')].map((t) => [t.dataset.mark ?? null, t.value, t === document.activeElement])), [['first', 'Round half', true]]);
       await page.eval(() => document.getElementById('task-sheet')!.focus());
-      await page.until('the box gone once left', () => !document.querySelector('#task-sheet textarea'));
+      await page.until('the box gone once left', () => !document.querySelector('#task-sheet textarea[data-draft]'));
     },
   },
   {
@@ -6748,6 +6748,73 @@ export const checks: Check[] = [
       assert.match(await page.eval(() => document.querySelector('[data-schedule="weekly-dependency-bump"]')!.textContent!), /on main · Mondays at 07:30/);
       await page.eval(() => document.querySelector('[data-schedules]')!.scrollIntoView({ block: 'center' }));
       await shot('wall-scheduled-narrow');
+    },
+  },
+  {
+    name: "L1 Later keeps messages written while Claude works on the task's Overview: Enter keeps one, the card counts them; the ones set to Send when it's my turn go out as one message at the end of the turn, a reply after that end holds them back, and Send now sends one held with its Undo",
+    clock: 'fast',
+    async run({ page, mock, shot, wait }) {
+      type Snap = { sessions: { id: string; parked: { id: string; text: string; auto: boolean }[]; answered: { text: string } | null }[] };
+      const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
+      const until = async (what: string, ok: (s: Awaited<ReturnType<typeof invoice>>) => boolean) => {
+        for (const end = Date.now() + 8000; Date.now() < end; await sleep(100)) if (ok(await invoice())) return invoice();
+        throw new Error(`timed out waiting for ${what}: ${JSON.stringify(await invoice())}`);
+      };
+      const kept = (id: string, text: string) => ({ id, text, auto: false, armedAt: null, at: Date.now() });
+      await mock.post('/mock/patch', { id: 's-cart', patch: { parked: [kept('k1', 'One'), kept('k2', 'Two')] } });
+      await openQueue(page, mock);
+      assert.equal(await page.eval(() => document.querySelector('[data-card][data-session="s-cart"] [data-later-count]')?.textContent), 'Later 2');
+      await page.click('[data-card][data-session="s-cart"] [data-later-count]');
+      await page.until("s-cart's drafts on its Overview", () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 2);
+
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', lastTurn: 't-later', summary: null, answered: null, activity: { step: 'Bash: pnpm test', since: Date.now() } } });
+      await openSheetOf(page, mock, 's-invoice');
+      await page.until('the Later box', () => !!document.querySelector('#task-sheet [data-later] textarea'));
+      const drafts = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] li[data-parked]')]
+        .map((li) => [li.querySelector('p')?.textContent, li.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked]);
+
+      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.type('Also check the credit notes.');
+      await page.key('Enter');
+      await page.until('the first draft', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 1);
+      await page.click('#task-sheet [data-later] li[data-parked] input[type="checkbox"]');
+      await page.click('#task-sheet [data-later] > div label input[type="checkbox"]');
+      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.type('Then rename the helper.');
+      await page.key('Enter');
+      await page.until('the second draft', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 2);
+      await page.click('#task-sheet [data-later] > div label input[type="checkbox"]');
+      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.type('Kept for a press.');
+      await page.key('Enter');
+      await page.until('three drafts, two set to go', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] li[data-parked]')]
+        .map((li) => [li.querySelector('p')?.textContent, li.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked])) === want,
+      JSON.stringify([['Also check the credit notes.', true], ['Then rename the helper.', true], ['Kept for a press.', false]]));
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-later] h3')!.textContent), 'Later · 3 drafts');
+      assert.equal((await invoice()).answered, null, 'nothing reached Claude while it works');
+      await shot('later-drafts');
+
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, summary: { text: 'Fixed', basis: 't-later', at: Date.now(), question: null, decision: null } } });
+      const sent = await until('the armed drafts sent', (s) => s.parked.length === 1);
+      assert.equal(sent.answered?.text, 'Also check the credit notes.\n\nThen rename the helper.');
+      await page.until('one draft left', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 1);
+      assert.deepEqual(await page.eval(drafts), [['Kept for a press.', false]]);
+
+      await until('Claude at work on them', (s) => (s as unknown as { status: string }).status === 'working');
+      await page.click('#task-sheet [data-later] li[data-parked] input[type="checkbox"]');
+      await until('the last one armed', (s) => s.parked[0].auto);
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, lastTurn: 't-later-2', answered: { key: null, text: 'Typed on the card', at: Date.now() + 60_000 }, summary: { text: 'Fixed', basis: 't-later-2', at: Date.now(), question: null, decision: null } } });
+      await sleep(1500);
+      assert.deepEqual((await invoice()).parked.map((p) => p.text), ['Kept for a press.'], 'a reply after the end holds it back');
+
+      await page.click('#task-sheet [data-later] li[data-parked] button', 'Send now');
+      await page.until('the draft out of the list while held', () => !document.querySelector('#task-sheet [data-later] li[data-parked]'));
+      await page.until('the hold toast', () => [...document.querySelectorAll('[role="status"], [data-toast]')].some((t) => t.textContent?.includes('Kept for a press.')));
+      await wait(6000);
+      const pressed = await until('the pressed draft sent', (s) => s.parked.length === 0);
+      assert.equal(pressed.answered?.text, 'Kept for a press.');
+      const posted = (await mock.log()).filter((e) => e.action === 'answer' && e.sessionId === 's-invoice').at(-1)!;
+      assert.deepEqual((posted.body as { drafts: string[] }).drafts.length, 1);
     },
   },
 ];

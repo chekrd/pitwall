@@ -78,6 +78,10 @@ export const migrations: Migration[] = [
       ALTER TABLE sessions ADD COLUMN scheduled TEXT;
     `);
   },
+  // 3: drafts written for a task's Claude to send later.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN parked TEXT');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

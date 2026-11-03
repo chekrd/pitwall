@@ -134,10 +134,10 @@ function review() {
 }
 
 // Holds an answering request for 5 s. What it takes along from the reply box leaves the box, and comes back if the
-// send is taken back or refused.
-export function hold(s: Session, request: Request, name: string, { dealt = false } = {}) {
+// send is taken back or refused; with `box` off it takes nothing from it.
+export function hold(s: Session, request: Request, name: string, { dealt = false, box = true } = {}) {
   const { text, files } = request.body;
-  const draft = request.action === 'answer' && (text !== undefined || !!files?.length) ? takeDraft(s.id, files ?? []) : null;
+  const draft = box && request.action === 'answer' && (text !== undefined || !!files?.length) ? takeDraft(s.id, files ?? []) : null;
   track('send', {
     task: s.id, decision: request.body.key ?? undefined, action: request.action, command: !!request.command, option: request.body.choice !== undefined, ownText: !!text?.trim(), files: files?.length ?? 0, dealt,
   });

@@ -1,4 +1,4 @@
-export type { Advice, Answered, Artifact, Finding, Interrupted, Link, Findings, Parent, PrFlow, Priority, Resolution, Question, QuestionOption, Session, SessionStatus, SubtaskKind, Summary } from '../../server/db.ts';
+export type { Advice, Answered, Artifact, Finding, Interrupted, Link, Findings, Parent, Parked, PrFlow, Priority, Resolution, Question, QuestionOption, Session, SessionStatus, SubtaskKind, Summary } from '../../server/db.ts';
 export type { FullDiff } from '../../server/git.ts';
 export type { Conversation, ConversationLog, Exchange, Menu, MenuQuestion } from '../../server/conversations.ts';
 export type { FolderView, RepoView, WorktreeView } from '../../server/workspace.ts';

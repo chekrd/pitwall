@@ -16,6 +16,7 @@ import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
+import { addParked, editParked, removeParked, turnEnds } from '../../server/parked.ts';
 import { nextRun, parseSchedule, repeats, scheduler, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
@@ -158,6 +159,7 @@ function push() {
   queueMicrotask(() => {
     pushing = false;
     pausing.step(state.sessions);
+    sendDueDrafts();
     const message = JSON.stringify({ ...snapshot(), ...(!args.legacy && { uiEntry: announced ?? ui.settled() }) });
     for (const ws of clients) ws.send(message);
   });
@@ -175,6 +177,7 @@ function load(name: string) {
   dropUntil = 0;
   announced = null;
   pausing.cancel();
+  ends = turnEnds();
   drift = [];
   schedules = [];
   state = make(Date.now());
@@ -280,6 +283,28 @@ function answeringFor(scenario: Scenario) {
 
 let answers = answeringFor(state);
 
+// As the server's: armed drafts go out as one message at a real end of the turn.
+let ends = turnEnds();
+
+function sendDueDrafts() {
+  if (args.legacy) return;
+  for (const due of ends.observe(state.sessions, pausing.stopping())) {
+    const scenario = state;
+    answers.answer(due.id, { key: null, text: due.text }, false)
+      .then(() => {
+        const s = scenario === state ? find(due.id) : undefined;
+        if (s) update(s.id, { parked: removeParked(s.parked, due.ids) });
+      })
+      .catch((err) => console.warn('drafts not sent at the end of the turn', due.id, err));
+  }
+}
+
+async function answerWithDrafts(s: Session, body: any) {
+  await answers.answer(s.id, body);
+  const now = find(s.id);
+  if (now && Array.isArray(body.drafts) && body.drafts.length) update(now.id, { parked: removeParked(now.parked, body.drafts) });
+}
+
 function legacyAnswer(s: Session, reply: Reply, commands = true) {
   liveTty(s);
   if (s.status === 'waiting' || s.menu) throw new Error(`Claude is showing ${s.waitingFor ?? 'a question'} in its terminal; answer that first`);
@@ -384,7 +409,10 @@ function respond(s: Session, body: any) {
 
 const actions: Record<string, (s: Session, body: any) => unknown> = {
   finding: respond,
-  answer: (s, body) => (args.legacy ? legacyAnswer(s, body) : answers.answer(s.id, body)),
+  answer: (s, body) => (args.legacy ? legacyAnswer(s, body) : answerWithDrafts(s, body)),
+  park: (s, body) => update(s.id, { parked: addParked(s.parked, body) }),
+  'edit-park': (s, body) => update(s.id, { parked: editParked(s.parked, body) }),
+  unpark: (s, body) => update(s.id, { parked: removeParked(s.parked, [body.draft]) }),
   dismiss: (s, body) => closeQuestion({ get: find, update }, s.id, body.key),
   rename: (s, body) => rename(s, body.title),
   'answer-menu': (s, body) => (args.legacy ? legacyAnswerMenu(s, body) : answers.answerMenu(s.id, body)),
@@ -490,7 +518,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
     firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, rank: null, rankReason: null, priority: null, diffstat: null,
     lastMessage: null, lastPrompt: null, lastTurn: null, waitingFor: null, dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null,
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null,
-    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, archived: false, createdAt: now, updatedAt: now,
+    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, parked: [], archived: false, createdAt: now, updatedAt: now,
   });
   push();
   return id;
