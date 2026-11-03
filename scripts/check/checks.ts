@@ -6498,8 +6498,8 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'E1 a turn that ended on an API error says Stopped on an error on its tile and page, with what to do for its kind, until Claude replies again',
-    async run({ page, mock, shot }) {
+    name: 'E1 a turn that ended on an API error says Stopped on an error on its tile and page, with what to do for its kind and Try again unless it was refused, until Claude replies again',
+    async run({ page, mock, shot, wait }) {
       const all = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; question: unknown; menu: unknown; summary: { decision?: unknown } | null }[];
       const s = all.find((o) => o.status === 'idle' && !o.archived && !o.question && !o.menu && !o.summary?.decision)!;
       const refused = "API Error: Opus 5.5's safeguards flagged this message (https://www.anthropic.com/legal/aup). This sometimes happens with safe, normal conversations.\n\nDouble press esc to edit your last message, or try a different model with /model.";
@@ -6537,9 +6537,16 @@ export const checks: Check[] = [
         return p && { text: p.innerText, buttons: p.querySelectorAll('button').length };
       });
       assert.match(limit.text, /usage limit[\s\S]*resets 2pm/);
-      assert.equal(limit.buttons, 0);
+      assert.equal(limit.buttons, 1);
 
-      await mock.post('/mock/patch', { id: s.id, patch: { turnError: null } });
+      await mock.post('/mock/patch', { id: s.id, patch: { turnError: { at: Date.now(), kind: 'other', text: 'API Error: 500 Internal server error.' } } });
+      await page.until('the failed request', () => document.querySelector('#task-sheet [data-turn-error="other"]')?.textContent?.includes('500 Internal server error') || null);
+      await page.click('#task-sheet [data-turn-error="other"] button', 'Try again');
+      await wait(5500);
+      const [sent] = await logged(mock, 'the retry', (e) => e.action === 'answer' && e.sessionId === s.id);
+      assert.match(String(sent.body.text), /stopped on an API error before you replied/);
+
+      await mock.post('/mock/patch', { id: s.id, patch: { status: 'idle', turnError: null } });
       await page.until('the error to go once Claude replies', () => !document.querySelector('#task-sheet [data-turn-error], #task-sheet [data-error]'));
     },
   },

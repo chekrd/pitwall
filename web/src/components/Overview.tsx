@@ -183,12 +183,14 @@ function Interrupted({ session, name }: { session: Session; name: string }) {
 
 const ERROR_ADVICE = {
   refusal: <>The model's safeguards flagged your last message, so Claude wrote no reply. Sent again as it is, it will likely be flagged again: <strong>rephrase it</strong> below, or in its terminal press Esc twice to edit it or pick another model with /model.</>,
-  limit: <>You hit your usage limit, so Claude wrote no reply. <strong>Send your message again</strong> once the limit resets.</>,
-  login: <>Claude's login expired, so it wrote no reply. Run <strong>/login</strong> in its terminal, then send your message again.</>,
-  other: <>The request failed, so Claude wrote no reply. <strong>Send your message again</strong>.</>,
+  limit: <>You hit your usage limit, so Claude wrote no reply. <strong>Try again</strong> once the limit resets.</>,
+  login: <>Claude's login expired, so it wrote no reply. Run <strong>/login</strong> in its terminal, then <strong>Try again</strong>.</>,
+  other: <>The request failed, so Claude wrote no reply. <strong>Try again</strong> has it answer your last message.</>,
 };
 
-function TurnError({ session }: { session: Session }) {
+const RETRY_TURN = 'Your last turn stopped on an API error before you replied. Answer my last message again.';
+
+function TurnError({ session, name }: { session: Session; name: string }) {
   const { kind, text } = session.turnError!;
   const said = text.split(/\n\s*\n/)[0].replace(/^API Error:\s*/, '');
   return (
@@ -198,6 +200,9 @@ function TurnError({ session }: { session: Session }) {
         {said && <blockquote title={text}>{said}</blockquote>}
       </div>
       {(kind === 'refusal' || kind === 'login') && <FocusButton session={session} />}
+      {kind !== 'refusal' && (
+        <button type="button" data-variant="primary" onClick={() => void hold(session, typed(null, RETRY_TURN, [], null), name)}>Try again</button>
+      )}
     </section>
   );
 }
@@ -225,7 +230,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
         <div className={styles.main}>
           <SubtaskOf session={session} />
           {session.interrupted && !archived && <Interrupted session={session} name={name} />}
-          {stoppedOnError(session, attention) && <TurnError session={session} />}
+          {stoppedOnError(session, attention) && <TurnError session={session} name={name} />}
           {working && (
             <section className={styles.working} data-ux-section="working">
               <span className={styles.spinner} aria-hidden />

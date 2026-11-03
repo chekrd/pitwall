@@ -27,9 +27,9 @@ export const labelOf = (s: Session, shown: Shown) => (stoppedOnError(s, shown) ?
 
 export const ERROR_LINES = {
   refusal: "The model's safeguards flagged your last message; rephrase it",
-  limit: 'The usage limit stopped the turn; send again once it resets',
+  limit: 'The usage limit stopped the turn; try again once it resets',
   login: 'The login expired; run /login in its terminal',
-  other: 'The request failed; send your message again',
+  other: 'The request failed; try again',
 } as const;
 
 export const hintOf = (s: Session, shown: Shown) =>
