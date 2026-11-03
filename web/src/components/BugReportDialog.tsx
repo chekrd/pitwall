@@ -5,6 +5,7 @@ import { record, snapshot } from '../recorder.ts';
 import { useStore } from '../store.ts';
 import styles from './BugReportDialog.module.css';
 import { toast } from './Toasts.tsx';
+import { explain, SENDS } from './explain.ts';
 
 const DIALOG = 'bug-report';
 let taken: ReturnType<typeof snapshot> | null = null;
@@ -61,7 +62,7 @@ export function BugReportDialog() {
           <p className={styles.hint}>
             A Pitwall task reproduces it, fixes it and delivers the fix, from what the board recorded in the last minutes and the page as it was a moment ago.
           </p>
-          <button type="submit" className={styles.file}>
+          <button type="submit" className={styles.file} {...explain(SENDS.bugReport)}>
             File and fix <kbd>↵</kbd>
           </button>
         </div>

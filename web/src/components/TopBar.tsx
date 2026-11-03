@@ -13,6 +13,7 @@ import { ThemeMenu } from './ThemeMenu.tsx';
 import styles from './TopBar.module.css';
 import { Usage } from './Usage.tsx';
 import { openRepos } from './WorkspaceDialog.tsx';
+import { explain, SENDS } from './explain.ts';
 
 const LINK_TEXT: Record<Link, string> = { connecting: 'Connecting…', live: 'Live', reconnecting: 'Reconnecting…' };
 
@@ -71,7 +72,7 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
           data-pause
           aria-label="Pause"
           aria-pressed={pause.stopping.length > 0}
-          data-explain="Pause before you close the laptop or restart the Mac: every Claude at work finishes its turn and stops its background tasks; Resume carries on"
+          {...explain(SENDS.pause)}
           onClick={() => void pauseAll()}
         >
           <Icon name="pause" size={17} />

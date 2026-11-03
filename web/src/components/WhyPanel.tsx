@@ -4,6 +4,7 @@ import type { Session } from '../types.ts';
 import { Markdown } from './Markdown.tsx';
 import parts from './Parts.module.css';
 import styles from './WhyPanel.module.css';
+import { explain, SENDS } from './explain.ts';
 
 export const explanationFor = (s: Session, key: string) => (s.explanation?.key === key ? s.explanation : null);
 
@@ -24,7 +25,7 @@ export function WhyPanel({ session, decision, onClose, ref }: { session: Session
       ) : e.state === 'failed' ? (
         <p className={styles.failed}>
           <span>Could not explain: {e.error}</span>
-          <button type="button" className={parts.tiny} onClick={() => elaborate(session, decision)}>Retry</button>
+          <button type="button" className={parts.tiny} {...explain(SENDS.elaborate)} onClick={() => elaborate(session, decision)}>Retry</button>
         </p>
       ) : (
         <div className={styles.text}><Markdown source={e.text} /></div>

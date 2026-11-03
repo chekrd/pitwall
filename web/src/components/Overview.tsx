@@ -26,6 +26,7 @@ import { STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { FocusButton } from './SessionMenu.tsx';
 import { toast } from './Toasts.tsx';
+import { explain, SENDS } from './explain.ts';
 
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
   const { copied, copy } = useCopy(value, what);
@@ -158,7 +159,7 @@ function Paused({ session }: { session: Session }) {
         You paused this task mid-turn{session.status === 'exited' && ', and its Claude has ended since'}.
         {' '}<strong>Resume</strong> has it start its background tasks again, check where it got to and carry on.
       </p>
-      <button type="button" data-variant="primary" onClick={() => void resumePaused(session.id).catch(reportError)}>Resume</button>
+      <button type="button" data-variant="primary" {...explain(SENDS.resume)} onClick={() => void resumePaused(session.id).catch(reportError)}>Resume</button>
     </section>
   );
 }
@@ -180,7 +181,7 @@ function Interrupted({ session, name }: { session: Session; name: string }) {
   return (
     <section className={styles.blocked} data-interrupted="cut-short" data-ux-section="interrupted">
       <p>The restart cut Claude's turn short{asked && <>, at {asked}</>}. It waits for you: <strong>Continue the turn</strong> asks it to check where it got to and carry on.</p>
-      <button type="button" data-variant="primary" onClick={() => void hold(session, typed(null, CONTINUE_TURN, [], null), name)}>Continue the turn</button>
+      <button type="button" data-variant="primary" {...explain(SENDS.prompt(CONTINUE_TURN))} onClick={() => void hold(session, typed(null, CONTINUE_TURN, [], null), name)}>Continue the turn</button>
     </section>
   );
 }
@@ -224,7 +225,7 @@ function TurnError({ session, name }: { session: Session; name: string }) {
       </div>
       {(kind === 'refusal' || kind === 'login') && <FocusButton session={session} />}
       {kind !== 'refusal' && (
-        <button type="button" data-variant="primary" onClick={() => void hold(session, typed(null, RETRY_TURN, [], null), name)}>Try again</button>
+        <button type="button" data-variant="primary" {...explain(SENDS.prompt(RETRY_TURN))} onClick={() => void hold(session, typed(null, RETRY_TURN, [], null), name)}>Try again</button>
       )}
     </section>
   );

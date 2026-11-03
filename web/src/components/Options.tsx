@@ -4,6 +4,7 @@ import type { Covered } from '../util.ts';
 import styles from './Options.module.css';
 import parts from './Parts.module.css';
 import { level } from './SecondOpinion.tsx';
+import { explain, SENDS } from './explain.ts';
 
 // The second opinion's reply, its reasoning and how sure it is, with Edit to take it into the reply box.
 function Suggestion({ advice, onEdit }: { advice: Advice; onEdit: () => void }) {
@@ -60,7 +61,7 @@ export function Options({ options, advice, frozen, composing, accepting, onPick,
         <div className={styles.standalone} data-frozen={(frozen?.via === 'advice' && frozen.label === null && frozen.adviceAt === advice.at) || undefined} data-suggestion>
           <div className={styles.standaloneHead}>
             <span className={parts.tag} data-explain="A second model checked the code on its own and answers with none of Claude's options; the percentage is how likely it thinks you answer the same">Second opinion's own answer · {advice.confidence}%</span>
-            {!accepting && <button type="button" className={styles.accept} onClick={onAccept}>Accept suggestion</button>}
+            {!accepting && <button type="button" className={styles.accept} {...explain(SENDS.acceptAdvice)} onClick={onAccept}>Accept suggestion</button>}
           </div>
           {!composing && <Suggestion advice={advice} onEdit={onEdit} />}
         </div>

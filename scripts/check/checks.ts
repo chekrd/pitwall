@@ -7061,4 +7061,24 @@ export const checks: Check[] = [
       assert.deepEqual(await page.eval(unnamed), [], 'a task page');
     },
   },
+  {
+    name: "L4 the other actions that send text to a Claude say in three parts what they do, what that Claude has in its context and which session it is: a finding's answers start a subtask that has not seen the review, Elaborate is a one-off run, and Continue the turn says what it sends",
+    scenario: 'findings',
+    async run({ page, mock }) {
+      const parts = (sel: string) => document.querySelector<HTMLElement>(sel)?.dataset.explain?.split('\n\n') ?? null;
+      await page.goto(`${mock.url}/s/s-review`);
+      await page.until('the findings', () => !!document.querySelector('#task-sheet [data-response="accept"]'));
+      const accept = (await page.eval(parts, '#task-sheet [data-response="accept"]'))!;
+      assert.equal(accept.length, 3);
+      assert.match(accept[1], /^What Claude has: .*nothing of the review's conversation$/);
+      assert.match(accept[2], /^Session: a new session of its own, a subtask in this same worktree/);
+      for (const kind of ['elaborate', 'second-look', 'reply']) assert.equal((await page.eval(parts, `#task-sheet [data-response="${kind}"]`))?.length, 3, kind);
+      assert.match(await page.eval(() => document.querySelector('#task-sheet [data-response="accept"]')!.getAttribute('aria-description') ?? ''), /^Starts a new Claude/);
+      await mock.post('/mock/patch', { id: 's-review', patch: { status: 'idle', interrupted: { at: Date.now() - 60_000, status: 'working', waitingFor: null, menu: null } } });
+      await page.until('Continue the turn', () => [...document.querySelectorAll('#task-sheet button')].some((b) => b.textContent === 'Continue the turn'));
+      const cont = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet button')].find((b) => b.textContent === 'Continue the turn')!.dataset.explain!.split('\n\n'));
+      assert.deepEqual(cont.map((p) => p.split(':')[0]), ['Sends Claude, with 5 s to undo', 'What Claude has', 'Session']);
+      assert.match(cont[0], /“The Mac restarted while you were working/);
+    },
+  },
 ];

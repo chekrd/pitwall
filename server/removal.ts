@@ -11,14 +11,14 @@ import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
 import { ttyOf, withoutAdopting } from './ingest.ts';
 import { scheduleRerank } from './priority.ts';
-import { must } from './sessions.ts';
+import { dropAsides, must } from './sessions.ts';
 import { notify, refreshWorkspace, repoView, taskWorktrees, workspace, type RepoView } from './workspace.ts';
 
 export async function stopWorktree(worktree: string) {
   const gone = sessions.all().filter((s) => s.worktree === worktree);
   for (const s of gone) if (s.pid && alive(s.pid)) process.kill(s.pid, 'SIGTERM');
   sessions.removeByWorktree(worktree);
-  await Promise.all(gone.map((s) => rm(join(SESSIONS_DIR, s.id), { recursive: true, force: true })));
+  await Promise.all([...gone.map((s) => rm(join(SESSIONS_DIR, s.id), { recursive: true, force: true })), dropAsides(gone)]);
   scheduleRerank();
   notify();
 }
@@ -175,7 +175,7 @@ async function stopTask(gone: Session[]) {
   if (ttys.length) await ghostty.closeTerminalsIn(null, ttys);
   await Promise.all(gone.map((o) => terminal.stop(o.id)));
   for (const o of gone) sessions.remove(o.id);
-  await Promise.all(gone.map((o) => rm(join(SESSIONS_DIR, o.id), { recursive: true, force: true })));
+  await Promise.all([...gone.map((o) => rm(join(SESSIONS_DIR, o.id), { recursive: true, force: true })), dropAsides(gone)]);
   scheduleRerank();
   notify();
 }

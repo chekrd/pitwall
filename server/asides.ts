@@ -54,10 +54,11 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
       last = now();
       change(id, asideId, (a) => ({ ...a, activity: text }));
     };
+    const s = must(id);
     try {
-      const out = await run(must(id), asidePrompt(question, !fork), fork, controller.signal, activity);
+      const out = await run(s, asidePrompt(question, !fork), fork, controller.signal, activity);
       const kept = change(id, asideId, (a) => ({ ...lastTurn(a, { answer: out.answer }), fork: out.fork, state: 'done', activity: null, at: now() }));
-      if (!kept) await discard(must(id), out.fork).catch(() => {});
+      if (!kept) await discard(s, out.fork).catch(() => {});
     } catch (err) {
       const error = controller.signal.aborted ? 'stopped' : err instanceof Error ? err.message : String(err);
       change(id, asideId, (a) => ({ ...lastTurn(a, { error }), state: 'failed', activity: null, at: now() }));
@@ -103,6 +104,12 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     if (aside.fork) await discard(s, aside.fork).catch((err) => console.warn('aside fork not removed', aside.fork, err));
   }
 
+  // A task going away takes its asides' forks with it; one still answering discards its fork once it is back.
+  async function drop(s: Session) {
+    for (const a of s.asides) running.get(a.id)?.abort();
+    await Promise.all(s.asides.flatMap((a) => (a.fork ? [discard(s, a.fork).catch((err) => console.warn('aside fork not removed', a.fork, err))] : [])));
+  }
+
   // An aside that was answering when the board stopped has no run any more.
   function settle(all: readonly Session[]) {
     for (const s of all) {
@@ -113,5 +120,5 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     }
   }
 
-  return { ask, stop, close, settle };
+  return { ask, stop, close, drop, settle };
 }

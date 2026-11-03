@@ -4,6 +4,7 @@ import type { Advice, Session } from '../types.ts';
 import { Clock } from './Clock.tsx';
 import parts from './Parts.module.css';
 import styles from './SecondOpinion.module.css';
+import { explain, SENDS } from './explain.ts';
 
 export const level = (confidence: number) => (confidence >= 75 ? 'high' : confidence >= 50 ? 'medium' : 'low');
 
@@ -43,7 +44,7 @@ function Failed({ session, advice, className }: { session: Session; advice: Advi
   return (
     <div className={className} data-advice="failed">
       <span className={styles.failed} data-explain={advice.error}>{advice.error === 'stopped' ? 'Second opinion stopped' : `Second opinion failed: ${advice.error}`}</span>
-      <button type="button" className={parts.tiny} disabled={pending} onClick={() => act('retry-advice')}>Retry</button>
+      <button type="button" className={parts.tiny} disabled={pending} {...explain(SENDS.adviceRetry)} onClick={() => act('retry-advice')}>Retry</button>
     </div>
   );
 }

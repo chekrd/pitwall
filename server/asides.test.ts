@@ -87,3 +87,29 @@ test('empty questions and too many asides are refused, and asides left answering
   assert.ok(stuck.asides.every((a) => a.state === 'failed' && /restarted/.test(a.turns[0].error!)));
   assert.equal(fresh.row().asides.length, 0);
 });
+
+test("a task going away deletes its asides' forks, also one that comes back after it went", async () => {
+  const t = setup();
+  t.a.ask('s', { text: 'Done one?' });
+  await t.settle();
+  t.a.ask('s', { text: 'Still answering?' });
+  const gone = t.row();
+  await t.a.drop(gone);
+  assert.deepEqual(t.discarded, ['f1']);
+  const u = setup();
+  let row: Session | undefined = session();
+  const late: (() => void)[] = [];
+  const discarded: string[] = [];
+  const a = asking({
+    get: () => row,
+    save: (_, asides) => void (row = row && { ...row, asides }),
+    run: () => new Promise((done) => late.push(() => done({ fork: 'f-late', answer: 'x' }))),
+    discard: async (_s, fork) => void discarded.push(fork),
+  });
+  a.ask('s', { text: 'Slow?' });
+  row = undefined;
+  for (const l of late) l();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(discarded, ['f-late'], 'the fork of a removed task is not left behind');
+  assert.equal(u.row().asides.length, 0);
+});

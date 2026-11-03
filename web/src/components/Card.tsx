@@ -26,6 +26,7 @@ import { labelOf, stoppedOnError } from './Status.tsx';
 import { TaskRail } from './TaskRail.tsx';
 import { TurnBody } from './TurnBody.tsx';
 import { elaborate, explanationFor } from './WhyPanel.tsx';
+import { explain, SENDS } from './explain.ts';
 
 // State that belongs to one decision: a new decision on the same card starts it afresh.
 function useKeyed<T>(key: string | null, initial: () => T): [T, (value: T) => void] {
@@ -382,7 +383,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               <button type="button" className={styles.secondary} aria-pressed={composing} onClick={() => (composing ? closeComposer() : compose())}>
                 Write my own <kbd>W</kbd>
               </button>
-              <button type="button" className={styles.secondary} aria-pressed={whyOpen} data-explain="A model reads the code and explains the background and each choice" onClick={toggleWhy}>
+              <button type="button" className={styles.secondary} aria-pressed={whyOpen} {...explain(SENDS.elaborate)} onClick={toggleWhy}>
                 Elaborate <kbd>Y</kbd>
               </button>
             </>

@@ -12,6 +12,7 @@ import { StateMark } from './StateMark.tsx';
 import { labelOf, STATE_LABELS } from './Status.tsx';
 import { resolveSubtask } from './SessionMenu.tsx';
 import { toast, UNDO_KBD } from './Toasts.tsx';
+import { explain, SENDS, type Explanation } from './explain.ts';
 
 type Response = SubtaskKind | 'reject' | 'solve' | 'reopen';
 
@@ -21,10 +22,10 @@ export const stateLabel = (o: Session, shown: Shown) => (o.resolution ? RESOLVED
 
 export const SUBTASK_LABELS: Record<SubtaskKind, string> = { accept: 'Fix', elaborate: 'Explain', 'second-look': 'Second look', reply: 'Reply' };
 
-const ACTIONS: { kind: SubtaskKind; label: string; title: string }[] = [
-  { kind: 'accept', label: 'Accept', title: 'A new agent checks the finding and fixes it in this worktree; your note goes along' },
-  { kind: 'elaborate', label: 'Elaborate', title: 'A new agent explains the finding without changing files; your note goes along' },
-  { kind: 'second-look', label: 'Second look', title: 'A new agent checks independently whether the finding is real, without changing files' },
+const ACTIONS: { kind: SubtaskKind; label: string; tip: Explanation }[] = [
+  { kind: 'accept', label: 'Accept', tip: SENDS.findingAccept },
+  { kind: 'elaborate', label: 'Elaborate', tip: SENDS.findingElaborate },
+  { kind: 'second-look', label: 'Second look', tip: SENDS.findingSecondLook },
 ];
 
 // The task's findings, each answered on its own: Reject and Mark solved only mark it (Mark solved settles its open
@@ -152,10 +153,10 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
           )}
           <div className={styles.actions}>
             {ACTIONS.map((a) => (
-              <button key={a.kind} type="button" data-response={a.kind} data-explain={a.title} disabled={sending} onClick={() => void respond(a.kind)}>{a.label}</button>
+              <button key={a.kind} type="button" data-response={a.kind} {...explain(a.tip)} disabled={sending} onClick={() => void respond(a.kind)}>{a.label}</button>
             ))}
             {expanded && (
-              <button type="button" data-response="reply" data-explain="A new agent acts on your answer" disabled={sending || !note.trim()} onClick={() => void respond('reply')}>Reply</button>
+              <button type="button" data-response="reply" {...explain(SENDS.findingReply)} disabled={sending || !note.trim()} onClick={() => void respond('reply')}>Reply</button>
             )}
             <button
               type="button"

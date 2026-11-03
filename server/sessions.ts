@@ -261,6 +261,7 @@ export const askAside = (id: string, body: { text?: unknown; aside?: unknown }) 
 export const stopAside = (id: string, aside: unknown) => asides.stop(id, aside);
 export const closeAside = (id: string, aside: unknown) => asides.close(id, aside);
 export const settleAsides = () => asides.settle(sessions.all());
+export const dropAsides = (gone: Session[]) => Promise.all(gone.map((s) => asides.drop(s)));
 
 const ends = turnEnds();
 const autoSending = new Set<string>();
@@ -363,6 +364,7 @@ export async function forget(id: string) {
   const s = must(id);
   if (s.status !== 'exited') throw new Error('quit this session first, or archive it');
   sessions.remove(id);
+  await dropAsides([s]);
   await rm(join(SESSIONS_DIR, id), { recursive: true, force: true });
   scheduleRerank();
   notify();
