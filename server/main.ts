@@ -21,7 +21,7 @@ import { handleMcp } from './mcp.ts';
 import { ALIASES, EFFORTS, resolver, settingsFor } from './models.ts';
 import * as S from './sessions.ts';
 import { sync } from './ingest.ts';
-import { deleteWorktree, deleteWorktreeLoss, removeWorktreeAndSessions } from './removal.ts';
+import { clearing, deleteWorktree, deleteWorktreeLoss, removeWorktreeAndSessions } from './removal.ts';
 import { readEntry, watchEntry } from './uiEntry.ts';
 import { checkUploads, keepUploads, saveUpload } from './uploads.ts';
 import { watchUsage } from './usage.ts';
@@ -55,7 +55,8 @@ app.onError((err, c) => {
 
 const usage = watchUsage(USAGE_FILE, notify);
 onDrift(notify);
-const state = () => ({ ...snapshot(), schedules: schedules.all(), usage: usage.current(), pause: S.pauseState(), drift: drift(), pitwall: ROOT });
+const withClearing = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id) })) });
+const state = () => ({ ...withClearing(snapshot()), schedules: schedules.all(), usage: usage.current(), pause: S.pauseState(), drift: drift(), pitwall: ROOT });
 
 app.get('/api/state', (c) => c.json(state()));
 
@@ -329,6 +330,7 @@ async function act(c: Context, id: string, action: string, body: any) {
     case 'priority': S.setPriority(id, body.priority ?? null); break;
     case 'resolve': S.resolve(id, body.state ?? null); break;
     case 'delete-worktree': await deleteWorktree(id, { discard: body.discard === true }); break;
+    case 'dismiss-clear-error': clearing.dismiss(id); break;
     case 'finding': return c.json({ id: await respond(id, body) });
     case 'park': S.park(id, body); break;
     case 'edit-park': S.editPark(id, body); break;

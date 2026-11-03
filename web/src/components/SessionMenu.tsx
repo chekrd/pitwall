@@ -66,6 +66,7 @@ function quit(session: Session) {
 export function SessionMenu({ session, worktree, name }: { session: Session; worktree: WorktreeView | undefined; name: string }) {
   const id = useId();
   const exited = session.status === 'exited';
+  const clearing = !!session.clearing;
   const path = tilde(session.worktree, useStore().home);
   const pick = (run: () => unknown) => () => {
     document.getElementById(id)?.hidePopover();
@@ -79,14 +80,14 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         <Icon name="more" size={18} />
       </button>
       <div id={id} popover="auto" className={styles.menu}>
-        {exited ? (
+        {clearing ? null : exited ? (
           <Item label="Continue" note="Resume the conversation in a hidden terminal" onClick={act('focus')} />
         ) : (
           <Item label="Terminal" note="Show its terminal in Ghostty" onClick={pick(() => openTerminal(session.id).catch(reportError))} />
         )}
         <Item label="Open in Finder" note={path} onClick={act('finder')} />
         <Item label="Open in VS Code" note={path} onClick={act('vscode')} />
-        {!exited && (
+        {!exited && !clearing && (
           <Item
             label="Quit Claude"
             note="Stops the process; Continue picks it up later"
@@ -94,7 +95,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
           />
         )}
         <PriorityPicker session={session} />
-        {session.parent ? (session.resolution ? (
+        {clearing ? null : session.parent ? (session.resolution ? (
           <Item label="Reopen" note={`Marked ${session.resolution.state}; back into the queue and its task's open count`} onClick={pick(() => resolveSubtask(session, null, name))} />
         ) : (
           <>
@@ -106,7 +107,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         ) : (
           <Item label="Archive" note="Hide it; ranking, advice and summaries stop" onClick={pick(() => archive(session, name))} />
         )}
-        {exited && (
+        {exited && !clearing && (
           <Item
             label="Remove from list"
             note="The conversation and worktree stay"
@@ -117,7 +118,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
             })}
           />
         )}
-        {!session.parent && (
+        {!session.parent && !clearing && (
           <Item
             label="Clear task…"
             note={!worktree ? 'Quits Claude and removes the task; its worktree is already gone' : worktree.isMain ? 'Quits Claude and removes the task; the checkout stays' : 'Quits Claude, deletes the worktree and its branch, removes the task'}
@@ -162,7 +163,7 @@ function Item({ label, note, danger = false, onClick }: { label: string; note: s
 
 // The same ask as the menu's Clear task…, a click closer; the dialog still says what would be lost.
 export function ClearButton({ session }: { session: Session }) {
-  if (session.parent) return null;
+  if (session.parent || session.clearing) return null;
   return (
     <button type="button" className={styles.more} aria-label="Clear task" data-tip="Clear task…" data-clear onClick={() => askDeleteWorktree(session)}>
       <Icon name="trash" size={17} />

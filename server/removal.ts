@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { stopAdvice } from './advisor.ts';
+import { clearings } from './clearing.ts';
 import { alive, liveConversations } from './conversations.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { sessions, type Session } from './db.ts';
@@ -43,8 +44,19 @@ async function removing(path: string, work: () => Promise<void>) {
   }
 }
 
+export const clearing = clearings(notify);
+
+const inside = (folder: string, path: string) => path === folder || path.startsWith(`${folder}/`);
+
+// Every task in the path shows as clearing until the path is gone, or shows why it is not.
+const clearingIn = (path: string, work: () => Promise<void>) =>
+  clearing.run(path, sessions.all().filter((o) => inside(path, o.worktree)).map((o) => o.id), work);
+
+export const removeWorktreeAndSessions = (repo: RepoView, path: string, opts: { force: boolean; deleteBranch: boolean }) =>
+  clearingIn(path, () => removeWorktreeNow(repo, path, opts));
+
 // Claudes go first: one still running would write into the deleted tree and recreate parts of it.
-export async function removeWorktreeAndSessions(repo: RepoView, path: string, opts: { force: boolean; deleteBranch: boolean }) {
+async function removeWorktreeNow(repo: RepoView, path: string, opts: { force: boolean; deleteBranch: boolean }) {
   const worktree = repo.worktrees.find((w) => w.path === path);
   if (!worktree) throw new Error('worktree not found');
   if (worktree.isMain) throw new Error('this is the repository itself, not a worktree');
@@ -104,12 +116,11 @@ async function taskFolderLoss(folder: string, subtasks: number) {
 // A task folder goes with every worktree in it, each with its branch, and then the folder itself, unless something
 // other than those worktrees left a repository in it.
 async function removeTaskFolder(folder: string) {
-  const inside = (path: string) => path === folder || path.startsWith(`${folder}/`);
   try {
     await withoutAdopting(folder, async () => {
-      const claudes = [...(await liveConversations()).values()].filter((p) => inside(p.cwd));
+      const claudes = [...(await liveConversations()).values()].filter((p) => inside(folder, p.cwd));
       const ttys = (await Promise.all(claudes.map((p) => ttyOf(p.pid)))).filter((t) => t !== null);
-      const gone = sessions.all().filter((o) => inside(o.worktree));
+      const gone = sessions.all().filter((o) => inside(folder, o.worktree));
       for (const o of gone) stopAdvice(o.id);
       for (const p of claudes) if (alive(p.pid)) process.kill(p.pid, 'SIGTERM');
       await waitForExit(claudes.map((p) => p.pid), 10_000);
@@ -147,11 +158,15 @@ export async function deleteWorktree(id: string, { discard = false } = {}) {
   const s = must(id);
   if (s.parent) throw new Error(NOT_A_SUBTASK);
   if (!discard && losesWork(await deleteWorktreeLoss(id))) throw new Error(UNAPPROVED_LOSS);
-  if (s.repoId === null) return removeTaskFolder(s.worktree);
+  if (s.repoId === null) return clearingIn(s.worktree, () => removeTaskFolder(s.worktree));
   const repo = repoView(s.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);
-  if (repo && worktree && !worktree.isMain) return removeWorktreeAndSessions(repo, s.worktree, { force: true, deleteBranch: true });
+  if (repo && worktree && !worktree.isMain) return clearingIn(s.worktree, () => removeWorktreeNow(repo, s.worktree, { force: true, deleteBranch: true }));
   const gone = [s, ...subtasksOf(id)];
+  return clearing.run(`task:${id}`, gone.map((o) => o.id), () => stopTask(gone));
+}
+
+async function stopTask(gone: Session[]) {
   for (const o of gone) stopAdvice(o.id);
   const pids = gone.flatMap((o) => (o.pid && alive(o.pid) ? [o.pid] : []));
   const ttys = (await Promise.all(gone.map((o) => (o.pid && alive(o.pid) ? (o.tty ?? ttyOf(o.pid)) : null)))).filter((t) => t !== null);

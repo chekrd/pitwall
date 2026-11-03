@@ -9,6 +9,7 @@ export const STATE_LABELS: Record<Shown, string> = {
   working: 'In progress',
   idle: 'Your turn',
   exited: 'Ended',
+  clearing: 'Clearing…',
 };
 
 export const STATE_HINTS: Record<Shown, string> = {
@@ -18,6 +19,7 @@ export const STATE_HINTS: Record<Shown, string> = {
   working: 'Claude is working on its turn; nothing for you to do yet',
   idle: 'Claude finished its turn and waits for your next message',
   exited: 'The Claude process has quit; Continue resumes the conversation',
+  clearing: 'Clear task has stopped Claude and is removing the worktree; the task leaves the board once it is gone',
 };
 
 // A turn that ended on an API error waits for you like any other, but no reply came.

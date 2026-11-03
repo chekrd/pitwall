@@ -8,6 +8,7 @@ import { extname, join, resolve, sep } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { answering, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
+import { clearings } from '../../server/clearing.ts';
 import type { ConversationLog } from '../../server/conversations.ts';
 import type { FullDiff } from '../../server/git.ts';
 import type { Session, SubtaskKind } from '../../server/db.ts';
@@ -107,6 +108,8 @@ const log: Entry[] = [];
 const uxEvents: { name: string; data?: Record<string, unknown> }[] = [];
 let failNext: { error: string; code?: string } | null = null;
 let delayMs = 0;
+// While held, a Clear task waits as a large worktree's removal would, until /mock/clear-release lets it finish or fail.
+let clearHold: { done: Promise<void>; release: (error?: string) => void } | null = null;
 let dropUntil = 0;
 let announced: string | null = null;
 let drift: Drift[] = [];
@@ -126,7 +129,7 @@ const clients = new Set<WebSocket>();
 let pushing = false;
 
 function shown(s: Session) {
-  if (!args.legacy) return s;
+  if (!args.legacy) return { ...s, ...clearing.of(s.id) };
   const { answered: _, ...old } = s;
   return old;
 }
@@ -174,6 +177,8 @@ function load(name: string) {
   pauses.clear();
   failNext = null;
   delayMs = 0;
+  clearHold?.release();
+  clearHold = null;
   dropUntil = 0;
   announced = null;
   pausing.cancel();
@@ -443,19 +448,33 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
       const loss = deleteLoss(s);
       if (!loss.gone && !loss.checkout && loss.files + loss.commits > 0) throw new Error('not everything is pushed: approve throwing it away in Clear task');
     }
-    if (s.repoId === null) {
-      for (const { repo, worktree } of taskWorktrees(s.worktree)) repo.worktrees = repo.worktrees.filter((w) => w !== worktree);
-      state.sessions = state.sessions.filter((o) => o.worktree !== s.worktree && !o.worktree.startsWith(`${s.worktree}/`));
-      push();
-      return;
-    }
-    const worktree = mustRepo(s.repoId).worktrees.find((w) => w.path === s.worktree);
-    if (worktree && !worktree.isMain) return removeWorktree(mustRepo(s.repoId), s.worktree);
-    const gone = new Set([s, ...subtasksOf(s.id)]);
-    state.sessions = state.sessions.filter((o) => !gone.has(o));
-    push();
+    const worktree = repoOf(s.repoId)?.worktrees.find((w) => w.path === s.worktree);
+    const path = s.repoId === null || (worktree && !worktree.isMain) ? s.worktree : null;
+    const ids = (path ? state.sessions.filter((o) => o.worktree === path || o.worktree.startsWith(`${path}/`)) : [s, ...subtasksOf(s.id)]).map((o) => o.id);
+    const hold = clearHold;
+    return clearing.run(path ?? `task:${s.id}`, ids, async () => {
+      await hold?.done;
+      clearTask(s);
+    });
   },
+  'dismiss-clear-error': (s) => clearing.dismiss(s.id),
 };
+
+const clearing = clearings(() => push());
+
+function clearTask(s: Session) {
+  if (s.repoId === null) {
+    for (const { repo, worktree } of taskWorktrees(s.worktree)) repo.worktrees = repo.worktrees.filter((w) => w !== worktree);
+    state.sessions = state.sessions.filter((o) => o.worktree !== s.worktree && !o.worktree.startsWith(`${s.worktree}/`));
+    push();
+    return;
+  }
+  const worktree = mustRepo(s.repoId).worktrees.find((w) => w.path === s.worktree);
+  if (worktree && !worktree.isMain) return removeWorktree(mustRepo(s.repoId), s.worktree);
+  const gone = new Set([s, ...subtasksOf(s.id)]);
+  state.sessions = state.sessions.filter((o) => !gone.has(o));
+  push();
+}
 
 async function sessionAction(id: string, action: string, body: any) {
   if (delayMs) await pause(delayMs);
@@ -951,6 +970,18 @@ route('POST', '/mock/advice', ({ body }) => {
 route('POST', '/mock/fail', ({ body }) => {
   failNext = { error: String(body.error ?? 'mock failure'), ...(body.code && { code: String(body.code) }) };
   return failNext;
+});
+route('POST', '/mock/clear-hold', () => {
+  let release!: (error?: string) => void;
+  const done = new Promise<void>((resolve, reject) => (release = (error) => (error ? reject(new Error(error)) : resolve())));
+  done.catch(() => {});
+  clearHold = { done, release };
+  return {};
+});
+route('POST', '/mock/clear-release', ({ body }) => {
+  clearHold?.release(body.error ? String(body.error) : undefined);
+  clearHold = null;
+  return {};
 });
 route('POST', '/mock/delay', ({ body }) => {
   delayMs = Number(body.ms) || 0;

@@ -155,13 +155,13 @@ export function adviceFor(s: Session) {
   return s.advice && s.advice.key === decisionKey(s) ? s.advice : null;
 }
 
-export type Attention = 'decide' | 'focus' | 'working' | 'idle' | 'exited';
+export type Attention = 'clearing' | 'decide' | 'focus' | 'working' | 'idle' | 'exited';
 // As a task shows while a send to it waits out its hold: answered already, so it asks nothing.
 export type Shown = Attention | 'sending';
 
 export const shownOf = (s: Session, busy: ReadonlySet<string>): Shown => {
   const attention = attentionOf(s);
-  return busy.has(s.id) && attention !== 'working' && attention !== 'exited' ? 'sending' : attention;
+  return busy.has(s.id) && attention !== 'working' && attention !== 'exited' && attention !== 'clearing' ? 'sending' : attention;
 };
 
 export const MENU_GRACE_MS = 10_000;
@@ -176,6 +176,7 @@ export function menuStuck(s: Session, now = Date.now()) {
 }
 
 export function attentionOf(s: Session, now = Date.now()): Attention {
+  if (s.clearing) return 'clearing';
   if (s.status === 'exited') return 'exited';
   if (decisionKey(s)) return 'decide';
   if (answeredMenuAt(s) !== null) return menuStuck(s, now) ? 'focus' : 'working';

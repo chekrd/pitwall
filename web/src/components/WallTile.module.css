@@ -20,6 +20,7 @@
     &[data-attention="focus"] { border-color: var(--prompt-line); background: var(--tint-focus); }
     &[data-attention="idle"] { border-color: var(--idle-line); }
     &[data-attention="exited"] { border-style: dashed; border-color: var(--line-2); background: none; }
+    &[data-attention="clearing"] { border-style: dashed; border-color: var(--line-2); background: none; opacity: 0.7; }
     /* A subtask wants you more than the task itself does. */
     &[data-wants="decide"] { border-color: var(--accent-line); }
     &[data-wants="focus"] { border-color: var(--prompt-line); }
@@ -39,6 +40,7 @@
     [data-attention="focus"] & { color: var(--prompt); }
     [data-attention="idle"] & { color: var(--idle); }
     [data-attention="working"] & { color: var(--work); }
+    [data-attention="clearing"] & { color: var(--muted); }
     [data-archived] & { color: var(--muted); }
     /* --danger reads at 4.3:1 on the light tile; a share of the text colour darkens it there, and lightens it in dark. */
     &[data-error] { color: color-mix(in srgb, var(--danger) 80%, var(--text)); }

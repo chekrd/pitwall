@@ -15,6 +15,8 @@ import { ERROR_LINES, hintOf, labelOf, PrChips, stoppedOnError } from './Status.
 import styles from './WallTile.module.css';
 
 function textOf(s: Session, attention: Attention) {
+  if (attention === 'clearing') return 'Clear task is removing it; it leaves the board once its worktree is gone';
+  if (s.clearError) return `Clear task did not finish: ${s.clearError}`;
   if (attention === 'decide') return decisionOf(s)?.problem ?? s.menu!.questions.map((q) => q.question).join(' · ');
   if (attention === 'focus') return promptOf(s).headline;
   if (stoppedOnError(s, attention)) return ERROR_LINES[s.turnError!.kind];
@@ -44,7 +46,8 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
   const own = shownOf(session, busy);
   // A task that waits on its subtasks is in progress while any of them works.
   const shown = !archived && (own === 'idle' || own === 'exited') && unsettled.some((o) => !o.archived && shownOf(o, busy) === 'working') ? 'working' : own;
-  const label = archived ? 'Archived' : session.interrupted?.cause === 'pause' && session.status !== 'working' ? 'Paused' : shown === 'exited' && session.interrupted ? 'Ended by restart' : labelOf(session, shown);
+  const clearFailed = !!session.clearError && !session.clearing;
+  const label = archived ? 'Archived' : clearFailed ? 'Clear failed' : session.interrupted?.cause === 'pause' && session.status !== 'working' ? 'Paused' : shown === 'exited' && session.interrupted ? 'Ended by restart' : labelOf(session, shown);
   const working = !archived && attention === 'working';
   const asked = attention === 'decide' ? openDecision(session)?.askedAt : undefined;
   const tag = shown === 'decide' && !archived ? adviceTag(session) : null;
@@ -76,7 +79,7 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
     >
       <header className={styles.head}>
         <StateMark state={archived ? 'archived' : shown} />
-        <span className={styles.state} data-error={stoppedOnError(session, shown) || undefined} title={archived ? undefined : hintOf(session, shown)}>{label}</span>
+        <span className={styles.state} data-error={clearFailed || stoppedOnError(session, shown) || undefined} title={archived ? undefined : hintOf(session, shown)}>{label}</span>
         <span className={styles.age} data-age title={asked !== undefined ? undefined : session.summary ? 'When the status was last updated' : 'When the session last changed'}>
           {asked !== undefined ? `asked ${ago(asked)}` : ago(session.summary?.at ?? session.updatedAt)}
         </span>

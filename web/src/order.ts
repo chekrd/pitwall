@@ -1,7 +1,7 @@
 import type { Session } from './types.ts';
 import { attentionOf, type Attention } from './util.ts';
 
-const attentionRank: Record<Attention, number> = { decide: 0, focus: 1, idle: 2, working: 3, exited: 4 };
+const attentionRank: Record<Attention, number> = { decide: 0, focus: 1, idle: 2, working: 3, exited: 4, clearing: 5 };
 
 const group = (s: Session) => attentionRank[attentionOf(s)];
 

@@ -23,6 +23,7 @@ import styles from './Overview.module.css';
 import { scheduledNote } from '../schedules.ts';
 import { SecondOpinion } from './SecondOpinion.tsx';
 import { STATE_LABELS, stoppedOnError } from './Status.tsx';
+import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { FocusButton } from './SessionMenu.tsx';
 import { toast } from './Toasts.tsx';
 
@@ -193,6 +194,25 @@ const ERROR_ADVICE = {
 
 const RETRY_TURN = 'Your last turn stopped on an API error before you replied. Answer my last message again.';
 
+function clearingNote(session: Session, folderTask: unknown, repo: RepoView | undefined) {
+  const own = repo?.worktrees.find((w) => w.path === session.worktree);
+  if (!folderTask && (!own || own.isMain)) return 'Claude is quitting; the task leaves the board once it has.';
+  return `Claude quits and ${folderTask ? 'the task folder' : 'the worktree'} is being removed, which takes a while for a large checkout; the task leaves the board once it is gone.`;
+}
+
+// Claude is stopped already, so the task stays as the failure left it, and Clear task can be asked again.
+function ClearFailed({ session }: { session: Session }) {
+  return (
+    <section className={styles.blocked} data-clear-error data-ux-section="clear error">
+      <div className={styles.errorText}>
+        <p><strong>Clear task did not finish.</strong> {session.clearError}</p>
+      </div>
+      <button type="button" onClick={() => sessionAction(session.id, 'dismiss-clear-error').catch(reportError)}>Dismiss</button>
+      {!session.parent && <button type="button" data-variant="primary" onClick={() => askDeleteWorktree(session)}>Clear task…</button>}
+    </section>
+  );
+}
+
 function TurnError({ session, name }: { session: Session; name: string }) {
   const { kind, text } = session.turnError!;
   const said = text.split(/\n\s*\n/)[0].replace(/^API Error:\s*/, '');
@@ -217,7 +237,8 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const { summary, activity } = session;
   const attention = attentionOf(session);
   const { archived } = session;
-  const working = session.status === 'working';
+  const { clearing } = session;
+  const working = session.status === 'working' && !clearing;
   const message = !archived && (attention === 'working' || attention === 'idle');
   // Message Claude stays while focus is in it, also with the window away, whatever the state turns to: a dictation app
   // inserts into the field it started on, and a new box would not be that field. The server refuses a message while
@@ -232,7 +253,17 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
       <div className={styles.grid}>
         <div className={styles.main}>
           <SubtaskOf session={session} />
-          {session.interrupted && !archived && <Interrupted session={session} name={name} />}
+          {clearing && (
+            <section className={styles.working} data-clearing data-ux-section="clearing">
+              <span className={styles.spinner} aria-hidden />
+              <div className={styles.step}>
+                <strong>Clearing the task</strong>
+                <span>{clearingNote(session, task, repo)}</span>
+              </div>
+            </section>
+          )}
+          {session.clearError && !clearing && <ClearFailed session={session} />}
+          {session.interrupted && !archived && !clearing && <Interrupted session={session} name={name} />}
           {stoppedOnError(session, attention) && <TurnError session={session} name={name} />}
           {working && (
             <section className={styles.working} data-ux-section="working">
@@ -258,7 +289,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </section>
           )}
           {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} />}
-          {(message || (writing && !archived)) && (
+          {(message || (writing && !archived && !clearing)) && (
             <div
               data-ux-section="message box"
               onFocus={() => {

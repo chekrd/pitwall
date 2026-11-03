@@ -1811,6 +1811,87 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task, its subtask and another task in its worktree show Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
+    expectedErrors: [/status of 400/, /Claude did not quit/],
+    async run({ page, mock, shot }) {
+      const worktree = '~/code/worktrees/search-typos/storefront';
+      const ids = ['s-search', 's-sub', 's-twin'];
+      await mock.post('/mock/add', { template: 'idle', id: 's-twin', worktree, title: 'Another task in search-typos' });
+      await mock.post('/mock/add', { template: 'idle', id: 's-sub', worktree, title: 'Fix: typo ranking', parent: { id: 's-search', basis: 'b', finding: 0, title: 'Typo ranking', kind: 'accept', text: '' } });
+      const clear = async () => {
+        await page.until('the delete dialog', () => {
+          const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
+          return d?.open && !d.innerText.includes('Checking');
+        });
+        await approveLoss(page);
+        await page.click('dialog#delete-worktree button', 'Clear task');
+      };
+      const tileOf = (id: string) => {
+        const t = document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`);
+        return t && { attention: t.dataset.attention, label: t.querySelector('header [class*="state"]')?.textContent, text: t.querySelector('p')?.textContent, trash: !!t.querySelector('[data-clear]') };
+      };
+
+      await mock.post('/mock/clear-hold', {});
+      await page.goto(`${mock.url}/s/s-search/overview`);
+      await page.until('the task page', sheetOpen);
+      await page.click('#task-sheet header button[aria-label="Session actions"]');
+      await page.until('the menu', menuItems);
+      await page.click(':popover-open button', 'Clear task');
+      await clear();
+      await page.goto(`${mock.url}/wall`);
+      const tiles = await page.until('both tiles clearing', (all: string[]) => {
+        const shown = all.map((id) => {
+          const t = document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`);
+          return t && { attention: t.dataset.attention, label: t.querySelector('header [class*="state"]')?.textContent, trash: !!t.querySelector('[data-clear]') };
+        });
+        return shown.every((t) => t?.attention === 'clearing') && shown;
+      }, ['s-search', 's-twin']);
+      assert.deepEqual(tiles, [0, 1].map(() => ({ attention: 'clearing', label: 'Clearing…', trash: false })));
+      assert.notEqual((await page.eval(tileOf, 's-cart'))?.attention, 'clearing', 'a task in another worktree is not clearing');
+      const state = (await mock.get('/api/state')).sessions as { id: string; clearing: boolean; clearError: string | null }[];
+      assert.deepEqual(state.filter((s) => s.clearing).map((s) => s.id).sort(), ids);
+      await shot('clearing-tiles');
+
+      await page.goto(`${mock.url}/s/s-search/overview`);
+      const page1 = await page.until('the clearing section', () => document.querySelector('#task-sheet [data-clearing]')?.textContent);
+      assert.match(page1, /Clearing the task.*the worktree is being removed/);
+      assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-ux-section="message box"]')), false, 'no message box while clearing');
+      await page.click('#task-sheet header button[aria-label="Session actions"]');
+      assert.deepEqual(await page.until('the menu', menuItems), ['Open in Finder', 'Open in VS Code']);
+      await page.key('Escape');
+      await shot('clearing-page');
+
+      const second = mock.post('/api/sessions/s-twin/delete-worktree', { discard: true });
+      await sleep(300);
+      assert.equal((await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length, 3, 'the held removal is still running');
+      await mock.post('/mock/clear-release', {});
+      await second;
+      const removals = await logged(mock, 'both clears', (e) => e.method === 'POST' && e.action === 'delete-worktree');
+      assert.deepEqual(removals.map((e) => [e.sessionId, e.status]), [['s-search', 204], ['s-twin', 204]], 'the second joined the first, which a second removal of the gone worktree would fail');
+      await until('the three gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => ids.includes(s.id)));
+
+      await mock.post('/mock/clear-hold', {});
+      await page.goto(`${mock.url}/wall`);
+      await page.click('[data-tile][data-session="s-cart"] button[aria-label="Clear task"]');
+      await clear();
+      await page.until('s-cart clearing', (id: string) => document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`)?.dataset.attention === 'clearing', 's-cart');
+      await mock.post('/mock/clear-release', { error: 'Claude did not quit; nothing was deleted' });
+      const failed = await page.until('the failed clear on the tile', (id: string) => {
+        const t = document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`);
+        const label = t?.querySelector<HTMLElement>('header [class*="state"]');
+        return t && t.dataset.attention !== 'clearing' && label?.textContent === 'Clear failed' && { error: label.dataset.error, text: t.querySelector('p')?.textContent, trash: !!t.querySelector('[data-clear]') };
+      }, 's-cart');
+      assert.deepEqual(failed, { error: 'true', text: 'Clear task did not finish: Claude did not quit; nothing was deleted', trash: true });
+      await shot('clear-failed-tile');
+      await page.goto(`${mock.url}/s/s-cart/overview`);
+      const shown = await page.until('the failure on the task page', () => document.querySelector('#task-sheet [data-clear-error]')?.textContent);
+      assert.match(shown, /Clear task did not finish\. Claude did not quit; nothing was deleted/);
+      await page.click('#task-sheet [data-clear-error] button', 'Dismiss');
+      await page.until('the failure gone', () => !document.querySelector('#task-sheet [data-clear-error]'));
+      assert.equal((await mock.get('/api/state')).sessions.find((s: { id: string }) => s.id === 's-cart').clearError, null);
+    },
+  },
+  {
     name: 'P4.9.conversation Conversation, the third tab, shows each prompt with its pictures and Claude\'s reply to it with the artifacts it made, oldest first, earlier conversations before a /clear line; a picture grows on a click and an artifact opens in Artifacts; a prompt and a reply copy whole, as written, from a button in their heading; it reads the transcript again after a new reply; 3 comes back to it',
     async run({ page, mock, shot }) {
       const log = () => {
