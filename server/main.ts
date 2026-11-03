@@ -16,7 +16,7 @@ import { listCommands } from './commands.ts';
 import { openDecision, Refusal } from './decision.ts';
 import { elaborate } from './explain.ts';
 import { respond } from './findings.ts';
-import { addWorktree, fullDiff, listBranches, repoRoot } from './git.ts';
+import { addWorktree, fullDiff, listBranches, repoRoot, upstreamOf } from './git.ts';
 import { handleMcp } from './mcp.ts';
 import { ALIASES, EFFORTS, resolver, settingsFor } from './models.ts';
 import * as S from './sessions.ts';
@@ -421,6 +421,11 @@ app.get('/api/diff/file', async (c) => {
   const paths = c.req.queries('path') ?? [];
   if (!paths.length || paths.some((p) => isAbsolute(p) || p.split('/').includes('..'))) throw new Error('bad path');
   return c.json(await diffOf(worktree, { paths }));
+});
+
+app.get('/api/upstream', async (c) => {
+  const worktree = c.req.query('worktree') ?? '';
+  return c.json(taskFolderOf(worktree) ? null : await upstreamOf(worktree, repoOfWorktree(worktree).base));
 });
 
 app.get('/api/diff', async (c) => {

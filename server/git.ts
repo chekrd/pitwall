@@ -167,6 +167,62 @@ export async function fullDiff(worktree: string, localBase: string, opts: { stat
   }
 }
 
+export interface Upstream {
+  upstream: string;
+  state: 'same' | 'behind' | 'ahead' | 'diverged';
+  ahead: number;
+  behind: number;
+  // Files the commits only origin has change.
+  behindFiles: number;
+  // Diverged only: what origin's branch changes against the base, as its pull request shows it.
+  branchFiles: number | null;
+  fetchFailed: boolean;
+}
+
+const FETCH_EVERY_MS = 60_000;
+const fetches = new Map<string, { at: number; done: Promise<boolean> }>();
+
+// One fetch of the branch's own upstream per worktree a minute; the ones in between share it.
+function fetchUpstream(worktree: string, remote: string, ref: string, every: number) {
+  const key = `${worktree}\0${remote}\0${ref}`;
+  const last = fetches.get(key);
+  if (last && Date.now() - last.at < every) return last.done;
+  const done = run('git', ['fetch', '--quiet', '--no-tags', remote, ref], {
+    cwd: worktree,
+    env: { ...loginEnv, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+    timeout: 30_000,
+  }).then(() => true, (err) => {
+    console.warn('fetch failed', worktree, String(err.stderr || err.message).trim());
+    return false;
+  });
+  fetches.set(key, { at: Date.now(), done });
+  return done;
+}
+
+const countFiles = async (worktree: string, args: string[]) =>
+  (await git(worktree, ['diff', '--name-only', '--find-renames', ...args])).split('\n').filter(Boolean).length;
+
+// The checked-out branch against the upstream it tracks, after fetching that upstream; null with no upstream.
+export async function upstreamOf(worktree: string, localBase: string, { fetchEvery = FETCH_EVERY_MS } = {}): Promise<Upstream | null> {
+  const branch = (await git(worktree, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')).trim();
+  if (!branch) return null;
+  const config = async (key: string) => (await git(worktree, ['config', '--get', `branch.${branch}.${key}`]).catch(() => '')).trim();
+  const [remote, ref] = await Promise.all([config('remote'), config('merge')]);
+  if (!remote || !ref) return null;
+  const fetched = remote === '.' || (await fetchUpstream(worktree, remote, ref, fetchEvery));
+  const upstream = (await git(worktree, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(() => '')).trim();
+  if (!upstream) return null;
+  const [ahead, behind] = (await git(worktree, ['rev-list', '--left-right', '--count', `HEAD...${upstream}`])).trim().split(/\s+/).map(Number);
+  const state = ahead && behind ? 'diverged' : behind ? 'behind' : ahead ? 'ahead' : 'same';
+  const behindFiles = behind ? await countFiles(worktree, [`HEAD...${upstream}`]) : 0;
+  let branchFiles = null;
+  if (state === 'diverged') {
+    const base = await remoteBase(worktree, localBase);
+    branchFiles = await countFiles(worktree, [`${base}...${upstream}`]);
+  }
+  return { upstream, state, ahead, behind, behindFiles, branchFiles, fetchFailed: !fetched };
+}
+
 // --src-prefix and --dst-prefix leave the paths of rename and copy lines bare.
 export const prefixRenames = (patch: string, prefix: string) =>
   patch.replace(/^((?:rename|copy) (?:from|to) )("?)/gm, `$1$2${prefix}/`);

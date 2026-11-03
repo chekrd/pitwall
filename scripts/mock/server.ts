@@ -10,7 +10,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { answering, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
 import { clearings } from '../../server/clearing.ts';
 import type { ConversationLog } from '../../server/conversations.ts';
-import type { FullDiff } from '../../server/git.ts';
+import type { FullDiff, Upstream } from '../../server/git.ts';
 import type { Session, SubtaskKind } from '../../server/db.ts';
 import { checkDecision, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
@@ -114,6 +114,8 @@ let clearHold: { done: Promise<void>; release: (error?: string) => void } | null
 let dropUntil = 0;
 let announced: string | null = null;
 let drift: Drift[] = [];
+// Each worktree's branch against its upstream; none has an upstream until a check sets one.
+const upstreams = new Map<string, Upstream>();
 let schedules: Schedule[] = [];
 
 // As the server's: Esc stops a turn, and the pause prompt runs a short turn that stops the background tasks.
@@ -178,6 +180,7 @@ function load(name: string) {
   pauses.clear();
   failNext = null;
   delayMs = 0;
+  upstreams.clear();
   clearHold?.release();
   clearHold = null;
   dropUntil = 0;
@@ -869,6 +872,7 @@ route('GET', '/api/diff/file', async ({ url }) => {
   const repo = repoOfWorktree(worktree);
   return { base: repo.base, ...(await fixtureDiff(paths)) };
 });
+route('GET', '/api/upstream', ({ url }) => upstreams.get(url.searchParams.get('worktree') ?? '') ?? null);
 route('GET', '/api/diff', async ({ url }) => {
   const worktree = url.searchParams.get('worktree') ?? '';
   const diff = isTaskFolder(worktree) ? await folderDiff(worktree) : { base: repoOfWorktree(worktree).base, ...(await fixtureDiff()) };
@@ -935,6 +939,11 @@ route('POST', '/mock/patch', ({ body }) => {
 route('POST', '/mock/drift', ({ body }) => {
   drift = body.drift ?? [];
   push();
+  return NONE;
+});
+route('POST', '/mock/upstream', ({ body }) => {
+  if (body.upstream) upstreams.set(body.worktree, body.upstream);
+  else upstreams.delete(body.worktree);
   return NONE;
 });
 route('POST', '/mock/usage', ({ body }) => {

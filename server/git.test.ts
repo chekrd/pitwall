@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { changedFiles, fullDiff, pullRequestUrlOf, unpushedCommits } from './git.ts';
+import { changedFiles, fullDiff, pullRequestUrlOf, unpushedCommits, upstreamOf } from './git.ts';
 
 const GIT_WT = join(import.meta.dirname, '..', 'scripts', 'git-wt');
 const env = {
@@ -129,4 +129,59 @@ test('pull request links for Azure DevOps and GitHub remotes', () => {
   assert.equal(pullRequestUrlOf('ssh://git@github.com:22/owner/repo.git', 3), 'https://github.com/owner/repo/pull/3');
   assert.equal(pullRequestUrlOf('https://gitlab.com/a/b.git', 3), null);
   assert.equal(pullRequestUrlOf('', 3), null);
+});
+
+const commit = (dir: string, file: string, content: string) => {
+  write(dir, file, content);
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-qm', file);
+};
+
+test('the branch against its upstream: same, ahead, behind, and diverged after origin\'s history is rewritten', async () => {
+  const { root, main } = repo();
+  const origin = join(root, 'origin.git');
+  git(root, 'init', '-q', '--bare', '-b', 'master', origin);
+  git(main, 'remote', 'add', 'origin', origin);
+  git(main, 'push', '-q', '-u', 'origin', 'master');
+  const now = { fetchEvery: 0 };
+
+  git(main, 'switch', '-qc', 'feature');
+  assert.equal(await upstreamOf(main, 'master', now), null, 'a branch with no upstream');
+  commit(main, 'one.txt', '1\n');
+  commit(main, 'two.txt', '2\n');
+  git(main, 'push', '-q', '-u', 'origin', 'feature');
+  assert.deepEqual(await upstreamOf(main, 'master', now), {
+    upstream: 'origin/feature', state: 'same', ahead: 0, behind: 0, behindFiles: 0, branchFiles: null, fetchFailed: false,
+  });
+
+  commit(main, 'local.txt', 'not pushed\n');
+  assert.deepEqual(await upstreamOf(main, 'master', now), {
+    upstream: 'origin/feature', state: 'ahead', ahead: 1, behind: 0, behindFiles: 0, branchFiles: null, fetchFailed: false,
+  });
+  git(main, 'reset', '-q', '--hard', 'HEAD~1');
+
+  const other = join(root, 'other');
+  git(root, 'clone', '-q', '-b', 'feature', origin, other);
+  commit(other, 'three.txt', '3\n');
+  git(other, 'push', '-q');
+  assert.deepEqual(await upstreamOf(main, 'master', now), {
+    upstream: 'origin/feature', state: 'behind', ahead: 0, behind: 1, behindFiles: 1, branchFiles: null, fetchFailed: false,
+  });
+
+  git(other, 'reset', '-q', '--hard', 'origin/master');
+  for (const file of ['one.txt', 'x.txt', 'y.txt', 'z.txt']) commit(other, file, `rewritten ${file}\n`);
+  git(other, 'push', '-q', '--force');
+  assert.deepEqual(await upstreamOf(main, 'master', now), {
+    upstream: 'origin/feature', state: 'diverged', ahead: 2, behind: 4, behindFiles: 4, branchFiles: 4, fetchFailed: false,
+  });
+
+  commit(other, 'w.txt', 'w\n');
+  git(other, 'push', '-q');
+  assert.equal((await upstreamOf(main, 'master', now))!.behind, 5);
+  commit(other, 'v.txt', 'v\n');
+  git(other, 'push', '-q');
+  assert.equal((await upstreamOf(main, 'master'))!.behind, 5, 'a call within the minute does not fetch again');
+
+  git(main, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
+  assert.equal((await upstreamOf(main, 'master', now))!.fetchFailed, true);
 });

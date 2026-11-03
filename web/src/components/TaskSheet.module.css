@@ -82,6 +82,18 @@
     &[data-error] { color: color-mix(in srgb, var(--danger) 80%, var(--text)); }
   }
 
+  .upstream {
+    min-height: 26px;
+    padding: 3px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 13px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--text-2);
+    & a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    &[data-upstream="diverged"] { border-color: var(--prompt-line); color: var(--prompt); }
+  }
+
   .open {
     display: inline-flex;
     align-items: center;
