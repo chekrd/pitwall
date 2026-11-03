@@ -131,16 +131,22 @@ async function removeTaskFolder(folder: string) {
   }
 }
 
+const UNAPPROVED_LOSS = 'not everything is pushed: approve throwing it away in Clear task';
+
+const losesWork = (loss: { files: number; commits: number; gone?: boolean; checkout?: boolean }) =>
+  !loss.gone && !loss.checkout && loss.files + loss.commits > 0;
+
 const NOT_A_SUBTASK = "a subtask works in its task's worktree; Quit Claude or Archive it instead";
 
 // Clear task: in a worktree of its own, everything in it goes, the worktree and its branch too, subtasks with it. In
 // the main checkout, which other Claudes may share, or in a worktree already removed, only the Claudes and terminals
 // of the task and its subtasks go, with them. A hidden terminal goes by its name: the Claude in it may have moved on
 // to another conversation, which leaves the task without its pid. A subtask is not cleared on its own: it shares its
-// task's worktree.
-export async function deleteWorktree(id: string) {
+// task's worktree. Work no remote has goes only with the approval the confirmation asks for.
+export async function deleteWorktree(id: string, { discard = false } = {}) {
   const s = must(id);
   if (s.parent) throw new Error(NOT_A_SUBTASK);
+  if (!discard && losesWork(await deleteWorktreeLoss(id))) throw new Error(UNAPPROVED_LOSS);
   if (s.repoId === null) return removeTaskFolder(s.worktree);
   const repo = repoView(s.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);

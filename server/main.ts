@@ -328,7 +328,7 @@ async function act(c: Context, id: string, action: string, body: any) {
     case 'archive': S.archive(id, body.archived ?? true); break;
     case 'priority': S.setPriority(id, body.priority ?? null); break;
     case 'resolve': S.resolve(id, body.state ?? null); break;
-    case 'delete-worktree': await deleteWorktree(id); break;
+    case 'delete-worktree': await deleteWorktree(id, { discard: body.discard === true }); break;
     case 'finding': return c.json({ id: await respond(id, body) });
     case 'park': S.park(id, body); break;
     case 'edit-park': S.editPark(id, body); break;

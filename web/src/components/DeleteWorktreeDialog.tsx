@@ -38,10 +38,12 @@ export function DeleteWorktreeDialog() {
   const cancel = useRef<HTMLButtonElement>(null);
   const clear = useRef<HTMLButtonElement>(null);
   const [target, setTarget] = useState<{ session: Session; check: Check } | null>(null);
+  const [approved, setApproved] = useState(false);
 
   useEffect(() => {
     ask = (session) => {
       setTarget({ session, check: { state: 'checking' } });
+      setApproved(false);
       const settle = (check: Check) => setTarget((t) => (t?.session === session ? { session, check } : t));
       api<Loss>('GET', `/api/sessions/${session.id}/delete-worktree`).then(
         (loss) => settle({ state: 'done', loss }),
@@ -68,7 +70,7 @@ export function DeleteWorktreeDialog() {
     dialog.current!.close();
     closeSheetOf(session.id);
     queue.leave(session.id, () => patchSession(session.id, { status: 'exited' }));
-    sessionAction(session.id, 'delete-worktree').catch((err) => {
+    sessionAction(session.id, 'delete-worktree', { discard: approved }).catch((err) => {
       unpatch(session.id);
       reportError(err);
     });
@@ -93,6 +95,7 @@ export function DeleteWorktreeDialog() {
     : loss
     ? lostIn(loss)
     : [];
+  const risky = check?.state === 'failed' || (!!loss && !isSafe(loss));
 
   return (
     <dialog id="delete-worktree" ref={dialog} role="alertdialog" aria-labelledby="delete-worktree-title" className={styles.dialog} onClose={() => setTarget(null)}>
@@ -126,9 +129,15 @@ export function DeleteWorktreeDialog() {
             {keeps ? "This task's Claude quits, its terminal closes and the task leaves the board." : folder ? "Claude quits, the task folder's terminals close and the task leaves the board." : "Claude quits, the worktree's terminals close and the task leaves the board."}
             {!!loss?.subtasks && ` ${loss.subtasks === 1 ? 'Its subtask goes' : `Its ${loss.subtasks} subtasks go`} with it, ${loss.subtasks === 1 ? 'its Claude' : 'their Claudes'} too.`}
           </p>
+          {risky && (
+            <label className={styles.approve}>
+              <input type="checkbox" data-approve checked={approved} onChange={(e) => setApproved(e.target.checked)} />
+              {check?.state === 'failed' ? 'Clear it anyway, whatever is lost' : 'Throw this work away'}
+            </label>
+          )}
           <footer>
             <button type="button" ref={cancel} commandfor="delete-worktree" command="close">Cancel</button>
-            <button type="button" ref={clear} className={styles.delete} disabled={check?.state === 'checking'} onClick={confirm}>Clear task</button>
+            <button type="button" ref={clear} className={styles.delete} disabled={check?.state === 'checking' || (risky && !approved)} onClick={confirm}>Clear task</button>
           </footer>
         </>
       )}

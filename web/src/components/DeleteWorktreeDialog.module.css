@@ -19,5 +19,7 @@
 
   .muted { font-size: 14px; color: var(--muted); }
 
+  .approve { display: flex; align-items: center; gap: 8px; font-weight: 650; color: var(--danger); cursor: pointer; }
+
   .delete { color: var(--danger); border-color: var(--danger); }
 }

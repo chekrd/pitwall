@@ -437,8 +437,12 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
     const state = body.state ?? null;
     update(s.id, { resolution: state ? { state, at: Date.now() } : null, archived: !!state });
   },
-  'delete-worktree': (s) => {
+  'delete-worktree': (s, body) => {
     if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");
+    if (body.discard !== true) {
+      const loss = deleteLoss(s);
+      if (!loss.gone && !loss.checkout && loss.files + loss.commits > 0) throw new Error('not everything is pushed: approve throwing it away in Clear task');
+    }
     if (s.repoId === null) {
       for (const { repo, worktree } of taskWorktrees(s.worktree)) repo.worktrees = repo.worktrees.filter((w) => w !== worktree);
       state.sessions = state.sessions.filter((o) => o.worktree !== s.worktree && !o.worktree.startsWith(`${s.worktree}/`));

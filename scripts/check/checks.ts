@@ -202,6 +202,9 @@ async function openSheetOf(page: Page, mock: Mock, id: string) {
 }
 
 // The labels of the open ⋯ menu.
+const clearDisabled = () => document.querySelector<HTMLButtonElement>('dialog#delete-worktree footer button:last-child')!.disabled;
+const approveLoss = (page: Page) => page.click('dialog#delete-worktree input[data-approve]');
+
 const menuItems = () => {
   const menu = document.querySelector(':popover-open');
   return menu && [...menu.querySelectorAll(':scope > button')].map((b) => b.firstElementChild?.textContent);
@@ -1740,6 +1743,8 @@ export const checks: Check[] = [
       await page.click(':popover-open button', 'Clear task');
       const failed = await page.until('the failed loss check', asked);
       assert.match(failed.text, /Could not check what would be lost \(git status failed: fatal: unable to read the index\); uncommitted changes and unpushed commits may be lost\./);
+      assert.match(failed.text, /Clear it anyway, whatever is lost/);
+      assert.equal(await page.eval(clearDisabled), true, 'Clear task works after a failed loss check without approval');
       await page.key('Escape');
       await page.until('the dialog to close', () => !document.querySelector('dialog#delete-worktree[open]'));
 
@@ -1748,8 +1753,12 @@ export const checks: Check[] = [
         'a tile without the Clear task button is not a subtask');
       await page.click('[data-tile][data-session="s-invoice"] button[aria-label="Clear task"]');
       assert.equal((await page.until('the delete dialog', asked)).focus, 'Cancel', 'the trash starts on Cancel when something would be lost');
+      assert.equal(await page.eval(clearDisabled), true, 'Clear task works before the loss is approved');
+      await assert.rejects(mock.post('/api/sessions/s-invoice/delete-worktree', {}), /: 400 .*not everything is pushed/, 'the server clears unpushed work without approval');
+      await approveLoss(page);
+      assert.equal(await page.eval(clearDisabled), false, 'approving the loss leaves Clear task disabled');
       await page.click('dialog#delete-worktree button', 'Clear task');
-      const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree');
+      const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree' && e.body?.discard === true);
       assert.deepEqual([deleted.sessionId, deleted.status], ['s-invoice', 204]);
       await page.until('the tile to go', () => !document.querySelector('[data-tile][data-session="s-invoice"]'));
     },
@@ -4596,6 +4605,7 @@ export const checks: Check[] = [
       await page.until('the menu', menuItems);
       await page.click(':popover-open button', 'Clear task');
       await page.until('the delete dialog', confirmable);
+      await approveLoss(page);
       await page.click('dialog#delete-worktree button', 'Clear task');
       await page.until('s-group at the front', frontIs, 's-group');
       assert.deepEqual(await page.eval(dealt), ['side', 'side']);
@@ -5997,6 +6007,7 @@ export const checks: Check[] = [
         return d && !d.textContent!.includes('Checking') && d.innerText;
       });
       assert.match(cleared, /Its 4 subtasks go with it, their Claudes too\./);
+      await approveLoss(page);
       await page.click('dialog#delete-worktree button', 'Clear task');
       await until('the task and its subtasks gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => s.id.startsWith('s-review')));
     },
@@ -6145,6 +6156,7 @@ export const checks: Check[] = [
       });
       assert.match(asked.text, /Removes the worktrees in storefront, billing-api and their local branch cart-api\./);
       await shot('folder-task-clear');
+      await approveLoss(page);
       await page.click('dialog#delete-worktree button', 'Clear task');
       const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual([deleted.sessionId, deleted.status], [id, 204]);
@@ -6484,7 +6496,7 @@ export const checks: Check[] = [
       });
       assert.equal(state.filter((s) => [...held, ...ended].some((o) => o.id === s.id) && s.status === 'exited').length, 0, 'every task came back');
       assert.equal(state.filter((s) => s.interrupted).length, midTurn.length, 'the ones that only waited for you are as they were');
-      assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause]').length), 0);
+      await page.until('the pause banner to go', () => !document.querySelector('section[data-pause]'));
     },
   },
   {
