@@ -73,6 +73,7 @@
     -webkit-line-clamp: 2;
     overflow: hidden;
     max-width: 100%;
+    overflow-wrap: anywhere;
     font: 650 21px/1.2 var(--font-display);
     letter-spacing: -0.01em;
     text-decoration: none;
@@ -90,6 +91,7 @@
     line-height: 1.45;
     color: var(--text-2);
     white-space: pre-line;
+    overflow-wrap: anywhere;
     [data-attention="decide"] &, [data-attention="focus"] & { font-size: 15.5px; font-weight: 600; color: var(--text); }
     [data-attention="exited"] &, [data-archived] & { color: var(--muted); }
     [data-archived] & { font-size: 14px; font-weight: 400; }

@@ -16,6 +16,7 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 6;
     overflow: hidden;
+    overflow-wrap: anywhere;
     &[data-full] { display: block; }
   }
 
