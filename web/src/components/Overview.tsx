@@ -8,7 +8,7 @@ import { closeSheet, closeSheetToQueue, showTab } from '../router.ts';
 import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { MenuAnswer, RepoView, Session } from '../types.ts';
-import { adviceFor, ago, attentionOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
+import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
@@ -45,6 +45,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
   const key = decisionKey(session);
   const menu = session.menu;
   const decision = menu ? null : decisionOf(session);
+  const { sessions } = useStore();
   const advice = adviceFor(session);
   const done = advice?.state === 'done' ? advice : null;
   const frozen = key ? (q.frozen.get(key) ?? freeze(session)) : null;
@@ -104,6 +105,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
             onPick={(label) => send(choose(session, label, box))}
             onAccept={() => send(acceptance(session))}
             onEdit={edit}
+            coverage={coverageOf(session, sessions, decision.key)}
           />
           {ownBox && <Composer
             session={session}

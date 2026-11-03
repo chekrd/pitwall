@@ -95,6 +95,20 @@ export function settledAs(finding: Finding, subtasks: readonly Session[]) {
   return subtasks.some((o) => o.resolution!.state === 'solved') ? ('solved' as const) : ('dropped' as const);
 }
 
+export interface Covered {
+  n: number;
+  handled: boolean;
+}
+
+// Which findings each option of an end-of-turn decision acts on, and whether each was already answered on its own.
+export function coverageOf(s: Session, sessions: readonly Session[], key: string): ((o: QuestionOption) => Covered[]) | null {
+  const f = s.findings;
+  if (!f || key !== `s:${f.basis}`) return null;
+  const handled = (i: number) =>
+    !!(f.items[i].rejected || f.items[i].solved || sessions.some((o) => o.parent?.id === s.id && o.parent.basis === f.basis && o.parent.finding === i));
+  return (o) => (o.covers ?? []).filter((i) => i < f.items.length).map((i) => ({ n: i + 1, handled: handled(i) }));
+}
+
 // A link as it reads in a list: its host without www and its path, without the scheme or a trailing slash.
 export function shortUrl(url: string) {
   const u = URL.parse(url);

@@ -28,7 +28,11 @@ const schema = {
         context: { type: 'string' },
         options: {
           type: 'array',
-          items: { type: 'object', properties: { label: { type: 'string' }, description: { type: 'string' } }, required: ['label', 'description'] },
+          items: {
+            type: 'object',
+            properties: { label: { type: 'string' }, description: { type: 'string' }, findings: { type: 'array', items: { type: 'integer' } } },
+            required: ['label', 'description', 'findings'],
+          },
         },
       },
       required: ['problem', 'brief', 'context', 'options'],
@@ -131,7 +135,7 @@ Reply with:
   - problem: one plain sentence naming what has to be decided.
   - brief: 2 to 4 sentences of plain text: the situation, the trade-off, and which way Claude leans.
   - context: Markdown with the rest of what the decision needs. When the choice is among items, proposals, files or findings in Claude's message, list every one of them with its number if it has one, what it is and why it matters, one tight line each. "" when the brief already says it all.
-  - options: each concrete choice Claude offered. label: short button text. description: one plain sentence saying exactly what happens if it is chosen, naming the items it covers rather than only their numbers. [] when Claude needs free text.`}
+  - options: each concrete choice Claude offered. label: short button text. description: one plain sentence saying exactly what happens if it is chosen, naming the items it covers rather than only their numbers. findings: the numbers, counting from 1 in the findings list you return below, of every finding this option acts on; [] when it acts on none. [] when Claude needs free text.`}
 - findings: when Claude's latest message lists separate findings the developer can act on one by one (the issues a code review found, bugs, risks or problems it reports), one entry per finding, in Claude's order; otherwise []. Never a plan's steps, changes Claude made, or options of a decision. Each finding gets acted on alone by an agent that has not seen the conversation, so each must stand on its own:
   - title: a short plain-text name for it, under 80 characters, without its number.
   - detail: Markdown with everything Claude said about it: what is wrong, why it matters, the scenario and the suggested fix, keeping names of files, functions and symbols in code spans.
@@ -152,8 +156,15 @@ async function summarize(s: Session, turns: Turn[]) {
     if (!text) throw new Error('empty summary');
     if (!sessions.get(s.id)) return;
     const problem = String(r.decision?.problem ?? '').trim();
+    const findings: { title: string; detail: string; location: string }[] = (Array.isArray(r.findings) ? r.findings : [])
+      .map((f: any) => ({ title: String(f?.title ?? '').trim(), detail: String(f?.detail ?? '').trim(), location: String(f?.location ?? '').trim() }))
+      .filter((f: { title: string }) => f.title);
     const options = (Array.isArray(r.decision?.options) ? r.decision.options : [])
-      .map((o: any) => ({ label: String(o?.label ?? '').trim(), description: String(o?.description ?? '').trim() || undefined }))
+      .map((o: any) => {
+        const covers = [...new Set<number>((Array.isArray(o?.findings) ? o.findings : []).map(Number))]
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= findings.length).map((n) => n - 1).toSorted((a, b) => a - b);
+        return { label: String(o?.label ?? '').trim(), description: String(o?.description ?? '').trim() || undefined, ...(covers.length ? { covers } : {}) };
+      })
       .filter((o: { label: string }) => o.label);
     const decision = problem || s.question
       ? {
@@ -163,9 +174,6 @@ async function summarize(s: Session, turns: Turn[]) {
         options: s.question ? [] : options,
       }
       : null;
-    const findings = (Array.isArray(r.findings) ? r.findings : [])
-      .map((f: any) => ({ title: String(f?.title ?? '').trim(), detail: String(f?.detail ?? '').trim(), location: String(f?.location ?? '').trim() }))
-      .filter((f: { title: string }) => f.title);
     // A summary rewritten from the same message keeps what the developer did with its findings.
     if (findings.length && s.findings?.basis !== basis) sessions.update(s.id, { findings: { basis, items: findings } });
     const strings = (v: unknown) => (Array.isArray(v) ? v.map(String).map((x) => x.trim()).filter(Boolean) : []);

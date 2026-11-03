@@ -41,6 +41,8 @@ export function Findings({ session, compact = false }: { session: Session; compa
   });
   const open = items.filter((x) => !x.settled);
   const settled = items.filter((x) => x.settled);
+  const decision = decisionOf(session);
+  const asked = decision?.key === `s:${findings.basis}` && decision.options.some((o) => o.covers?.length);
   const item = (x: (typeof items)[number]) => (
     <Item key={`${findings.basis}:${x.index}`} session={session} basis={findings.basis} {...x} compact={compact || !!x.settled} />
   );
@@ -49,6 +51,11 @@ export function Findings({ session, compact = false }: { session: Session; compa
       <h3 className={styles.label}>
         Findings <span data-settled-count>· {settled.length ? (open.length ? `${open.length} of ${items.length} open` : `all ${items.length} settled`) : items.length}</span>
       </h3>
+      {asked && (
+        <p className={styles.note} data-findings-note>
+          Claude's options above answer these together, in this session. A button on one finding starts a separate agent for just that one.
+        </p>
+      )}
       {open.length > 0 && <ol>{open.map(item)}</ol>}
       {settled.length > 0 && (
         <details className={styles.settled} data-settled-findings>

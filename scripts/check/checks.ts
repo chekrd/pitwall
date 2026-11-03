@@ -2636,7 +2636,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.4 option 1 carries Second opinion · 82% and Recommended, the reply, the reasoning, Edit E and high confidence, with the frozen highlight; the primary reads Accept suggestion',
+    name: 'P5.1.4 option 1 carries Second opinion\'s pick · 82% and Claude recommends, the reply, the reasoning, Edit E and high confidence, with the frozen highlight; the primary reads Accept suggestion',
     async run({ page, mock }) {
       await openQueue(page, mock);
       const first = await page.eval(() => {
@@ -2645,8 +2645,8 @@ export const checks: Check[] = [
       });
       assert.deepEqual([first.frozen, first.others], [true, 1]);
       for (const part of [
-        'Second opinion · 82%', 'Recommended', 'Merge both carts. Cap each line at available stock and show a toast listing anything trimmed.',
-        'CHK-412 says a cart must never lose items', 'Edit\nE', 'high confidence',
+        "Second opinion's pick · 82%", 'Claude recommends', 'Merge both carts. Cap each line at available stock and show a toast listing anything trimmed.',
+        'CHK-412 says a cart must never lose items', 'Edit\nE', 'high confidence you agree',
       ]) assert.ok(first.text.includes(part), `option 1 lacks ${part}:\n${first.text}`);
       assert.equal((await page.eval(card))!.primary, 'Accept suggestion');
     },
@@ -3256,7 +3256,7 @@ export const checks: Check[] = [
         };
       });
       assert.deepEqual({ ...shown, text: undefined }, { options: 0, frozen: true, text: undefined, buttons: ['Edit E'] });
-      assert.match(shown.text, /^Second opinion · 77%\s+Call it `checkout\.mergeGuestCart`, like the other checkout flags\.\s+Every flag in config\/flags\.ts follows checkout\.<feature>\.\s+Edit\s+E\s+high confidence$/);
+      assert.match(shown.text, /^Second opinion's own answer · 77%\s+Call it `checkout\.mergeGuestCart`, like the other checkout flags\.\s+Every flag in config\/flags\.ts follows checkout\.<feature>\.\s+Edit\s+E\s+high confidence you agree$/);
       assert.equal((await page.eval(card))!.primary, 'Accept suggestion');
       await page.until('the card to settle', still);
       await shot('queue-free-text');
@@ -3377,7 +3377,7 @@ export const checks: Check[] = [
       await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
       const third = await page.until('the late second opinion on option 3', () => {
         const option = document.querySelector('[data-card] [data-option="3"]')?.parentElement;
-        return option?.innerText.includes('Second opinion · 71%') && option.innerText;
+        return option?.innerText.includes("Second opinion's pick · 71%") && option.innerText;
       });
       assert.match(third, /Ask the shopper, because it fits what the task asks for\./);
       const frozen = await page.eval(() => [...document.querySelectorAll('[data-card] [data-frozen] [data-option]')].map((o) => (o as HTMLElement).dataset.option));
@@ -3398,7 +3398,7 @@ export const checks: Check[] = [
       await openQueue(page, mock);
       await ready(page, 's-cart');
       const advice = await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
-      await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes('Second opinion · 71%'));
+      await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes("Second opinion's pick · 71%"));
       await page.until('the guard to end', unguarded);
       await page.key('3');
       await wait(HELD_MS);
@@ -4106,7 +4106,7 @@ export const checks: Check[] = [
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
-      await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes('Second opinion · 71%'));
+      await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes("Second opinion's pick · 71%"));
       await page.until('the guard it restarted to end', unguarded);
       await page.key('w');
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
@@ -5725,6 +5725,49 @@ export const checks: Check[] = [
         const back = await page.eval(now);
         assert.deepEqual({ theme: back.theme, ground: back.ground }, { theme: 'system', ground: system.ground });
       });
+    },
+  },
+  {
+    name: 'P8.findings-decision a decision about the findings heads its options Claude\'s options, in the order Claude gave them, not ranked; each option names the findings it acts on and which were already answered on their own, the second opinion marks its pick, and the findings say the options answer them together',
+    scenario: 'findings',
+    async run({ page, mock, shot }) {
+      const now = Date.now();
+      await mock.post('/mock/patch', { id: 's-review', patch: {
+        summary: { decision: {
+          problem: 'Which review findings should Claude fix?', brief: 'Three issues, none verified.', context: '',
+          options: [
+            { label: 'Fix all three', description: 'Guard the double load, name the skeleton and move the margin to config/lazy.ts.', covers: [0, 1, 2] },
+            { label: 'Fix the margin only', description: 'Move the 600 px margin to config/lazy.ts.', covers: [2] },
+            { label: 'Leave them', description: 'Nothing changes.' },
+          ],
+        } },
+        advice: {
+          key: 's:t-review-4', state: 'done', startedAt: now - 60_000, at: now - 30_000, activity: null,
+          choice: 'Fix the margin only', confidence: 70, answer: '', reasoning: 'The other two are already being handled.',
+        },
+      } });
+      await openSheetOf(page, mock, 's-review');
+      await page.until('the options', () => document.querySelectorAll('#task-sheet [data-option]').length === 3);
+      const shown = await page.eval(() => {
+        const group = document.querySelector<HTMLElement>('#task-sheet [role="group"][aria-label="Claude\'s options"]')!;
+        const options = [...group.querySelectorAll<HTMLElement>('[data-option]')];
+        return {
+          head: group.firstElementChild!.textContent,
+          covers: options.map((o) => o.querySelector('[data-covers]')?.textContent ?? null),
+          tags: options.map((o) => o.querySelector('[class*="tags"]')!.textContent),
+          note: document.querySelector('#task-sheet [data-findings-note]')?.textContent ?? null,
+        };
+      });
+      assert.deepEqual(shown, {
+        head: "Claude's optionsin the order Claude gave them, not ranked",
+        covers: ['Acts on findings 1, 2 and 3 · 1 and 2 already answered on their own', 'Acts on finding 3', null],
+        tags: ['', "Second opinion's pick · 70%", ''],
+        note: "Claude's options above answer these together, in this session. A button on one finding starts a separate agent for just that one.",
+      });
+      await shot('findings-decision');
+
+      await mock.post('/mock/patch', { id: 's-review', patch: { summary: { decision: { options: [{ label: 'Fix all three' }, { label: 'Leave them' }] } } } });
+      await page.until('the note gone with the coverage', () => !document.querySelector('#task-sheet [data-findings-note]') && !document.querySelector('#task-sheet [data-covers]'));
     },
   },
   {

@@ -1,8 +1,9 @@
 import type { Ref } from 'react';
 import type { Frozen } from '../deck.ts';
 import type { Request } from '../outbox.ts';
+import { useStore } from '../store.ts';
 import type { Advice, Session } from '../types.ts';
-import type { DecisionView } from '../util.ts';
+import { coverageOf, type DecisionView } from '../util.ts';
 import styles from './Card.module.css';
 import { Composer } from './Composer.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -42,6 +43,7 @@ interface DecisionBodyProps {
 // the options and the reply box on the right. An end-of-turn choice shows Claude's whole last message as its context.
 export function DecisionBody(p: DecisionBodyProps) {
   const { session, decision } = p;
+  const { sessions } = useStore();
   const done = p.advice?.state === 'done' ? p.advice : null;
   const title = p.kind === 'ask' ? "Claude's details" : 'Context';
   return (
@@ -75,6 +77,7 @@ export function DecisionBody(p: DecisionBodyProps) {
           onPick={p.onPick}
           onAccept={p.onAccept}
           onEdit={p.onEdit}
+          coverage={coverageOf(session, sessions, decision.key)}
         />
         {p.composer && (
           <Composer

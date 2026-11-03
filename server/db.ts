@@ -30,6 +30,8 @@ export interface QuestionOption {
   label: string;
   description?: string;
   recommended?: boolean;
+  // Indices of the findings read from the same message that this option acts on.
+  covers?: number[];
 }
 
 export interface Question {
