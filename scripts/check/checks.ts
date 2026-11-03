@@ -2939,7 +2939,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.8 W opens the reply box, focused; /re lists /review and /rename, Esc closes only the list, Tab completes "/rename ", and a second Esc closes the box and focuses the card',
+    name: 'P5.1.8 W opens the reply box, focused; /re lists /review and /rename, Esc closes only the list, Shift+Enter adds a line in place of picking one, Tab completes "/rename ", and a second Esc closes the box and focuses the card',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
@@ -2960,6 +2960,10 @@ export const checks: Check[] = [
       assert.deepEqual(await page.eval(box), { value: '/re', focused: true });
       await page.type('n');
       assert.deepEqual(await page.until('the list again', listed), ['/rename']);
+      await page.key('Enter', { shift: true });
+      await page.until('Shift+Enter to add a line, not pick /rename', () => document.querySelector<HTMLTextAreaElement>('[data-card] textarea')?.value === '/ren\n');
+      await page.key('Backspace');
+      assert.deepEqual(await page.until('the list back', listed), ['/rename']);
       await page.key('Tab');
       assert.deepEqual(await page.until('the completion', () => document.querySelector<HTMLTextAreaElement>('[data-card] textarea')?.value === '/rename ' && !document.querySelector('[data-card] [role="listbox"]') && true), true);
       await page.key('Escape');

@@ -339,7 +339,7 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
     } else if (listed && e.key === 'Escape') {
       e.preventDefault();
       setClosed(true);
-    } else if (listed && (e.key === 'Tab' || (e.key === 'Enter' && !exact))) {
+    } else if (listed && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !exact))) {
       e.preventDefault();
       complete(matches[picked % matches.length]);
     } else if (e.key === 'Enter' && !e.shiftKey) {
