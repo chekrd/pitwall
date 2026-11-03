@@ -4,6 +4,7 @@ import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
 import type { Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES } from './Asides.tsx';
+import { explain, TIPS } from './explain.ts';
 import styles from './Later.module.css';
 import { toast } from './Toasts.tsx';
 
@@ -66,16 +67,16 @@ function Item({ session, draft, name, canSend }: { session: Session; draft: Park
         />
       )}
       <div className={styles.actions}>
-        <label className={styles.auto} title="Sent by itself when Claude ends its turn, unless you have replied by then, it ended on a question, or the task is paused or archived">
+        <label {...explain(TIPS.auto, 'start', styles.auto)}>
           <input type="checkbox" checked={draft.auto} onChange={(e) => void park(session, 'edit-park', { draft: draft.id, auto: e.currentTarget.checked })} />
           Send when it's my turn
         </label>
         <span className={styles.spacer} />
         {editing === null ? (
           <>
-            <button type="button" disabled={!canSend} onClick={() => sendNow(session, [draft], name)}>Send now</button>
-            <button type="button" onClick={() => setEditing(draft.text)}>Edit</button>
-            <button type="button" onClick={remove}>Delete</button>
+            <button type="button" {...explain(TIPS.sendNow)} disabled={!canSend} onClick={() => sendNow(session, [draft], name)}>Send now</button>
+            <button type="button" {...explain(TIPS.edit)} onClick={() => setEditing(draft.text)}>Edit</button>
+            <button type="button" {...explain(TIPS.delete)} onClick={remove}>Delete</button>
           </>
         ) : (
           <>
@@ -123,7 +124,7 @@ export function Later({ session, name }: { session: Session; name: string }) {
         <div className={styles.all}>
           {armed > 0 && <span className={styles.hint}>{armed === drafts.length ? 'All go' : `${armed} go`} as one message when Claude ends its turn.</span>}
           <span className={styles.spacer} />
-          <button type="button" disabled={!canSend} onClick={() => sendNow(session, drafts, name)}>Send all now, as one message</button>
+          <button type="button" {...explain(TIPS.sendAll)} disabled={!canSend} onClick={() => sendNow(session, drafts, name)}>Send all now, as one message</button>
         </div>
       )}
       <AsideList session={session} />
@@ -138,21 +139,20 @@ export function Later({ session, name }: { session: Session; name: string }) {
             onKeyDown={onEnter(add)}
           />
           <div className={styles.actions}>
-            <label className={styles.auto}>
+            <label {...explain(TIPS.auto, 'start', styles.auto)}>
               <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.currentTarget.checked)} />
               Send when it's my turn
             </label>
             <span className={styles.spacer} />
             <button
               type="button"
+              {...explain(asking ? TIPS.ask : { does: session.asides.length >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' })}
               disabled={!text.trim() || !asking}
-              title={asking ? 'A copy of the conversation answers it, reading but changing nothing; the task\'s Claude never sees it'
-                : session.asides.length >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}` : 'Claude has no conversation to copy yet'}
               onClick={ask}
             >
               Ask on the side
             </button>
-            <button type="button" disabled={!text.trim()} onClick={add}>Keep for later <kbd>↵</kbd></button>
+            <button type="button" {...explain(TIPS.keep)} disabled={!text.trim()} onClick={add}>Keep for later <kbd>↵</kbd></button>
           </div>
         </div>
       )}

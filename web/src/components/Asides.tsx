@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { sessionAction } from '../api.ts';
 import type { Aside, Session } from '../types.ts';
 import styles from './Asides.module.css';
+import { explain, TIPS } from './explain.ts';
 import { Markdown } from './Markdown.tsx';
 import { toast } from './Toasts.tsx';
 
@@ -35,7 +36,7 @@ function FollowUp({ session, aside, label, placeholder }: { session: Session; as
   return (
     <div className={styles.ask}>
       <textarea className={styles.field} aria-label={label} placeholder={placeholder} value={text} onChange={(e) => setText(e.currentTarget.value)} onKeyDown={onKeyDown} />
-      <button type="button" disabled={!text.trim()} onClick={ask}>Ask <kbd>↵</kbd></button>
+      <button type="button" {...explain(TIPS.followUp)} disabled={!text.trim()} onClick={ask}>Ask <kbd>↵</kbd></button>
     </div>
   );
 }
@@ -60,17 +61,17 @@ function One({ session, aside }: { session: Session; aside: Aside }) {
           <span className={styles.spinner} aria-hidden />
           <span>{aside.activity ?? 'A copy of the conversation is answering…'}</span>
           <span className={styles.spacer} />
-          <button type="button" onClick={() => void act(session, 'stop-aside', { aside: aside.id })}>Stop</button>
+          <button type="button" {...explain(TIPS.stop)} onClick={() => void act(session, 'stop-aside', { aside: aside.id })}>Stop</button>
         </div>
       ) : (
         <FollowUp session={session} aside={aside.id} label="A follow-up question" placeholder="A follow-up, in the same copy…" />
       )}
       <div className={styles.actions}>
         {last.answer && aside.state !== 'thinking' && (
-          <button type="button" title="Keep the answer as a draft under Later, to tell Claude when you decide" onClick={keep}>Keep as a draft</button>
+          <button type="button" {...explain(TIPS.keepAnswer, 'start')} onClick={keep}>Keep as a draft</button>
         )}
         <span className={styles.spacer} />
-        <button type="button" title="Forget this question and the copy of the conversation that answered it" onClick={() => void act(session, 'close-aside', { aside: aside.id })}>Close</button>
+        <button type="button" {...explain(TIPS.close)} onClick={() => void act(session, 'close-aside', { aside: aside.id })}>Close</button>
       </div>
     </li>
   );

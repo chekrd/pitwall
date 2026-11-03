@@ -1,0 +1,36 @@
+@layer components {
+  .explained { position: relative; }
+
+  .explained::after {
+    content: attr(data-explain);
+    position: absolute;
+    z-index: 20;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: max-content;
+    max-width: min(340px, 80vw);
+    padding: 8px 11px;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    background: var(--raised);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    font: 500 12.5px/1.45 var(--font);
+    letter-spacing: 0;
+    text-transform: none;
+    text-align: left;
+    white-space: pre-line;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.12s, visibility 0.12s;
+  }
+
+  .explained[data-explain-align="start"]::after { right: auto; left: 0; }
+
+  .explained:is(:hover, :focus-visible, :has(:focus-visible))::after {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0.35s;
+  }
+}

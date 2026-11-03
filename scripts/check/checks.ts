@@ -6990,4 +6990,33 @@ export const checks: Check[] = [
       assert.equal((await mock.log()).filter((e) => e.sessionId === 's-invoice' && e.action === 'answer').length, 0);
     },
   },
+  {
+    name: "L2 every action in Later explains itself on hover and on keyboard focus: what it does, what the Claude it reaches has in its context, and whether that is the task's own session or a separate fork",
+    async run({ page, mock, shot }) {
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', parked: [{ id: 'k1', text: 'Also the credit notes.', auto: false, armedAt: null, at: Date.now() }] } });
+      await openSheetOf(page, mock, 's-invoice');
+      await page.until('the Later box', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
+      const tips = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] [data-explain]')]
+        .map((e) => [e.textContent!.trim(), e.dataset.explain!.split('\n\n').map((l) => l.split(':')[0])]));
+      const byName = Object.fromEntries(tips as [string, string[]][]);
+      assert.deepEqual(byName['Send now'], ['Sends this draft as your next message, with 5 s to undo. While Claude works it reads it at its next step, which can change what it is doing.', 'What Claude has', 'Session']);
+      assert.deepEqual(byName['Keep for later ↵'].slice(1), ['What Claude has', 'Session']);
+      assert.ok(byName['Ask on the side'], 'Ask on the side explains itself');
+      assert.match(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-later] button[aria-description*="forked"]')!.textContent!), /^Ask on the side$/);
+      const shown = (text: string) => {
+        const b = [...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] [data-explain]')].find((e) => e.textContent!.trim() === text)!;
+        return getComputedStyle(b, '::after').opacity === '1';
+      };
+      assert.equal(await page.eval(shown, 'Send now'), false, 'hidden until hovered');
+      await page.hover('#task-sheet [data-later] li[data-parked] button', 'Send now');
+      await page.until('the tip of Send now', shown, 'Send now');
+      await shot('later-tip');
+      await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-later] li[data-parked] button:nth-of-type(2)')!.focus({ focusVisible: true } as FocusOptions));
+      await page.key('Tab');
+      await page.until('a tip on keyboard focus', () => {
+        const a = document.activeElement as HTMLElement | null;
+        return !!a?.dataset.explain && getComputedStyle(a, '::after').opacity === '1';
+      });
+    },
+  },
 ];
