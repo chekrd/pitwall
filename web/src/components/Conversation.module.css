@@ -37,24 +37,6 @@
     p { font-size: 15.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
   }
 
-  .images {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    p + & { margin-top: 10px; }
-    button {
-      padding: 0;
-      border: 1px solid var(--line-2);
-      border-radius: 10px;
-      overflow: hidden;
-      background: var(--card);
-      cursor: zoom-in;
-      &[aria-pressed="true"] { flex-basis: 100%; cursor: zoom-out; }
-    }
-    img { display: block; max-width: 100%; max-height: 180px; }
-    button[aria-pressed="true"] img { max-height: none; margin: 0 auto; }
-  }
-
   .artifacts {
     display: flex;
     flex-wrap: wrap;

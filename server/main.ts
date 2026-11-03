@@ -10,7 +10,7 @@ import { Hono, type Context } from 'hono';
 import { WebSocketServer } from 'ws';
 import { handleAdvisorMcp, retryAdvice, stopAdvice } from './advisor.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
-import { HOST, PORT, ROOT, USAGE_FILE, WEB_DIST } from './config.ts';
+import { HOST, PORT, ROOT, UPLOADS_DIR, USAGE_FILE, WEB_DIST } from './config.ts';
 import { repos, roots, schedules, sessions, uxEvents } from './db.ts';
 import { listCommands } from './commands.ts';
 import { openDecision, Refusal } from './decision.ts';
@@ -23,6 +23,7 @@ import * as S from './sessions.ts';
 import { sync } from './ingest.ts';
 import { clearing, deleteWorktree, deleteWorktreeLoss, removeWorktreeAndSessions } from './removal.ts';
 import { readEntry, watchEntry } from './uiEntry.ts';
+import { UPLOAD_DIR_NAME, UPLOAD_IMAGE_NAME, UPLOAD_IMAGE_TYPES } from './uploadPaths.ts';
 import { checkUploads, keepUploads, saveUpload } from './uploads.ts';
 import { watchUsage } from './usage.ts';
 import { drift, onDrift } from './claudeFormat.ts';
@@ -366,6 +367,14 @@ app.post('/api/pause/resume', async (c) => {
 app.post('/api/pause/dismiss', (c) => {
   S.dismissInterrupted('pause');
   return c.body(null, 204);
+});
+
+app.get('/api/uploads/:dir/:name', async (c) => {
+  const { dir, name } = c.req.param();
+  const ok = UPLOAD_DIR_NAME.test(dir) && UPLOAD_IMAGE_NAME.test(name);
+  const data = ok ? await readFile(join(UPLOADS_DIR, dir, name)).catch(() => null) : null;
+  if (!data) return c.text('picture not found', 404);
+  return c.body(new Uint8Array(data), 200, { 'content-type': UPLOAD_IMAGE_TYPES[name.split('.').at(-1)!.toLowerCase()], 'cache-control': 'private, max-age=31536000, immutable' });
 });
 
 app.post('/api/uploads', async (c) => {

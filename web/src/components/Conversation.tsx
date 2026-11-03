@@ -1,18 +1,20 @@
+import { uploadedImages } from '../../../server/uploadPaths.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api.ts';
 import { showTab } from '../router.ts';
+import { useStore } from '../store.ts';
 import type { ConversationLog, Session } from '../types.ts';
 import { ago, clock } from '../util.ts';
 import styles from './Conversation.module.css';
 import { CopyButton } from './CopyButton.tsx';
 import { Markdown } from './Markdown.tsx';
+import { Pictures } from './Pictures.tsx';
 
 // Read only while open: the whole transcript can run to many megabytes. A new reply or a /clear reads it again. It opens
 // on your last prompt, so its reply reads with the question in view.
 export function Conversation({ session }: { session: Session }) {
   const [log, setLog] = useState<ConversationLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [zoomed, setZoomed] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const read = useRef(false);
 
@@ -48,19 +50,7 @@ export function Conversation({ session }: { session: Session }) {
               <article key={e.id} className={styles.exchange}>
                 <div className={styles.prompt} data-prompt>
                   <h3>You <time data-explain={ago(e.at)}>{clock(e.at, true)}</time>{e.prompt && <CopyButton value={e.prompt} what="Prompt" />}</h3>
-                  {e.prompt && <p>{e.prompt}</p>}
-                  {e.images > 0 && (
-                    <div className={styles.images}>
-                      {Array.from({ length: e.images }, (_, n) => {
-                        const src = `/api/sessions/${session.id}/conversation/${c.id}/${e.id}/${n}`;
-                        return (
-                          <button key={src} type="button" aria-pressed={zoomed === src} data-explain={zoomed === src ? 'Smaller' : 'Larger'} onClick={() => setZoomed(zoomed === src ? null : src)}>
-                            <img src={src} alt={`Image #${n + 1}`} loading="lazy" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <Prompt text={e.prompt} inline={Array.from({ length: e.images }, (_, n) => `/api/sessions/${session.id}/conversation/${c.id}/${e.id}/${n}`)} />
                 </div>
                 {e.reply ? (
                   <div className={styles.reply} data-reply>
@@ -84,5 +74,15 @@ export function Conversation({ session }: { session: Session }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function Prompt({ text, inline }: { text: string; inline: string[] }) {
+  const { text: said, images } = uploadedImages(text, useStore().home);
+  return (
+    <>
+      {said && <p>{said}</p>}
+      <Pictures srcs={[...inline, ...images.map((i) => `/api/uploads/${i}`)]} />
+    </>
   );
 }

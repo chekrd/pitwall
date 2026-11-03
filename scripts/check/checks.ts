@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { decisionKey } from '../../server/decision.ts';
+import { uploadsDir } from '../../server/uploadPaths.ts';
 import { KEYS } from '../../web/src/keys.ts';
 import { sleep, until, type Look, type Page } from './cdp.ts';
 import { startMock, type Entry, type Mock } from './mock.ts';
@@ -1960,8 +1961,14 @@ export const checks: Check[] = [
       };
       await mock.post('/mock/clear', { id: 's-invoice', conversation: 'c-fresh' });
       const long = Array.from({ length: 30 }, (_, i) => `Checked the rounding of line ${i + 1}.`).join('\n\n');
-      await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: long } });
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: long, lastPrompt: `Go on, and tell me when it is done.\n${uploadsDir('/Users/me')}/m2/shot.png` } });
       await openFromWall(page, mock, 's-invoice');
+      const quoted = await page.until('the latest reply quoting the prompt with its picture', () => {
+        const q = document.querySelector<HTMLElement>('#task-sheet [data-ux-section="latest reply"] [data-prompt]');
+        const img = q?.querySelector('img');
+        return img?.complete && img.naturalWidth > 0 ? q!.querySelector('p')!.innerText : null;
+      });
+      assert.equal(quoted, 'Go on, and tell me when it is done.');
       await page.click('#task-sheet [role="tab"]', 'Conversation');
       const shown = await page.until('the conversation with its picture', log);
       assert.deepEqual([shown.tab, shown.tabs], ['Conversation 2', ['Overview 1', 'Conversation 2', 'Diff 7 3', 'Artifacts (1) 4']]);
@@ -1969,8 +1976,8 @@ export const checks: Check[] = [
       assert.deepEqual(shown.items.map((i) => [i.prompt, i.images, i.artifacts]), [
         ['Start with the failing test.', 0, []],
         ['Invoice PDFs are sometimes off by a cent (BILL-91). Find out why, fix it, and get the PR green.', 0, []],
-        ['[Image #1] Keep it small; this is what the PDF shows.', 1, []],
-        ['Go on, and tell me when it is done.', 0, ['Where the cent goes missing']],
+        ['[Image #1] Keep it small; this is what the PDF shows.', 2, []],
+        ['Go on, and tell me when it is done.', 1, ['Where the cent goes missing']],
       ]);
       assert.match(shown.items[0].reply, /^The cent goes missing in LineItem\.total\(\)/);
       assert.equal(shown.items[2].reply, 'No reply from Claude: still working, or stopped.');

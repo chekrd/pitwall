@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { uploadsDir } from './uploadPaths.ts';
 
 export const PORT = Number(process.env.PITWALL_PORT ?? 7420);
 export const HOST = '127.0.0.1';
@@ -12,8 +13,7 @@ export const SCRATCH_DIR = join(DATA_DIR, 'advisor');
 export const DB_PATH = join(DATA_DIR, 'state.db');
 // Written by the status line script; see the README.
 export const USAGE_FILE = join(DATA_DIR, 'usage.json');
-// No spaces in the path: Claude Code reads a pasted path as one file only when it has none.
-export const UPLOADS_DIR = join(homedir(), 'Library', 'Caches', 'pitwall', 'uploads');
+export const UPLOADS_DIR = uploadsDir(homedir());
 
 export const RUBRIC_FILE = join(ROOT, 'config', 'priority-rubric.md');
 export const WEB_DIST = join(ROOT, 'web', 'dist');

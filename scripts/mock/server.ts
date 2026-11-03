@@ -17,6 +17,7 @@ import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
+import { uploadsDir } from '../../server/uploadPaths.ts';
 import { addParked, editParked, removeParked, turnEnds } from '../../server/parked.ts';
 import { asking } from '../../server/asides.ts';
 import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
@@ -818,7 +819,7 @@ route('GET', '/api/sessions/:id/conversation', ({ params }): ConversationLog[] =
       id: s.conversation,
       exchanges: s.firstPrompt ? [
         { id: `${s.id}-1`, at: start, prompt: s.firstPrompt, images: 0, reply: 'I read the code around it. Should I **keep the change small**, or also clean up what it touches?', artifacts: [] },
-        { id: `${s.id}-2`, at: start + 60_000, prompt: '[Image #1] Keep it small; this is what the PDF shows.', images: 1, reply: null, artifacts: [] },
+        { id: `${s.id}-2`, at: start + 60_000, prompt: `[Image #1] Keep it small; this is what the PDF shows.\n\n${uploadsDir('/Users/me')}/m1/page.png`, images: 1, reply: null, artifacts: [] },
         { id: `${s.id}-3`, at: start + 120_000, prompt: s.lastPrompt ?? 'Go on, and tell me when it is done.', images: 0, reply: s.lastMessage, artifacts: s.artifacts.map((a) => a.id) },
       ] : [],
     },
@@ -828,6 +829,7 @@ route('GET', '/api/sessions/:id/conversation/:conversation/:entry/:n', ({ params
   must(params[0]);
   return new Page(PICTURE, { 'content-type': 'image/svg+xml' });
 });
+route('GET', '/api/uploads/:dir/:name', () => new Page(PICTURE, { 'content-type': 'image/svg+xml' }));
 route('GET', '/api/sessions/:id/delete-worktree', ({ params }) => deleteLoss(must(params[0])));
 route('POST', '/api/sessions/:id/:action', async ({ params, body }) => {
   return (await sessionAction(params[0], params[1], body)) ?? NONE;
