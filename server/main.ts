@@ -23,13 +23,13 @@ import * as S from './sessions.ts';
 import { sync } from './ingest.ts';
 import { deleteWorktree, deleteWorktreeLoss, removeWorktreeAndSessions } from './removal.ts';
 import { readEntry, watchEntry } from './uiEntry.ts';
-import { saveUpload } from './uploads.ts';
+import { checkUploads, keepUploads, saveUpload } from './uploads.ts';
 import { watchUsage } from './usage.ts';
 import { drift, onDrift } from './claudeFormat.ts';
 import { boardAnswer, boardTracker, cleanBatch, cleanEvent, KEEP_DAYS, type Data } from './uxlog.ts';
 import { folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
 import { folderDiff, makeTaskFolder } from './folderTasks.ts';
-import { nextRun, parseSchedule, repeats, scheduler, untilNextMinute, type Scheduled, type TaskRequest } from './schedule.ts';
+import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, untilNextMinute, type Scheduled, type TaskRequest } from './schedule.ts';
 
 const run = promisify(execFile);
 const app = new Hono();
@@ -154,7 +154,7 @@ type NewTask = TaskRequest & { name: string; scheduled?: Scheduled };
 async function startTask(req: NewTask) {
   const { model, effort } = chosenModel(req);
   const name = req.name.trim();
-  const prompt = req.prompt || undefined;
+  const prompt = taskPrompt(req.prompt ?? '', await checkUploads(req.files)) || undefined;
   if (req.kind === 'folder') {
     if (!name) throw new Error('name is required');
     const path = await makeTaskFolder(req.folder, name);
@@ -192,12 +192,12 @@ async function startTask(req: NewTask) {
 }
 
 app.post('/api/folder-tasks', async (c) => {
-  const body = await c.req.json<{ folder: string; name: string; prompt?: string; model?: string; effort?: string }>();
+  const body = await c.req.json<{ folder: string; name: string; prompt?: string; files?: string[]; model?: string; effort?: string }>();
   return c.json(await startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
 });
 
 app.post('/api/worktrees', async (c) => {
-  const body = await c.req.json<{ repoId: number; name: string; branch?: string; path?: string; prompt?: string; existingBranch?: boolean; model?: string; effort?: string }>();
+  const body = await c.req.json<{ repoId: number; name: string; branch?: string; path?: string; prompt?: string; files?: string[]; existingBranch?: boolean; model?: string; effort?: string }>();
   return c.json(await startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
 });
 
@@ -216,10 +216,12 @@ const plan = scheduler({
   start: async (s, name, scheduled) => (await startTask({ ...s.task, name, scheduled })).sessionId,
   taken: takenNames,
 });
+keepUploads(() => schedules.all().flatMap((s) => s.task.files ?? []));
 
 app.post('/api/schedules', async (c) => {
   const now = Date.now();
   const { name, task, when } = parseSchedule(await c.req.json(), now);
+  task.files = await checkUploads(task.files);
   const schedule = { id: randomUUID(), name, task, when, next: nextRun(when, now), paused: false, last: null, createdAt: now };
   schedules.save(schedule);
   notify();

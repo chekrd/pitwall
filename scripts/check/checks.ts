@@ -1927,7 +1927,7 @@ export const checks: Check[] = [
       await page.eval(submit);
       const error = await page.until('the inline error', () => document.querySelector('dialog#new-task [role="alert"]')?.textContent);
       assert.match(error, /cannot be created here/);
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('dialog#new-task textarea, dialog#new-task input:not([data-repo-picker] *, [type="radio"])')].map((f) => f.value)), ['fail', 'Try a refused name', '', '']);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('dialog#new-task textarea, dialog#new-task input:not([data-repo-picker] *, [type="radio"], [type="file"])')].map((f) => f.value)), ['fail', 'Try a refused name', '', '']);
 
       const extra = () => [...document.querySelectorAll('dialog#new-task label > span')].map((c) => c.textContent).filter((t) => t === 'Branch' || t === 'Worktree path');
       assert.deepEqual(await page.eval(extra), ['Branch', 'Worktree path'], 'New worktree shows its branch and path');
@@ -1950,6 +1950,52 @@ export const checks: Check[] = [
       await page.until('the hint for a branch with its own worktree', () =>
         document.querySelector('dialog#new-task [data-hint]')?.textContent === 'Starts Claude in ~/code/worktrees/guest-cart-merge/storefront, where it is checked out.');
       await shot('new-task-existing-branch');
+    },
+  },
+  {
+    name: 'P4.10.files New task\'s prompt takes files as a reply box does: a pasted screenshot and a dropped file show as chips, Create waits while one uploads, the task starts with their paths, and the next New task starts without them; a chip can be taken off',
+    async run({ page, mock, shot }) {
+      const chips = () => [...document.querySelectorAll<HTMLElement>('dialog#new-task [data-state]')].map((f) => `${f.dataset.state} ${f.querySelector('button')?.getAttribute('aria-label')?.replace(/^Remove /, '')}`);
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      await page.type('Fix what the screenshot shows');
+      await pickRepo(page, 'storefront');
+      await page.click('dialog#new-task input[placeholder="fix-login-redirect"]');
+      await page.type('shot-fix');
+      const waited = await page.eval(() => {
+        const fetched = window.fetch;
+        let release!: () => void;
+        const held = new Promise<void>((r) => (release = r));
+        (window as unknown as { release: () => void }).release = release;
+        window.fetch = (input, init) => (String(input).includes('/api/uploads') ? held.then(() => fetched(input, init)) : fetched(input, init));
+        const data = new DataTransfer();
+        data.items.add(new File(['tail -f'], 'server.log', { type: 'text/plain' }));
+        document.querySelector('dialog#new-task form')!.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+        return new Promise<boolean>((r) => requestAnimationFrame(() => r(document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled)));
+      });
+      assert.equal(waited, true, 'Create waits while a file uploads');
+      await page.eval(() => (window as unknown as { release: () => void }).release());
+      await page.eval(pastePng, 'dialog#new-task textarea');
+      await page.until('both chips uploaded', () => document.querySelectorAll('dialog#new-task [data-state="ready"]').length === 2);
+      assert.deepEqual(await page.eval(chips), ['ready server.log', 'ready shot.png']);
+      assert.equal(await page.eval(() => document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')!.value), 'Fix what the screenshot shows', 'the paste left the prompt as typed');
+      assert.equal(await page.eval(() => document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled), false);
+      await shot('new-task-files');
+      await page.eval(() => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+      const [created] = await logged(mock, 'the new task', (e) => e.method === 'POST' && e.path === '/api/worktrees');
+      assert.equal(created.status, 200);
+      assert.equal(created.body.prompt, 'Fix what the screenshot shows');
+      assert.deepEqual((created.body.files as string[]).map((f) => f.split('/').at(-1)), ['server.log', 'shot.png']);
+      await page.until('its sheet', () => document.querySelector('#task-sheet h2')?.textContent === 'shot-fix');
+      await page.click('#task-sheet button[aria-label^="Back to"]');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await openNewTask(page);
+      assert.deepEqual(await page.eval(chips), [], 'the next New task starts without the files');
+      await page.eval(pastePng, 'dialog#new-task textarea');
+      await page.until('the chip', () => !!document.querySelector('dialog#new-task [data-state="ready"]'));
+      await page.click('dialog#new-task button[aria-label="Remove shot.png"]');
+      await page.until('the chip gone, the prompt focused', () => !document.querySelector('dialog#new-task [data-state]') && document.activeElement === document.querySelector('dialog#new-task textarea'));
     },
   },
   {
@@ -6043,7 +6089,7 @@ export const checks: Check[] = [
       await shot('new-task-folder');
       await page.eval(submit);
       const [created] = await logged(mock, 'the folder task', (e) => e.method === 'POST' && e.path === '/api/folder-tasks');
-      assert.deepEqual({ ...created.body, status: created.status }, { folder: '~/code', name: 'cart-api', prompt: 'Rename the cart API on both sides', model: '', effort: '', status: 200 });
+      assert.deepEqual({ ...created.body, status: created.status }, { folder: '~/code', name: 'cart-api', prompt: 'Rename the cart API on both sides', files: [], model: '', effort: '', status: 200 });
       const id: string = (await mock.get('/api/state')).sessions.find((x: { worktree: string }) => x.worktree === '~/code/worktrees/cart-api').id;
       const before = await page.until('its facts', () => {
         const dl = document.querySelector('#task-sheet dl');
@@ -6621,11 +6667,11 @@ export const checks: Check[] = [
       await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
       assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent!), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
       await shot('new-task-repeat');
-      const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div')].map((row) =>
+      const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div:not([data-prompt])')].map((row) =>
         [...row.querySelectorAll(':scope > label, :scope > [data-when] > label, :scope > [data-when] > fieldset:not([data-days]), :scope > div > label')].map((el) => el.querySelector('span')?.textContent ?? 'Start'));
       assert.deepEqual(await page.eval(rows), [['Branch', 'Worktree path', 'Start', 'At'], ['Model', 'Effort']], 'a new worktree: Start by the worktree path, Model and Effort under it');
       await page.click('dialog#new-task label', 'Current checkout');
-      await page.until('one row of options', () => document.querySelectorAll('dialog#new-task [data-more-options] > div').length === 1);
+      await page.until('one row of options', () => document.querySelectorAll('dialog#new-task [data-more-options] > div:not([data-prompt])').length === 1);
       assert.deepEqual(await page.eval(rows), [['Start', 'At', 'Model', 'Effort']], 'the current checkout: Start first, then Model and Effort');
       await shot('new-task-repeat-checkout');
       await page.click('dialog#new-task label', 'New worktree');
@@ -6634,7 +6680,7 @@ export const checks: Check[] = [
       assert.equal(posted.status, 200);
       assert.deepEqual(posted.body.when, { time: '09:00', days: [1, 2, 3, 4, 5] });
       assert.deepEqual({ ...posted.body.task, name: posted.body.name }, {
-        kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Review the open PRs and summarise what needs me', model: '', effort: '', name: 'nightly-review',
+        kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Review the open PRs and summarise what needs me', files: [], model: '', effort: '', name: 'nightly-review',
       });
       await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#new-task')!.open);
       await page.until('the toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => /Scheduled nightly-review: weekdays at 09:00/.test(t.textContent!)));

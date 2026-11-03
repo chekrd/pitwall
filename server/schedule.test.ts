@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { nextRun, parseSchedule, runName, scheduler, untilNextMinute, type Schedule } from './schedule.ts';
+import { nextRun, parseSchedule, runName, scheduler, taskPrompt, untilNextMinute, type Schedule } from './schedule.ts';
 
 const local = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
 // Monday 2 November 2026.
@@ -28,6 +28,12 @@ test('each run of a repeating schedule is named by its date, a one-off by the sc
   assert.equal(runName({ name: 'review', when: { time: '09:00', days: WEEKDAYS } }, MON(9), new Set()), 'review-2026-11-02');
   assert.equal(runName({ name: 'review', when: { time: '09:00', days: WEEKDAYS } }, MON(9), new Set(['review-2026-11-02'])), 'review-2026-11-02-2');
   assert.equal(runName({ name: 'nightly', when: { at: MON(22) } }, MON(22), new Set()), 'nightly');
+});
+
+test('a task starts on its prompt with the attached files listed under it, or on the files alone', () => {
+  assert.equal(taskPrompt(' Fix it \n', ['/u/a/shot.png', '/u/b/log.txt']), 'Fix it\n\n/u/a/shot.png\n/u/b/log.txt');
+  assert.equal(taskPrompt('', ['/u/a/shot.png']), '/u/a/shot.png');
+  assert.equal(taskPrompt('Fix it', []), 'Fix it');
 });
 
 test('a schedule needs a prompt, a name, and a time to come or days to repeat on', () => {

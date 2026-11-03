@@ -9,6 +9,7 @@ import { DAYS, describeWhen } from '../schedules.ts';
 import type { Schedule, When } from '../types.ts';
 import { toast } from './Toasts.tsx';
 import { EFFORTS, effortName, modelName, tilde, untilde } from '../util.ts';
+import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
 import { Icon } from './Icon.tsx';
 import styles from './NewTaskForm.module.css';
 
@@ -155,13 +156,21 @@ const subscribe = (fn: () => void) => {
 };
 
 // New task opens as a dialog over either view; a preset starts a new worktree of that repository with that prompt.
+// The prompt's attachments are a draft of their own, kept as a reply box keeps its files.
+const ATTACHED = 'new-task';
+
+function clearAttached() {
+  release(draftOf(ATTACHED));
+  editDraft(ATTACHED, () => ({ text: '', files: [] }));
+}
+
 export function openNewTask(preset?: { repoId: number; name: string; prompt: string }) {
   const dialog = document.getElementById(DIALOG) as HTMLDialogElement | null;
   if (!dialog) return;
   if (preset) edit({ ...preset, folder: null, existing: false, branch: '', path: '', more: true });
   if (!dialog.open) {
     opened++;
-    edit({ ...(!preset && { name: '' }), ...(fields.prompt.trim() && { more: true }), start: 'now', at: '' });
+    edit({ ...(!preset && { name: '' }), ...((fields.prompt.trim() || draftOf(ATTACHED).files.length > 0) && { more: true }), start: 'now', at: '' });
     dialog.showModal();
   }
   dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
@@ -380,6 +389,12 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const read = useSyncExternalStore(subscribe, () => branches);
   const opening = useSyncExternalStore(subscribe, () => opened);
   const known = useSyncExternalStore(subscribe, () => models);
+  const attached = useDraft(ATTACHED);
+  const promptField = useRef<HTMLTextAreaElement>(null);
+  const { onPaste, onDragOver, onDrop } = takesFiles(ATTACHED, () => {
+    edit({ more: true });
+    promptField.current?.focus();
+  });
   const { home, folders } = useStore();
   const targets = [
     ...folders.toSorted((a, b) => byName(a.name, b.name)).map(folderTarget),
@@ -401,7 +416,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const branch = f.branch.trim();
   const scheduling = f.start !== 'now';
   const when = whenOf(f);
-  const valid = (existing ? !!branch : pickedFolder ? NAME.test(name) && !name.includes('/') : NAME.test(name))
+  const valid = !uploading(attached) && (existing ? !!branch : pickedFolder ? NAME.test(name) && !name.includes('/') : NAME.test(name))
     && (!scheduling || (!!f.prompt.trim() && !!when && (existing || !name.includes('/'))));
   const main = repo.worktrees.find((w) => w.isMain);
   const list = read?.repoId === repo.id ? read.list : null;
@@ -411,17 +426,19 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
 
   const [error, create, pending] = useActionState(async () => {
     const now = fields;
+    const files = readyPaths(draftOf(ATTACHED));
     const chose = {
       mode: pickedFolder ? 'folder' : now.existing ? 'existing-branch' : 'worktree', model: !!now.model, effort: !!now.effort,
-      branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length,
+      branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length, files: files.length,
     };
     try {
       if (now.start !== 'now') {
         const task = pickedFolder
-          ? { kind: 'folder', folder: pickedFolder.path, prompt: now.prompt, model: now.model, effort: now.effort }
-          : { kind: 'repo', repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, model: now.model, effort: now.effort };
+          ? { kind: 'folder', folder: pickedFolder.path, prompt: now.prompt, files, model: now.model, effort: now.effort }
+          : { kind: 'repo', repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model: now.model, effort: now.effort };
         const schedule = await api<Schedule>('POST', '/api/schedules', { name: now.existing && !pickedFolder ? '' : now.name.trim(), task, when: whenOf(now) });
         edit({ ...EMPTY, ...choicesOf(now), repoId: pickedFolder ? now.repoId : repo.id, branch: now.existing && !pickedFolder ? defaultBranch(repo) : '' });
+        clearAttached();
         track('new-task', { ...chose, schedule: now.start, ok: true });
         done?.();
         toast('info', `Scheduled ${schedule.name}: ${describeWhen(schedule.when)}. It is on the Wall.`);
@@ -429,9 +446,10 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       }
       if (pickedFolder) {
         const result = await api<{ path: string; sessionId: string }>('POST', '/api/folder-tasks', {
-          folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, model: now.model, effort: now.effort,
+          folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, files, model: now.model, effort: now.effort,
         });
         edit({ ...EMPTY, ...choicesOf(now) });
+        clearAttached();
         track('new-task', { ...chose, ok: true });
         done?.();
         openSheet(result.sessionId);
@@ -443,11 +461,13 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         branch: now.branch.trim(),
         path: untilde(now.path.trim(), home),
         prompt: now.prompt,
+        files,
         existingBranch: now.existing,
         model: now.model,
         effort: now.effort,
       });
       edit({ ...EMPTY, ...choicesOf(now), repoId: repo.id, branch: now.existing ? defaultBranch(repo) : '' });
+      clearAttached();
       track('new-task', { ...chose, ok: true });
       done?.();
       if (result.sessionId) openSheet(result.sessionId);
@@ -480,7 +500,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
-  const chosen = [when && describeWhen(when), f.prompt.trim() && 'prompt', f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+  const chosen = [when && describeWhen(when), f.prompt.trim() && 'prompt', attached.files.length && (attached.files.length === 1 ? '1 file' : `${attached.files.length} files`), f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
   const modelControl = (
     <div className={styles.models}>
@@ -543,7 +563,10 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   );
 
   return (
-    <form className={styles.form} action={create} onKeyDown={onFormKey}>
+    <form className={styles.form} action={create} onKeyDown={onFormKey} onPaste={(e) => {
+      onPaste(e);
+      if (e.defaultPrevented) edit({ more: true });
+    }} onDragOver={onDragOver} onDrop={onDrop}>
       <div className={styles.row}>
         <RepoPicker
           repos={targets}
@@ -597,14 +620,19 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       </div>
       {f.more && (
         <div className={styles.extra} data-more-options>
-          <textarea
-            className={styles.prompt}
-            rows={1}
-            aria-label="What should Claude work on?"
-            placeholder={scheduling ? 'What should Claude work on? (a scheduled task needs a prompt)' : 'What should Claude work on? (optional)'}
-            value={f.prompt}
-            onChange={(e) => edit({ prompt: e.currentTarget.value })}
-          />
+          <AttachedFiles id={ATTACHED} refocus={() => promptField.current?.focus()} />
+          <div className={styles.promptRow} data-prompt>
+            <textarea
+              ref={promptField}
+              className={styles.prompt}
+              rows={1}
+              aria-label="What should Claude work on?"
+              placeholder={scheduling ? 'What should Claude work on? (a scheduled task needs a prompt)' : 'What should Claude work on? (optional; paste or drop files)'}
+              value={f.prompt}
+              onChange={(e) => edit({ prompt: e.currentTarget.value })}
+            />
+            <AttachButton id={ATTACHED} refocus={() => promptField.current?.focus()} />
+          </div>
           {!existing && !pickedFolder ? (
             <>
               <div className={styles.options}>

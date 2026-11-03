@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { UPLOADS_DIR } from './config.ts';
 
 const MAX_BYTES = 30 * 1024 * 1024;
@@ -29,9 +29,18 @@ export async function checkUploads(paths: unknown) {
   return paths as string[];
 }
 
+let kept: () => Iterable<string> = () => [];
+
+// Files something still means to send, such as a schedule's attachments, stay however old they are.
+export function keepUploads(paths: () => Iterable<string>) {
+  kept = paths;
+}
+
 async function prune() {
   const dirs = await readdir(UPLOADS_DIR).catch(() => []);
+  const keep = new Set([...kept()].map((p) => dirname(p)));
   for (const d of dirs) {
+    if (keep.has(join(UPLOADS_DIR, d))) continue;
     const info = await stat(join(UPLOADS_DIR, d)).catch(() => null);
     if (info && Date.now() - info.mtimeMs > KEEP_MS) await rm(join(UPLOADS_DIR, d), { recursive: true, force: true });
   }

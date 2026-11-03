@@ -196,6 +196,82 @@ addEventListener('paste', (e) => {
   else if (!box || !insertText(text)) editDraft(id, (d) => ({ ...d, text: d.text + text }));
 });
 
+// Paste into the field, or drop anywhere on the box, attaches the files that come with it.
+export const takesFiles = (id: string, refocus: () => void) => ({
+  onPaste: (e: ClipboardEvent) => {
+    const list = files(e);
+    if (!list.length) return;
+    e.preventDefault();
+    attach(id, list);
+  },
+  onDragOver: (e: DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+  },
+  onDrop: (e: DragEvent) => {
+    if (!files(e).length) return;
+    e.preventDefault();
+    attach(id, files(e));
+    refocus();
+  },
+});
+
+// The files a draft carries, each with its upload state and a button to take it off.
+export function AttachedFiles({ id, refocus }: { id: string; refocus: () => void }) {
+  const draft = useDraft(id);
+  const { home } = useStore();
+  if (!draft.files.length) return null;
+  return (
+    <div className={styles.files}>
+      {draft.files.map((f) => (
+        <span
+          key={f.id}
+          className={styles.file}
+          data-state={f.error ? 'failed' : f.path ? 'ready' : 'uploading'}
+          title={f.error ? `Could not upload: ${f.error}` : f.path ? `Sent to Claude as ${tilde(f.path, home)}` : 'Uploading…'}
+        >
+          {f.preview ? <span className={styles.thumb} style={{ backgroundImage: `url("${f.preview}")` }} aria-hidden /> : <span className={styles.ext}>{f.name.split('.').at(-1)?.slice(0, 4) || 'file'}</span>}
+          <span className={styles.name}>{f.name}</span>
+          {!f.path && !f.error && <span className={styles.spinner} aria-hidden />}
+          {f.error && <span className={styles.failed}>failed</span>}
+          <button
+            type="button"
+            aria-label={`Remove ${f.name}`}
+            onClick={() => {
+              detach(id, f);
+              refocus();
+            }}
+          >
+            <Icon name="close" size={12} />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function AttachButton({ id, refocus }: { id: string; refocus: () => void }) {
+  return (
+    <label className={styles.attach} title="Attach files; pasting or dropping them works too">
+      {/* The chooser leaves focus on the input, picked or cancelled; React has no onCancel for an input. */}
+      <input
+        ref={(input) => {
+          input?.addEventListener('cancel', refocus);
+          return () => input?.removeEventListener('cancel', refocus);
+        }}
+        type="file"
+        multiple
+        aria-label="Attach files"
+        onChange={(e) => {
+          attach(id, [...(e.currentTarget.files ?? [])]);
+          e.currentTarget.value = '';
+          refocus();
+        }}
+      />
+      <Icon name="paperclip" size={18} />
+    </label>
+  );
+}
+
 export interface ComposerProps {
   session: Session;
   // The key of the decision the card shows, which Enter answers; null for a plain message.
@@ -223,7 +299,6 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
   const [closed, setClosed] = useState(false);
   const [focused, setFocused] = useState(false);
   const commands = useCommands(session.worktree, focused || draft.text.startsWith('/'));
-  const { home } = useStore();
   const query = /^\/\S*$/.test(draft.text) && !closed ? draft.text.slice(1).toLowerCase() : null;
   const matches = query === null || !commands ? [] : rank(commands, query);
   const listed = matches.length > 0;
@@ -284,21 +359,7 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
     setClosed(value.startsWith('/') && /\s/.test(value));
   };
 
-  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const list = files(e);
-    if (!list.length) return;
-    e.preventDefault();
-    attach(id, list);
-  };
-  const onDragOver = (e: DragEvent) => {
-    if (e.dataTransfer.types.includes('Files')) e.preventDefault();
-  };
-  const onDrop = (e: DragEvent) => {
-    if (!files(e).length) return;
-    e.preventDefault();
-    attach(id, files(e));
-    field.current?.focus();
-  };
+  const { onPaste, onDragOver, onDrop } = takesFiles(id, () => field.current?.focus());
 
   return (
     <section ref={section} className={styles.composer} data-inline={inline || undefined} aria-label={label} onDragOver={onDragOver} onDrop={onDrop}>
@@ -328,33 +389,7 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
           ))}
         </div>
       )}
-      {draft.files.length > 0 && (
-        <div className={styles.files}>
-          {draft.files.map((f) => (
-            <span
-              key={f.id}
-              className={styles.file}
-              data-state={f.error ? 'failed' : f.path ? 'ready' : 'uploading'}
-              title={f.error ? `Could not upload: ${f.error}` : f.path ? `Sent to Claude as ${tilde(f.path, home)}` : 'Uploading…'}
-            >
-              {f.preview ? <span className={styles.thumb} style={{ backgroundImage: `url("${f.preview}")` }} aria-hidden /> : <span className={styles.ext}>{f.name.split('.').at(-1)?.slice(0, 4) || 'file'}</span>}
-              <span className={styles.name}>{f.name}</span>
-              {!f.path && !f.error && <span className={styles.spinner} aria-hidden />}
-              {f.error && <span className={styles.failed}>failed</span>}
-              <button
-                type="button"
-                aria-label={`Remove ${f.name}`}
-                onClick={() => {
-                  detach(id, f);
-                  field.current?.focus();
-                }}
-              >
-                <Icon name="close" size={12} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
+      <AttachedFiles id={id} refocus={() => field.current?.focus()} />
       <div className={styles.box}>
         <textarea
           ref={field}
@@ -378,25 +413,7 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
             });
           }}
         />
-        <label className={styles.attach} title="Attach files; pasting or dropping them works too">
-          {/* The chooser leaves focus on the input, picked or cancelled; React has no onCancel for an input. */}
-          <input
-            ref={(input) => {
-              const back = () => field.current?.focus();
-              input?.addEventListener('cancel', back);
-              return () => input?.removeEventListener('cancel', back);
-            }}
-            type="file"
-            multiple
-            aria-label="Attach files"
-            onChange={(e) => {
-              attach(id, [...(e.currentTarget.files ?? [])]);
-              e.currentTarget.value = '';
-              field.current?.focus();
-            }}
-          />
-          <Icon name="paperclip" size={18} />
-        </label>
+        <AttachButton id={id} refocus={() => field.current?.focus()} />
       </div>
       {!inline && <p className={styles.hint}>Enter sends · Shift+Enter adds a line · / and ! go to the terminal as typed</p>}
     </section>

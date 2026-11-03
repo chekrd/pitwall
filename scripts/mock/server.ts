@@ -17,7 +17,7 @@ import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
 import { addParked, editParked, removeParked, turnEnds } from '../../server/parked.ts';
-import { nextRun, parseSchedule, repeats, scheduler, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
+import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
@@ -674,18 +674,19 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const model = MODELS.models[req.model ?? ''] ?? req.model;
   const effort = req.effort || MODELS.efforts[req.model ?? ''] || undefined;
   const name = String(req.name ?? '').trim();
+  const prompt = taskPrompt(req.prompt ?? '', checkUploads(req.files));
   if (req.kind === 'folder') {
     const folder = folders().find((f) => f.path === req.folder);
     if (!folder) throw new Error('unknown folder');
     if (!name) throw new Error('name is required');
     const path = `${folder.path}/worktrees/${name}`;
     if (state.sessions.some((s) => s.worktree === path) || taskWorktrees(path).length) throw new Error(`${path} already exists; pick another name`);
-    return { path, sessionId: startSession(null, path, { title: name, prompt: req.prompt, model, effort, scheduled: req.scheduled }) };
+    return { path, sessionId: startSession(null, path, { title: name, prompt, model, effort, scheduled: req.scheduled }) };
   }
   const repo = mustRepo(req.repoId);
   const path = addWorktree(repo, req);
   push();
-  return { path, sessionId: startSession(repo.id, path, { title: req.scheduled || !req.existingBranch ? name : '', prompt: req.prompt, model, effort, scheduled: req.scheduled }) };
+  return { path, sessionId: startSession(repo.id, path, { title: req.scheduled || !req.existingBranch ? name : '', prompt, model, effort, scheduled: req.scheduled }) };
 }
 
 route('POST', '/api/worktrees', ({ body }) => startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
@@ -710,6 +711,7 @@ const plan = scheduler({
 route('POST', '/api/schedules', ({ body }) => {
   const now = Date.now();
   const { name, task, when } = parseSchedule(body, now);
+  task.files = checkUploads(task.files);
   const schedule: Schedule = { id: randomUUID(), name, task, when, next: nextRun(when, now), paused: false, last: null, createdAt: now };
   schedules.push(schedule);
   push();
