@@ -167,10 +167,10 @@ function clearAttached() {
 export function openNewTask(preset?: { repoId: number; name: string; prompt: string }) {
   const dialog = document.getElementById(DIALOG) as HTMLDialogElement | null;
   if (!dialog) return;
-  if (preset) edit({ ...preset, folder: null, existing: false, branch: '', path: '', more: true });
+  if (preset) edit({ ...preset, folder: null, existing: false, branch: '', path: '' });
   if (!dialog.open) {
     opened++;
-    edit({ ...(!preset && { name: '' }), ...((fields.prompt.trim() || draftOf(ATTACHED).files.length > 0) && { more: true }), start: 'now', at: '' });
+    edit({ ...(!preset && { name: '' }), start: 'now', at: '' });
     dialog.showModal();
   }
   dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
@@ -391,10 +391,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const known = useSyncExternalStore(subscribe, () => models);
   const attached = useDraft(ATTACHED);
   const promptField = useRef<HTMLTextAreaElement>(null);
-  const { onPaste, onDragOver, onDrop } = takesFiles(ATTACHED, () => {
-    edit({ more: true });
-    promptField.current?.focus();
-  });
+  const { onPaste, onDragOver, onDrop } = takesFiles(ATTACHED, () => promptField.current?.focus());
   const { home, folders } = useStore();
   const targets = [
     ...folders.toSorted((a, b) => byName(a.name, b.name)).map(folderTarget),
@@ -500,7 +497,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
-  const chosen = [when && describeWhen(when), f.prompt.trim() && 'prompt', attached.files.length && (attached.files.length === 1 ? '1 file' : `${attached.files.length} files`), f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+  const chosen = [when && describeWhen(when), f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
   const modelControl = (
     <div className={styles.models}>
@@ -563,10 +560,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   );
 
   return (
-    <form className={styles.form} action={create} onKeyDown={onFormKey} onPaste={(e) => {
-      onPaste(e);
-      if (e.defaultPrevented) edit({ more: true });
-    }} onDragOver={onDragOver} onDrop={onDrop}>
+    <form className={styles.form} action={create} onKeyDown={onFormKey} onPaste={onPaste} onDragOver={onDragOver} onDrop={onDrop}>
       <div className={styles.row}>
         <RepoPicker
           repos={targets}
@@ -591,6 +585,19 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         <button type="submit" className={styles.create} disabled={!valid || pending}>
           {pending ? (scheduling ? 'Scheduling…' : 'Creating…') : scheduling ? 'Schedule' : 'Create'} <kbd>↵</kbd>
         </button>
+      </div>
+      <AttachedFiles id={ATTACHED} refocus={() => promptField.current?.focus()} />
+      <div className={styles.promptRow} data-prompt>
+        <textarea
+          ref={promptField}
+          className={styles.prompt}
+          rows={1}
+          aria-label="What should Claude work on?"
+          placeholder={scheduling ? 'What should Claude work on? (a scheduled task needs a prompt)' : 'What should Claude work on? (optional; paste or drop files)'}
+          value={f.prompt}
+          onChange={(e) => edit({ prompt: e.currentTarget.value })}
+        />
+        <AttachButton id={ATTACHED} refocus={() => promptField.current?.focus()} />
       </div>
       <div className={styles.foot}>
         <p className={styles.hint} data-hint>
@@ -620,19 +627,6 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       </div>
       {f.more && (
         <div className={styles.extra} data-more-options>
-          <AttachedFiles id={ATTACHED} refocus={() => promptField.current?.focus()} />
-          <div className={styles.promptRow} data-prompt>
-            <textarea
-              ref={promptField}
-              className={styles.prompt}
-              rows={1}
-              aria-label="What should Claude work on?"
-              placeholder={scheduling ? 'What should Claude work on? (a scheduled task needs a prompt)' : 'What should Claude work on? (optional; paste or drop files)'}
-              value={f.prompt}
-              onChange={(e) => edit({ prompt: e.currentTarget.value })}
-            />
-            <AttachButton id={ATTACHED} refocus={() => promptField.current?.focus()} />
-          </div>
           {!existing && !pickedFolder ? (
             <>
               <div className={styles.options}>

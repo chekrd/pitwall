@@ -39,7 +39,7 @@ export interface Check {
   // quickly. The check waits with wait(), not sleep(), for anything timed by the page.
   clock?: 'fast';
   // New task as it first opens: More folded on Current checkout. Every other check starts with More open on New
-  // worktree, the prompt focused, as a stored choice would have it.
+  // worktree, as a stored choice would have it.
   newTask?: 'default';
   run: (t: Context) => Promise<void>;
 }
@@ -5732,7 +5732,7 @@ export const checks: Check[] = [
       await page.click('[data-fix-drift]');
       const form = await page.until('New task with the fix, its repository focused', () => {
         const dialog = document.querySelector<HTMLDialogElement>('dialog#new-task');
-        const prompt = dialog?.querySelector<HTMLTextAreaElement>('[data-more-options] textarea');
+        const prompt = dialog?.querySelector<HTMLTextAreaElement>('textarea');
         if (!dialog?.open || !prompt || document.activeElement !== dialog.querySelector('button[aria-haspopup="listbox"]')) return null;
         return {
           repo: dialog.querySelector<HTMLElement>('[data-ux="repository"] strong')?.innerText,
@@ -6377,7 +6377,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'new-task.default New task first opens on Current checkout with the default branch picked and the repository focused, More folded; ⌘↵ creates there; the repository, mode and More outlast a reload; More opens the prompt, model and effort, and names what is set in them while folded',
+    name: 'new-task.default New task first opens on Current checkout with the default branch picked and the repository focused, More folded under the prompt; ⌘↵ creates there; the repository, mode and More outlast a reload; More opens the model and effort, and names what is set in them while folded',
     newTask: 'default',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
@@ -6392,13 +6392,14 @@ export const checks: Check[] = [
           branch: branch?.value ?? null,
           focused: document.activeElement === d.querySelector('button[aria-haspopup="listbox"]') ? 'repository' : document.activeElement?.tagName.toLowerCase() ?? null,
           prompt: !!d.querySelector('textarea'),
+          options: !!d.querySelector('[data-more-options]'),
           more: d.querySelector<HTMLElement>('[data-more]')?.innerText.trim() ?? null,
         };
       };
-      assert.deepEqual(await page.until('New task', form), { mode: 'Current checkout', branch: 'main', focused: 'repository', prompt: false, more: 'More' });
+      assert.deepEqual(await page.until('New task', form), { mode: 'Current checkout', branch: 'main', focused: 'repository', prompt: true, options: false, more: 'More' });
       await shot('new-task-folded');
       await page.click('dialog#new-task [data-more]');
-      await page.until('the prompt', () => !!document.querySelector('dialog#new-task textarea'));
+      await page.until('the options', () => !!document.querySelector('dialog#new-task [data-more-options]'));
       await page.eval(() => {
         const select = document.querySelectorAll<HTMLSelectElement>('dialog#new-task select')[0];
         select.value = select.options[1].value;
@@ -6407,7 +6408,7 @@ export const checks: Check[] = [
       await page.click('dialog#new-task [data-more]');
       const folded = await page.until('More folded, naming the model', () => {
         const m = document.querySelector<HTMLElement>('dialog#new-task [data-more]');
-        return m && !document.querySelector('dialog#new-task textarea') ? m.innerText.trim() : null;
+        return m && !document.querySelector('dialog#new-task [data-more-options]') ? m.innerText.trim() : null;
       });
       assert.match(folded, /^More\s*\S+/);
       await page.click('dialog#new-task [data-more]');
@@ -6760,11 +6761,11 @@ export const checks: Check[] = [
       await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
       assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent!), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
       await shot('new-task-repeat');
-      const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div:not([data-prompt])')].map((row) =>
+      const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div')].map((row) =>
         [...row.querySelectorAll(':scope > label, :scope > [data-when] > label, :scope > [data-when] > fieldset:not([data-days]), :scope > div > label')].map((el) => el.querySelector('span')?.textContent ?? 'Start'));
       assert.deepEqual(await page.eval(rows), [['Branch', 'Worktree path', 'Start', 'At'], ['Model', 'Effort']], 'a new worktree: Start by the worktree path, Model and Effort under it');
       await page.click('dialog#new-task label', 'Current checkout');
-      await page.until('one row of options', () => document.querySelectorAll('dialog#new-task [data-more-options] > div:not([data-prompt])').length === 1);
+      await page.until('one row of options', () => document.querySelectorAll('dialog#new-task [data-more-options] > div').length === 1);
       assert.deepEqual(await page.eval(rows), [['Start', 'At', 'Model', 'Effort']], 'the current checkout: Start first, then Model and Effort');
       await shot('new-task-repeat-checkout');
       await page.click('dialog#new-task label', 'New worktree');
