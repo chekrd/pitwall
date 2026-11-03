@@ -11,7 +11,7 @@ import { useFront } from '../useKeys.ts';
 import { adviceFor, attentionOf, decisionOf, locate, sessionLabel } from '../util.ts';
 import { track } from '../ux.ts';
 import styles from './Card.module.css';
-import { editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
+import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { CopyButton } from './CopyButton.tsx';
 import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
@@ -334,7 +334,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               />
             )}
             {kind === 'prompt' && <PromptBody session={session} />}
-            {kind === 'idle' && <TurnBody session={session} composer={composer} />}
+            {kind === 'idle' && <TurnBody session={session} />}
             {learnings.length > 0 && (
               <div className={styles.know} data-know>
                 <span className={styles.knowLabel}>Worth knowing</span>
@@ -349,7 +349,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           <TaskRail session={session} summaryText={kind !== 'idle'} />
         </div>
       </div>
-      <footer className={styles.foot}>
+      <footer className={styles.foot} data-kind={kind}>
         <button
           type="button"
           className={styles.primary}
@@ -366,6 +366,11 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           <button type="button" aria-label="Previous card" disabled={deck < 2} onClick={() => queue.previous()}><Icon name="arrow-left" size={18} /></button>
           <button type="button" aria-label="Skip to the next card" disabled={deck < 2} onClick={() => queue.skip()}><Icon name="arrow-right" size={18} /></button>
         </span>
+        {kind === 'idle' && (
+          <div className={styles.message}>
+            <Composer session={session} decision={null} label="Message Claude" placeholder="Reply, / for commands, paste or drop files…" inline {...composer} />
+          </div>
+        )}
         <div className={styles.actions}>
           {decision && (
             <>

@@ -170,6 +170,7 @@
     align-items: start;
     gap: 40px;
     padding: 12px 30px 0;
+    &:not(:has(> [data-side="right"])) { grid-template-columns: minmax(0, 1fr); }
   }
 
   .lead { flex: none; margin: -4px 0 2px; font-size: 18px; line-height: 1.45; color: var(--text-2); text-wrap: pretty; }
@@ -231,6 +232,8 @@
   }
 
   .actions { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .message { flex: 1 1 320px; min-width: 0; }
+  .foot[data-kind="idle"] .actions { flex: none; }
 
   .dismiss {
     height: 42px;
@@ -289,6 +292,7 @@
     .primary { height: 46px; padding: 0 14px 0 16px; }
     .steps { display: flex; }
     .actions { grid-column: 1 / -1; gap: 8px; &:empty { display: none; } }
+    .foot[data-kind="idle"] .actions { grid-column: auto; }
     .secondary { height: 38px; padding: 0 12px; font-size: 14px; }
     .dismiss { height: 38px; padding: 0 10px; }
   }

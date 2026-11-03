@@ -539,7 +539,7 @@ const primaryAtEnds = () => {
 };
 
 // The card in a narrow window: whether its columns, or a menu's questions, stand one under the other, which peeks
-// and slivers show, and how many rows the footer's buttons take.
+// and slivers show, and how many rows the footer's buttons and reply box take.
 const narrowCard = () => {
   const c = document.querySelector('[data-card]')!;
   const stacked = (els: Element[]) => {
@@ -551,7 +551,7 @@ const narrowCard = () => {
     stacked: stacked([...c.querySelectorAll('[data-side]')]) && stacked([...c.querySelectorAll('section[role="group"]')]),
     peeks: [...document.querySelectorAll<HTMLElement>('[data-peek]')].filter(shown).map((p) => p.dataset.peek),
     sliver: shown(document.querySelector('[data-sliver]')),
-    footRows: new Set([...c.querySelectorAll('footer button')].filter(shown).map((b) => Math.round(b.getBoundingClientRect().top))).size,
+    footRows: new Set([...c.querySelectorAll('footer button, footer textarea')].filter(shown).map((b) => { const r = b.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size,
   };
 };
 
@@ -2784,7 +2784,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.10 a click on peek 2 brings s-group to the front; the 5th meter segment shows Lazy-load product reviews as a Your-turn card with its summary, latest reply, Session summary, the reply box, Reply ↵ and Archive X',
+    name: 'P5.1.10 a click on peek 2 brings s-group to the front; the 5th meter segment shows Lazy-load product reviews as a Your-turn card with its summary, latest reply, Session summary, and the reply box in the footer between Reply ↵ and Archive X, on one row',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
@@ -2794,9 +2794,17 @@ export const checks: Check[] = [
       const shown = (await page.eval(card))!;
       assert.deepEqual([shown.kind, shown.label, shown.primary], ['idle', 'Lazy-load product reviews · Your turn', 'Reply']);
       for (const part of [
-        'Reviews now load when scrolled into view', "CLAUDE'S LATEST REPLY", 'The reviews section now loads when it comes within 600 px', 'SESSION SUMMARY', 'Reviews split into a lazy chunk (41 kB)', 'MESSAGE CLAUDE', 'Archive\nX',
+        'Reviews now load when scrolled into view', "CLAUDE'S LATEST REPLY", 'The reviews section now loads when it comes within 600 px', 'SESSION SUMMARY', 'Reviews split into a lazy chunk (41 kB)', 'Archive\nX',
       ]) assert.ok(shown.text.includes(part), `the card lacks ${part}`);
-      assert.equal(await page.eval(() => !!document.querySelector('[data-card] textarea') && !!document.querySelector('[data-card] table')), true);
+      assert.equal(await page.eval(() => !!document.querySelector('[data-card] table')), true);
+      const bar = await page.eval(() => {
+        const foot = document.querySelector('[data-card] footer')!;
+        const row = (e: Element | null) => e && Math.round(e.getBoundingClientRect().top + e.getBoundingClientRect().height / 2);
+        const [primary, box, archive] = [foot.querySelector('[data-primary]'), foot.querySelector('textarea'), [...foot.querySelectorAll('button')].find((b) => b.textContent!.startsWith('Archive')) ?? null];
+        const x = (e: Element | null) => e?.getBoundingClientRect().left;
+        return { label: box?.getAttribute('aria-label'), oneRow: row(primary) === row(box) && row(box) === row(archive), order: x(primary)! < x(box)! && x(box)! < x(archive)! };
+      });
+      assert.deepEqual(bar, { label: 'Message Claude', oneRow: true, order: true });
       await page.until('the card to settle', still);
       await shot('queue-your-turn');
     },
@@ -4703,6 +4711,7 @@ export const checks: Check[] = [
         assert.deepEqual(await page.eval(sidewaysScroll), [], id);
         if (id === 's-cart') await shot('phone-ask');
         if (id === 's-hooks') await shot('phone-menu');
+        if (id === 's-reviews') await shot('phone-your-turn');
         await page.key('ArrowRight');
       }
       await page.until('s-anchors at the front', frontIs, 's-anchors');

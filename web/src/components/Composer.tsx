@@ -207,12 +207,14 @@ export interface ComposerProps {
   note?: string | null;
   onSend: (request: Request) => void;
   onEscape: () => void;
+  // In a bar beside buttons: no heading or hint line, and a field one line high to start.
+  inline?: boolean;
 }
 
 // The reply box: Enter sends, Shift+Enter adds a line, "/" lists the session's commands, and files come by paste,
 // drop or the paperclip. Esc closes the command list first; in an empty box it takes back a send that waits to go out,
 // else it leaves the box.
-export function Composer({ session, decision, label, placeholder, focus, note, onSend, onEscape }: ComposerProps) {
+export function Composer({ session, decision, label, placeholder, focus, note, onSend, onEscape, inline }: ComposerProps) {
   const id = session.id;
   const draft = useDraft(id);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -299,11 +301,13 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
   };
 
   return (
-    <section ref={section} className={styles.composer} aria-label={label} onDragOver={onDragOver} onDrop={onDrop}>
-      <div className={styles.head}>
-        <h3 className={styles.label}>{label}</h3>
-        {note && <span className={styles.note} role="status">{note}</span>}
-      </div>
+    <section ref={section} className={styles.composer} data-inline={inline || undefined} aria-label={label} onDragOver={onDragOver} onDrop={onDrop}>
+      {(!inline || note) && (
+        <div className={styles.head}>
+          {!inline && <h3 className={styles.label}>{label}</h3>}
+          {note && <span className={styles.note} role="status">{note}</span>}
+        </div>
+      )}
       {listed && (
         <div className={styles.commands} role="listbox" aria-label="Commands and skills">
           {matches.map((c, i) => (
@@ -394,7 +398,7 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
           <Icon name="paperclip" size={18} />
         </label>
       </div>
-      <p className={styles.hint}>Enter sends · Shift+Enter adds a line · / and ! go to the terminal as typed</p>
+      {!inline && <p className={styles.hint}>Enter sends · Shift+Enter adds a line · / and ! go to the terminal as typed</p>}
     </section>
   );
 }
