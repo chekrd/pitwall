@@ -39,7 +39,7 @@ export function Meter({ deck, repos, current }: { deck: readonly Session[]; repo
               data-new={seg.arrived || undefined}
               aria-current={seg.current || undefined}
               aria-label={text}
-              title={text}
+              data-explain={text}
               onClick={() => jump(seg.id)}
             />
           );
@@ -55,7 +55,7 @@ export function Meter({ deck, repos, current }: { deck: readonly Session[]; repo
             data-current={bar.current || undefined}
             data-new={bar.arrived || undefined}
             aria-label={`${bar.count} · ${STATE_LABELS[bar.attention]}`}
-            title={`${bar.count} · ${STATE_LABELS[bar.attention]}`}
+            data-explain={`${bar.count} · ${STATE_LABELS[bar.attention]}`}
             onClick={() => jump(bar.target)}
           >
             {bar.count}

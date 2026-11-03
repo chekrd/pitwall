@@ -30,7 +30,7 @@ import { toast } from './Toasts.tsx';
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
   const { copied, copy } = useCopy(value, what);
   return (
-    <button type="button" className={styles.copy} data-ux={`copy ${what.toLowerCase()}`} data-copied={copied || undefined} title={title} aria-label={`Copy ${what.toLowerCase()} ${value}`} onClick={copy}>
+    <button type="button" className={styles.copy} data-ux={`copy ${what.toLowerCase()}`} data-copied={copied || undefined} data-explain={title} aria-label={`Copy ${what.toLowerCase()} ${value}`} onClick={copy}>
       <code>{shown}</code>
       <span className={styles.copyMark} aria-live="polite">
         <Icon name={copied ? 'check' : 'copy'} size={13} />
@@ -140,9 +140,9 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
       )}
       <div className={styles.queuedActions}>
         {kindOf(session) === 'ask' && (
-          <button type="button" title="Clear the question without answering it" onClick={() => send(dismissal(session))}>Dismiss</button>
+          <button type="button" data-explain="Clear the question without answering it" onClick={() => send(dismissal(session))}>Dismiss</button>
         )}
-        <button type="button" title="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>
+        <button type="button" data-explain="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>
       </div>
     </section>
   );
@@ -220,7 +220,7 @@ function TurnError({ session, name }: { session: Session; name: string }) {
     <section className={styles.blocked} data-turn-error={kind} data-ux-section="turn error">
       <div className={styles.errorText}>
         <p><strong>Claude's turn stopped on an error.</strong> {ERROR_ADVICE[kind]}</p>
-        {said && <blockquote title={text}>{said}</blockquote>}
+        {said && <blockquote data-explain={text}>{said}</blockquote>}
       </div>
       {(kind === 'refusal' || kind === 'login') && <FocusButton session={session} />}
       {kind !== 'refusal' && (
@@ -277,7 +277,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
                   </ul>
                 )}
               </div>
-              {activity && <span className={styles.clock} title="Time since your last message"><Clock since={activity.since} /></span>}
+              {activity && <span className={styles.clock} data-explain="Time since your last message"><Clock since={activity.since} /></span>}
             </section>
           )}
           {!archived && attention === 'decide' && !busy.has(session.id) && <Queued session={session} name={name} box={!writing} />}
@@ -315,12 +315,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {(!archived || session.parked.length > 0 || session.asides.length > 0) && <Later session={session} name={name} />}
           {learnings.length > 0 && (
             <section className={styles.know} data-ux-section="worth knowing">
-              <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>
+              <h3 className={styles.label} data-explain="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>
               {learnings.map((k) => <p key={k}>{k}</p>)}
             </section>
           )}
           <section className={styles.status} data-ux-section="summary">
-            <h3 className={styles.label} title="A short summary of the session, rewritten by a model after each of Claude's messages">
+            <h3 className={styles.label} data-explain="A short summary of the session, rewritten by a model after each of Claude's messages">
               Session summary {summary && <span>· updated {ago(summary.at)}</span>}
             </h3>
             <p>{summary?.text || 'No summary yet; it is written once Claude replies.'}</p>
@@ -343,7 +343,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               )}
               {session.scheduled && (
                 <>
-                  <dt title="The schedule that started this task">Schedule</dt>
+                  <dt data-explain="The schedule that started this task">Schedule</dt>
                   <dd data-scheduled>{scheduledNote(session.scheduled)}</dd>
                 </>
               )}
@@ -355,11 +355,11 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               )}
               {task ? (
                 <>
-                  <dt title="The folder of repositories the task works across">Folder</dt>
+                  <dt data-explain="The folder of repositories the task works across">Folder</dt>
                   <dd>{task.folder}</dd>
                   <dt>Path</dt>
                   <dd><Copy value={session.worktree} shown={tilde(session.worktree, home)} what="Task folder path" /></dd>
-                  <dt title="Claude opens a worktree in each repository it changes, on a branch named after the task">Worktrees</dt>
+                  <dt data-explain="Claude opens a worktree in each repository it changes, on a branch named after the task">Worktrees</dt>
                   <dd data-task-worktrees>
                     {task.worktrees.length ? (
                       <ul className={styles.worktrees}>
@@ -387,21 +387,21 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
                   <dd><Copy value={branch} what="Branch" /></dd>
                 </>
               )}
-              <dt title="The model Claude runs on now and its effort, as its last request named them; /model and /effort change them">Model</dt>
+              <dt data-explain="The model Claude runs on now and its effort, as its last request named them; /model and /effort change them">Model</dt>
               <dd>{session.model ? modelName(session.model) : '—'}{session.effort && ` @ ${effortName(session.effort).toLowerCase()}`}</dd>
-              <dt title="The terminal device Claude runs on">Terminal</dt>
-              <dd title="The terminal device Claude runs on">{session.tty ? <code>{session.tty}</code> : '—'}</dd>
-              <dt title="Claude Code's session id; claude --resume takes it">Session</dt>
+              <dt data-explain="The terminal device Claude runs on">Terminal</dt>
+              <dd data-explain="The terminal device Claude runs on">{session.tty ? <code>{session.tty}</code> : '—'}</dd>
+              <dt data-explain="Claude Code's session id; claude --resume takes it">Session</dt>
               <dd><Copy value={session.conversation} what="Session id" title="Claude Code's session id; claude --resume takes it" /></dd>
             </dl>
           </section>
           {links.length > 0 && (
             <section data-links data-ux-section="links">
-              <h3 className={styles.label} title="Every web link Claude gave in this task, newest first; each opens in your default browser">Links</h3>
+              <h3 className={styles.label} data-explain="Every web link Claude gave in this task, newest first; each opens in your default browser">Links</h3>
               <ul className={styles.links}>
                 {links.map((l) => (
                   <li key={l.url}>
-                    <a href={l.url} target="_blank" rel="noreferrer" title={l.context || l.url} data-ux="link">
+                    <a href={l.url} target="_blank" rel="noreferrer" data-explain={l.context || l.url} data-ux="link">
                       <strong>{l.about || l.text || shortUrl(l.url)}</strong>
                       <span>{l.about || l.text ? `${shortUrl(l.url)} · ` : ''}{ago(l.at)}</span>
                     </a>
@@ -413,7 +413,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           <Subtasks session={session} />
           {session.history.length > 0 && (
             <section data-ux-section="earlier conversations">
-              <h3 className={styles.label} title="The conversations this task had before a /clear started the one it has now; claude --resume takes their ids">Earlier conversations</h3>
+              <h3 className={styles.label} data-explain="The conversations this task had before a /clear started the one it has now; claude --resume takes their ids">Earlier conversations</h3>
               <ul className={styles.history}>
                 {session.history.toReversed().map((h) => (
                   <li key={h.id}>
@@ -427,7 +427,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           )}
           {artifacts.length > 0 && (
             <section data-ux-section="artifacts">
-              <h3 className={styles.label} title="Visual explanations Claude made in this session">Artifacts</h3>
+              <h3 className={styles.label} data-explain="Visual explanations Claude made in this session">Artifacts</h3>
               <div className={styles.artifacts}>
                 {artifacts.map((a) => (
                   <button key={a.id} type="button" data-ux="artifact" onClick={() => showTab('artifacts', a.id)}>

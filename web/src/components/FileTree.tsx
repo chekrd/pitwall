@@ -78,12 +78,12 @@ function Folder({ node, ...picks }: Picks & { node: Dir }) {
               aria-expanded={!collapsed.has(d.path)}
               aria-label={`${collapsed.has(d.path) ? 'Expand' : 'Collapse'} ${d.path}/`}
               data-ux={collapsed.has(d.path) ? 'expand folder' : 'collapse folder'}
-              title={collapsed.has(d.path) ? 'Expand' : 'Collapse'}
+              data-explain={collapsed.has(d.path) ? 'Expand' : 'Collapse'}
               onClick={() => onToggle(d.path)}
             >
               <Icon name={collapsed.has(d.path) ? 'chevron-right' : 'chevron-down'} size={14} />
             </button>
-            <button type="button" className={styles.dir} data-ux="folder" aria-pressed={dir === d.path} title={`Show only the changes in ${d.path}/`} onClick={() => onDir(d.path)}>
+            <button type="button" className={styles.dir} data-ux="folder" aria-pressed={dir === d.path} data-explain={`Show only the changes in ${d.path}/`} onClick={() => onDir(d.path)}>
               <Icon name="folder" size={14} />
               <span className={styles.name}>{d.name}</span>
             </button>
@@ -99,7 +99,7 @@ function Folder({ node, ...picks }: Picks & { node: Dir }) {
               href={`#${fileAnchor(f.name)}`}
               aria-current={selected === f.name || undefined}
               data-ux="file"
-              title={f.prevName ? `${f.prevName} → ${f.name}` : f.name}
+              data-explain={f.prevName ? `${f.prevName} → ${f.name}` : f.name}
               onClick={(e) => {
                 e.preventDefault();
                 onSelect(f.name);
@@ -108,7 +108,7 @@ function Folder({ node, ...picks }: Picks & { node: Dir }) {
               <span className={styles.name} data-deleted={f.type === 'deleted' || undefined}>{f.name.split('/').at(-1)}</span>
               {add > 0 && <span className={styles.add}>+{add}</span>}
               {del > 0 && <span className={styles.del}>−{del}</span>}
-              <span className={styles.status} data-type={f.type} data-letter={letter(f)} title={typeHints[letter(f)]}>{letter(f)}</span>
+              <span className={styles.status} data-type={f.type} data-letter={letter(f)} data-explain={typeHints[letter(f)]}>{letter(f)}</span>
             </a>
           </li>
         );
@@ -151,7 +151,7 @@ export function FileTree({ files, all, onAll, query, onQuery, filterRef, ...pick
           value={query}
           placeholder="Filter files"
           aria-label="Filter files by name"
-          title="Show only the files whose path holds every word typed; Esc clears"
+          data-explain="Show only the files whose path holds every word typed; Esc clears"
           spellCheck={false}
           autoComplete="off"
           onChange={(e) => onQuery(e.target.value)}

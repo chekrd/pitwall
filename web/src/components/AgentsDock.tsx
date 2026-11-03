@@ -44,7 +44,7 @@ export function AgentsDock() {
       {ended.length > 0 && (
         <>
           <span className={styles.divider} aria-hidden />
-          <a className={styles.ended} href="/wall" title={`Ended: ${ended.map(nameOf).join(', ')}. Open the Wall to see them.`}>
+          <a className={styles.ended} href="/wall" data-explain={`Ended: ${ended.map(nameOf).join(', ')}. Open the Wall to see them.`}>
             <StateMark state="exited" />
             {ended.length} ended
           </a>

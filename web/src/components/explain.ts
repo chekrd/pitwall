@@ -1,5 +1,3 @@
-import styles from './Explain.module.css';
-
 export interface Explanation {
   does: string;
   // What the Claude that gets it knows: the whole conversation, a copy of it, or nothing yet.
@@ -7,11 +5,11 @@ export interface Explanation {
   session?: string;
 }
 
-// A tip on hover or keyboard focus, read out as the control's description, saying what an action does, what the Claude
-// it reaches has in its context, and whether that is the task's own session or a separate one.
-export function explain({ does, sees, session }: Explanation, align: 'start' | 'end' = 'end', className?: string) {
+// The tooltip of an action that reaches Claude, read out as the control's description: what it does, what the Claude it
+// reaches has in its context, and whether that is the task's own session or a separate one.
+export function explain({ does, sees, session }: Explanation) {
   const text = [does, sees && `What Claude has: ${sees}`, session && `Session: ${session}`].filter(Boolean).join('\n\n');
-  return { className: [className, styles.explained].filter(Boolean).join(' '), 'data-explain': text, 'data-explain-align': align, 'aria-description': text };
+  return { 'data-explain': text, 'aria-description': text };
 }
 
 const TASK = "the task's own session, the one doing the work";

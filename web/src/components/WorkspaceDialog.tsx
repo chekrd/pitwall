@@ -59,12 +59,12 @@ export function WorkspaceDialog({ roots, repos, sessions }: { roots: string[]; r
               {roots.map((root) => (
                 <span key={root} className={styles.root}>
                   <code>{tilde(root, home)}</code>
-                  <button type="button" aria-label={`Stop scanning ${tilde(root, home)}`} title="Stop scanning this folder; repositories already found stay" onClick={() => api('DELETE', '/api/roots', { path: root }).catch(reportError)}>
+                  <button type="button" aria-label={`Stop scanning ${tilde(root, home)}`} data-explain="Stop scanning this folder; repositories already found stay" onClick={() => api('DELETE', '/api/roots', { path: root }).catch(reportError)}>
                     <Icon name="close" size={12} />
                   </button>
                 </span>
               ))}
-              <button type="button" className={styles.tiny} title="Search the scanned folders for repositories and worktrees again" onClick={() => api('POST', '/api/rescan').catch(reportError)}>Rescan</button>
+              <button type="button" className={styles.tiny} data-explain="Search the scanned folders for repositories and worktrees again" onClick={() => api('POST', '/api/rescan').catch(reportError)}>Rescan</button>
             </div>
           )}
           {link === 'connecting' ? (
@@ -121,13 +121,13 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
         <h3>{repo.name}</h3>
         <code>{tilde(repo.path, home)}</code>
         <button type="button" className={styles.tiny} aria-expanded={settings} onClick={() => setSettings(!settings)}>Settings</button>
-        <button type="button" className={styles.tiny} data-danger onClick={() => run(() => api('DELETE', `/api/repos/${repo.id}`))} title="Hides it and drops its tiles; running Claudes, files and worktrees are left alone">
+        <button type="button" className={styles.tiny} data-danger onClick={() => run(() => api('DELETE', `/api/repos/${repo.id}`))} data-explain="Hides it and drops its tiles; running Claudes, files and worktrees are left alone">
           Remove
         </button>
       </div>
       {settings && (
         <form action={save} className={styles.settings}>
-          <label title="The branch new worktrees start from and diffs compare against">
+          <label data-explain="The branch new worktrees start from and diffs compare against">
             <span>Base branch</span>
             <input name="baseBranch" defaultValue={repo.baseBranch ?? ''} placeholder={`${repo.base} (detected)`} spellCheck={false} />
           </label>
@@ -135,7 +135,7 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
             <span>Worktree folder</span>
             <input name="worktreeRoot" defaultValue={repo.worktreeRoot ? tilde(repo.worktreeRoot, home) : ''} placeholder={tilde(repo.defaultWorktreeRoot, home)} spellCheck={false} />
           </label>
-          <label title="Runs in each new worktree before Claude starts">
+          <label data-explain="Runs in each new worktree before Claude starts">
             <span>Setup command after create</span>
             <input name="setupCommand" defaultValue={repo.setupCommand ?? ''} placeholder="e.g. pnpm install" spellCheck={false} />
           </label>
@@ -189,13 +189,13 @@ function WorktreeRow({ worktree: w, sessions, onStart, onShell, onRemove, childr
   return (
     <div className={styles.worktree} data-worktree={w.path}>
       <div className={styles.wtRow}>
-        <span className={styles.wtName} title={tilde(w.path, home)}>
+        <span className={styles.wtName} data-explain={tilde(w.path, home)}>
           <strong>{w.branch ?? `detached ${w.head.slice(0, 8)}`}</strong>
           <code>{tilde(w.path, home)}</code>
         </span>
         {latest && <ConversationAction conversation={latest} sessions={sessions} onStart={onStart} primary />}
-        <button type="button" className={styles.tiny} onClick={() => onStart()} title="New Claude session">New Claude</button>
-        <button type="button" className={styles.tiny} onClick={onShell} title="Shell in a Ghostty tab">Shell</button>
+        <button type="button" className={styles.tiny} onClick={() => onStart()} data-explain="New Claude session">New Claude</button>
+        <button type="button" className={styles.tiny} onClick={onShell} data-explain="Shell in a Ghostty tab">Shell</button>
         {onRemove && <button type="button" className={styles.tiny} data-danger onClick={onRemove}>Remove</button>}
       </div>
       {w.conversations.length > 0 && (
@@ -207,7 +207,7 @@ function WorktreeRow({ worktree: w, sessions, onStart, onShell, onRemove, childr
           <ul>
             {w.conversations.map((c) => (
               <li key={c.id}>
-                <span title={c.firstPrompt ?? ''}>{label(c)}</span>
+                <span data-explain={c.firstPrompt ?? ''}>{label(c)}</span>
                 <small>{ago(c.updatedAt)}</small>
                 <ConversationAction conversation={c} sessions={sessions} onStart={onStart} />
               </li>
@@ -231,7 +231,7 @@ function ConversationAction({ conversation: c, sessions, onStart, primary = fals
       <button
         type="button"
         className={look}
-        title={`Show its terminal${hint}`}
+        data-explain={`Show its terminal${hint}`}
         onClick={() => {
           closeDialog();
           openSheet(managed.id);
@@ -243,10 +243,10 @@ function ConversationAction({ conversation: c, sessions, onStart, primary = fals
     );
   }
   if (c.livePid) {
-    return <button type="button" className={styles.tiny} disabled title={`Running (pid ${c.livePid}) outside a hidden session or a Ghostty tab${hint}`}>Running</button>;
+    return <button type="button" className={styles.tiny} disabled data-explain={`Running (pid ${c.livePid}) outside a hidden session or a Ghostty tab${hint}`}>Running</button>;
   }
   return (
-    <button type="button" className={look} title={`Continue in a new Ghostty tab${hint}`} onClick={() => onStart(c.id)}>
+    <button type="button" className={look} data-explain={`Continue in a new Ghostty tab${hint}`} onClick={() => onStart(c.id)}>
       Continue
     </button>
   );

@@ -9,7 +9,7 @@ export function TaskName({ session, name }: { session: Session; name: string }) 
   if (!editing) {
     return (
       <h2 className={styles.title}>
-        <button type="button" className={styles.name} data-ux="task name" title="Click to rename; the Claude session gets the same name" onClick={() => setEditing(true)}>
+        <button type="button" className={styles.name} data-ux="task name" data-explain="Click to rename; the Claude session gets the same name" onClick={() => setEditing(true)}>
           {name}
         </button>
       </h2>
@@ -25,7 +25,7 @@ export function TaskName({ session, name }: { session: Session; name: string }) 
       className={styles.input}
       defaultValue={name}
       aria-label="Task name"
-      title="Enter saves, Esc cancels"
+      data-explain="Enter saves, Esc cancels"
       spellCheck={false}
       autoFocus
       onFocus={(e) => {

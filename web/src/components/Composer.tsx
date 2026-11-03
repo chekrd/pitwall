@@ -227,7 +227,7 @@ export function AttachedFiles({ id, refocus }: { id: string; refocus: () => void
           key={f.id}
           className={styles.file}
           data-state={f.error ? 'failed' : f.path ? 'ready' : 'uploading'}
-          title={f.error ? `Could not upload: ${f.error}` : f.path ? `Sent to Claude as ${tilde(f.path, home)}` : 'Uploading…'}
+          data-explain={f.error ? `Could not upload: ${f.error}` : f.path ? `Sent to Claude as ${tilde(f.path, home)}` : 'Uploading…'}
         >
           {f.preview ? <span className={styles.thumb} style={{ backgroundImage: `url("${f.preview}")` }} aria-hidden /> : <span className={styles.ext}>{f.name.split('.').at(-1)?.slice(0, 4) || 'file'}</span>}
           <span className={styles.name}>{f.name}</span>
@@ -251,7 +251,7 @@ export function AttachedFiles({ id, refocus }: { id: string; refocus: () => void
 
 export function AttachButton({ id, refocus }: { id: string; refocus: () => void }) {
   return (
-    <label className={styles.attach} title="Attach files; pasting or dropping them works too">
+    <label className={styles.attach} data-explain="Attach files; pasting or dropping them works too">
       {/* The chooser leaves focus on the input, picked or cancelled; React has no onCancel for an input. */}
       <input
         ref={(input) => {

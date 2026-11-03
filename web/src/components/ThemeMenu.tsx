@@ -16,7 +16,7 @@ export function ThemeMenu() {
   const label = `Theme: ${THEMES.find((t) => t.theme === theme)!.label}`;
   return (
     <>
-      <button type="button" className={styles.button} popoverTarget="theme-menu" aria-label={label} title={label} data-theme-button>
+      <button type="button" className={styles.button} popoverTarget="theme-menu" aria-label={label} data-explain={label} data-theme-button>
         <Icon name={ICONS[theme]} size={17} />
       </button>
       <div id="theme-menu" popover="auto" className={`${menu.menu} ${styles.menu}`} role="menu" aria-label="Theme">

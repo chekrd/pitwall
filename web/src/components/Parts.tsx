@@ -16,7 +16,7 @@ export function Headline({ text }: { text: string }) {
 // has it already.
 export function BranchMark({ session, branch }: { session: Session; branch: string }) {
   if (!branch || !session.title || session.title === branch) return null;
-  return <span className={parts.branch} data-branch title="Branch">{branch}</span>;
+  return <span className={parts.branch} data-branch data-explain="Branch">{branch}</span>;
 }
 
 export function Age({ at, prefix = '' }: { at: number; prefix?: string }) {

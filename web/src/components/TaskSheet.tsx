@@ -94,12 +94,12 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
           {session.parent && <div className={styles.crumb}><ParentCrumb session={session} /></div>}
           <BranchMark session={session} branch={branch} />
           <TaskName session={session} name={name} />
-          <span className={styles.state} data-attention={session.archived ? 'archived' : attention} data-resolution={session.resolution?.state} data-error={stoppedOnError(session, attention) || undefined} title={session.archived ? undefined : hintOf(session, attention)}>
+          <span className={styles.state} data-attention={session.archived ? 'archived' : attention} data-resolution={session.resolution?.state} data-error={stoppedOnError(session, attention) || undefined} data-explain={session.archived ? undefined : hintOf(session, attention)}>
             <StateMark state={session.archived ? 'archived' : attention} size={8} />
             {stateLabel(session, attention)}
           </span>
           {total > 0 && (
-            <span className={styles.open} data-open-count data-settled={!open.length || undefined} title="Subtasks under this task that are neither solved nor dropped">
+            <span className={styles.open} data-open-count data-settled={!open.length || undefined} data-explain="Subtasks under this task that are neither solved nor dropped">
               {open.length ? `${open.length} of ${total} ${total === 1 ? 'subtask' : 'subtasks'} open` : <><Icon name="check" size={13} />{total === 1 ? 'Subtask' : `All ${total} subtasks`} solved or dropped</>}
             </span>
           )}
@@ -115,7 +115,7 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
                 aria-selected={t.key === current}
                 data-changes={stat.files || undefined}
                 data-ux="Diff"
-                title={stat.files ? `${stat.files} ${stat.files === 1 ? 'file' : 'files'} changed: +${stat.insertions} −${stat.deletions}` : 'No changes against the base branch'}
+                data-explain={stat.files ? `${stat.files} ${stat.files === 1 ? 'file' : 'files'} changed: +${stat.insertions} −${stat.deletions}` : 'No changes against the base branch'}
                 onClick={() => showTab(t.key)}
               >
                 {t.label} {stat.files > 0 ? <span className={styles.changes}>{stat.files}</span> : <span className={styles.clean}>none</span>} <kbd>{t.kbd}</kbd>

@@ -42,7 +42,7 @@ export function Usage() {
         if (!win) {
           const title = `${w.name}: no reading yet. Claude Code's status line writes it; see the README.`;
           return (
-            <span key={w.key} className={styles.window} data-window={w.label} title={title} aria-label={title}>
+            <span key={w.key} className={styles.window} data-window={w.label} data-explain={title} aria-label={title}>
               <span className={styles.label}>{w.label}</span>
               <span className={styles.percent}>–</span>
             </span>
@@ -55,7 +55,7 @@ export function Usage() {
           ? `${w.name}: reset at ${at}, with no reading since`
           : `${w.name}: ${percent}% used${at ? ` · resets ${at}` : ''} · read at ${read}`;
         return (
-          <span key={w.key} className={styles.window} data-window={w.label} data-level={levelOf(percent)} title={title} aria-label={title}>
+          <span key={w.key} className={styles.window} data-window={w.label} data-level={levelOf(percent)} data-explain={title} aria-label={title}>
             <span className={styles.label}>{w.label}</span>
             <span className={styles.track} aria-hidden>
               <span className={styles.fill} style={{ width: `${Math.min(percent, 100)}%` }} />

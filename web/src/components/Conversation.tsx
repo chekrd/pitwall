@@ -47,14 +47,14 @@ export function Conversation({ session }: { session: Session }) {
             {c.exchanges.map((e) => (
               <article key={e.id} className={styles.exchange}>
                 <div className={styles.prompt} data-prompt>
-                  <h3>You <time title={ago(e.at)}>{clock(e.at, true)}</time>{e.prompt && <CopyButton value={e.prompt} what="Prompt" />}</h3>
+                  <h3>You <time data-explain={ago(e.at)}>{clock(e.at, true)}</time>{e.prompt && <CopyButton value={e.prompt} what="Prompt" />}</h3>
                   {e.prompt && <p>{e.prompt}</p>}
                   {e.images > 0 && (
                     <div className={styles.images}>
                       {Array.from({ length: e.images }, (_, n) => {
                         const src = `/api/sessions/${session.id}/conversation/${c.id}/${e.id}/${n}`;
                         return (
-                          <button key={src} type="button" aria-pressed={zoomed === src} title={zoomed === src ? 'Smaller' : 'Larger'} onClick={() => setZoomed(zoomed === src ? null : src)}>
+                          <button key={src} type="button" aria-pressed={zoomed === src} data-explain={zoomed === src ? 'Smaller' : 'Larger'} onClick={() => setZoomed(zoomed === src ? null : src)}>
                             <img src={src} alt={`Image #${n + 1}`} loading="lazy" />
                           </button>
                         );

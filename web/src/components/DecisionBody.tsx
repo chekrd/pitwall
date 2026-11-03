@@ -52,7 +52,7 @@ export function DecisionBody(p: DecisionBodyProps) {
         <Headline text={decision.problem} />
         {decision.brief && (p.kind === 'ask'
           ? <p className={styles.lead}>{decision.brief}</p>
-          : <p className={`${styles.lead} ${styles.oneLine}`} title={decision.brief}>{decision.brief}</p>)}
+          : <p className={`${styles.lead} ${styles.oneLine}`} data-explain={decision.brief}>{decision.brief}</p>)}
         {decision.context && (
           <section className={styles.details} aria-label={title}>
             <div className={styles.detailsHead}>

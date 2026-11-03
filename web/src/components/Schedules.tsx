@@ -40,12 +40,12 @@ function Row({ schedule: s }: { schedule: Schedule }) {
       <div className={styles.what}>
         <strong>{s.name}</strong>
         <span>{where}{mode} · {describeWhen(s.when)}</span>
-        <p className={styles.prompt} title={s.task.prompt}>{s.task.prompt}</p>
+        <p className={styles.prompt} data-explain={s.task.prompt}>{s.task.prompt}</p>
       </div>
       <div className={styles.when}>
         <span data-next>{s.paused ? 'Paused' : s.next !== null ? `Next ${day(s.next)}` : 'Done'}</span>
         {s.last && (
-          s.last.error ? <span className={styles.failed} data-last="failed" title={s.last.error}>Failed {day(s.last.at)}: {s.last.error}</span>
+          s.last.error ? <span className={styles.failed} data-last="failed" data-explain={s.last.error}>Failed {day(s.last.at)}: {s.last.error}</span>
             : ran ? <button type="button" className={styles.link} data-last="ran" onClick={() => openSheet(ran.id)}>Ran {day(s.last.at)}</button>
             : <span data-last="ran">Ran {day(s.last.at)}</span>
         )}
@@ -62,7 +62,7 @@ function Row({ schedule: s }: { schedule: Schedule }) {
             {s.paused ? 'Resume' : 'Pause'}
           </button>
         )}
-        <button type="button" disabled={busy} aria-label={`Delete ${s.name}`} title="Delete" onClick={remove}>
+        <button type="button" disabled={busy} aria-label={`Delete ${s.name}`} data-explain="Delete" onClick={remove}>
           <Icon name="trash" size={14} />
         </button>
       </div>

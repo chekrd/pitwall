@@ -22,7 +22,7 @@ export function DriftBanner() {
         {' '}Tasks may show a stale state until Pitwall is updated for it.
       </p>
       {repo && (
-        <button type="button" data-variant="primary" data-fix-drift onClick={() => openNewTask({ repoId: repo.id, name: 'claude-code-drift', prompt: fixPrompt(drift, versions) })} title="Opens New task on Pitwall's repository with a prompt that asks Claude to update Pitwall for the change">
+        <button type="button" data-variant="primary" data-fix-drift onClick={() => openNewTask({ repoId: repo.id, name: 'claude-code-drift', prompt: fixPrompt(drift, versions) })} data-explain="Opens New task on Pitwall's repository with a prompt that asks Claude to update Pitwall for the change">
           Fix it
         </button>
       )}

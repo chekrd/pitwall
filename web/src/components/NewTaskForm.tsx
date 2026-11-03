@@ -501,14 +501,14 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
 
   const modelControl = (
     <div className={styles.models}>
-      <label className={styles.select} title="The model Claude starts with; the first is the one your Claude Code settings pick">
+      <label className={styles.select} data-explain="The model Claude starts with; the first is the one your Claude Code settings pick">
         <span className={styles.caption}>Model</span>
         <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
           {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <Icon name="chevron-down" size={14} />
       </label>
-      <label className={styles.select} title="How hard Claude thinks; the first is the one your Claude Code settings give that model">
+      <label className={styles.select} data-explain="How hard Claude thinks; the first is the one your Claude Code settings give that model">
         <span className={styles.caption}>Effort</span>
         <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
           {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -544,7 +544,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           <fieldset className={styles.segments} data-days>
             <legend>On</legend>
             {WEEK.map((d) => (
-              <label key={d} title={DAYS[d]}>
+              <label key={d} data-explain={DAYS[d]}>
                 <input
                   type="checkbox"
                   checked={f.days.includes(d)}
@@ -577,7 +577,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         {existing ? (
           <BranchPicker branches={list} value={f.branch} pick={(b) => edit({ branch: b })} where={where} />
         ) : (
-          <label className={styles.field} title={pickedFolder ? 'Names the task folder, and the branch of every worktree Claude opens' : 'Names the worktree folder, and the branch unless you set one'}>
+          <label className={styles.field} data-explain={pickedFolder ? 'Names the task folder, and the branch of every worktree Claude opens' : 'Names the worktree folder, and the branch unless you set one'}>
             <span className={styles.caption}>Name</span>
             <input value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder="fix-login-redirect" spellCheck={false} autoComplete="off" />
           </label>
@@ -630,11 +630,11 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           {!existing && !pickedFolder ? (
             <>
               <div className={styles.options}>
-                <label className={styles.input} title="The new branch; defaults to the name">
+                <label className={styles.input} data-explain="The new branch; defaults to the name">
                   <span>Branch</span>
                   <input value={f.branch} onChange={(e) => edit({ branch: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder={name || 'same as name'} spellCheck={false} />
                 </label>
-                <label className={styles.input} title="Where the worktree is created; defaults to the repository's worktree folder">
+                <label className={styles.input} data-explain="Where the worktree is created; defaults to the repository's worktree folder">
                   <span>Worktree path</span>
                   <input value={f.path} onChange={(e) => edit({ path: e.currentTarget.value })} placeholder={`${tilde(repo.worktreeRoot ?? repo.defaultWorktreeRoot, home)}/${name || '<name>'}/${folder}`} spellCheck={false} />
                 </label>

@@ -158,7 +158,7 @@ function Side({ direction, disabled }: { direction: 'previous' | 'next'; disable
         type="button"
         className={styles.round}
         aria-label={previous ? 'Previous card' : 'Skip to the next card'}
-        title={previous ? 'Previous card (←)' : 'Skip to the next card (→)'}
+        data-explain={previous ? 'Previous card (←)' : 'Skip to the next card (→)'}
         disabled={disabled}
         onClick={() => (previous ? queue.previous() : queue.skip())}
       >

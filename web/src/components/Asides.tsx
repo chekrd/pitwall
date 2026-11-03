@@ -68,7 +68,7 @@ function One({ session, aside }: { session: Session; aside: Aside }) {
       )}
       <div className={styles.actions}>
         {last.answer && aside.state !== 'thinking' && (
-          <button type="button" {...explain(TIPS.keepAnswer, 'start')} onClick={keep}>Keep as a draft</button>
+          <button type="button" {...explain(TIPS.keepAnswer)} onClick={keep}>Keep as a draft</button>
         )}
         <span className={styles.spacer} />
         <button type="button" {...explain(TIPS.close)} onClick={() => void act(session, 'close-aside', { aside: aside.id })}>Close</button>

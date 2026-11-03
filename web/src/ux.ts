@@ -74,7 +74,7 @@ export const scrubName = (text: string, known = names) =>
 
 export function controlName(el: Element) {
   if (el.closest('[data-option]')) return 'option';
-  const named = el.getAttribute('data-ux') ?? el.getAttribute('aria-label') ?? el.getAttribute('title') ?? ownText(el);
+  const named = el.getAttribute('data-ux') ?? el.getAttribute('aria-label') ?? el.getAttribute('data-explain') ?? ownText(el);
   const name = scrubName(named);
   return name ? name.slice(0, 40) : el.tagName.toLowerCase();
 }

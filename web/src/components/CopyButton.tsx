@@ -31,7 +31,7 @@ export function CopyButton({ value, what }: { value: string; what: string }) {
       data-copied={copied || undefined}
       data-tip={copied ? 'Copied' : `Copy ${what.toLowerCase()}`}
       aria-label={`Copy ${what.toLowerCase()}`}
-      title=""
+      data-explain=""
       onClick={() => void copy()}
     >
       <Icon name={copied ? 'check' : 'copy'} size={14} />

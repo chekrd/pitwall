@@ -12,10 +12,10 @@ function Suggestion({ advice, onEdit }: { advice: Advice; onEdit: () => void }) 
       <p className={styles.answer}>{advice.answer}</p>
       {advice.reasoning && <p className={styles.reasoning}>{advice.reasoning}</p>}
       <div className={styles.actions}>
-        <button type="button" className={parts.tiny} title="Copy the suggestion into the reply box to change it first" onClick={onEdit}>
+        <button type="button" className={parts.tiny} data-explain="Copy the suggestion into the reply box to change it first" onClick={onEdit}>
           Edit <kbd>E</kbd>
         </button>
-        <span className={styles.level} title="How sure the second opinion is that you would decide the same">{level(advice.confidence)} confidence you agree</span>
+        <span className={styles.level} data-explain="How sure the second opinion is that you would decide the same">{level(advice.confidence)} confidence you agree</span>
       </div>
     </>
   );
@@ -42,7 +42,7 @@ function Coverage({ covered }: { covered: Covered[] }) {
   const handled = covered.filter((c) => c.handled).map((c) => c.n);
   const list = (ns: number[]) => (ns.length > 1 ? `${ns.slice(0, -1).join(', ')} and ${ns.at(-1)}` : String(ns[0]));
   return (
-    <span className={styles.covers} data-covers title="Claude does this itself, in this session; the buttons on a finding start a separate agent for just that one">
+    <span className={styles.covers} data-covers data-explain="Claude does this itself, in this session; the buttons on a finding start a separate agent for just that one">
       Acts on finding{covered.length === 1 ? '' : 's'} {list(covered.map((c) => c.n))}
       {handled.length > 0 && <span className={styles.handled}> · {list(handled)} already answered on {handled.length === 1 ? 'its' : 'their'} own</span>}
     </span>
@@ -59,7 +59,7 @@ export function Options({ options, advice, frozen, composing, accepting, onPick,
       {apart && (
         <div className={styles.standalone} data-frozen={(frozen?.via === 'advice' && frozen.label === null && frozen.adviceAt === advice.at) || undefined} data-suggestion>
           <div className={styles.standaloneHead}>
-            <span className={parts.tag} title="A second model checked the code on its own and answers with none of Claude's options; the percentage is how likely it thinks you answer the same">Second opinion's own answer · {advice.confidence}%</span>
+            <span className={parts.tag} data-explain="A second model checked the code on its own and answers with none of Claude's options; the percentage is how likely it thinks you answer the same">Second opinion's own answer · {advice.confidence}%</span>
             {!accepting && <button type="button" className={styles.accept} onClick={onAccept}>Accept suggestion</button>}
           </div>
           {!composing && <Suggestion advice={advice} onEdit={onEdit} />}
@@ -84,8 +84,8 @@ export function Options({ options, advice, frozen, composing, accepting, onPick,
                     {covered.length > 0 && <Coverage covered={covered} />}
                   </span>
                   <span className={styles.tags}>
-                    {suggested && <span className={parts.tag} title={PICK_TITLE}>Second opinion's pick · {advice!.confidence}%</span>}
-                    {o.recommended && <span className={parts.tag} data-quiet title="Claude marked this option as the one it would choose">Claude recommends</span>}
+                    {suggested && <span className={parts.tag} data-explain={PICK_TITLE}>Second opinion's pick · {advice!.confidence}%</span>}
+                    {o.recommended && <span className={parts.tag} data-quiet data-explain="Claude marked this option as the one it would choose">Claude recommends</span>}
                   </span>
                 </button>
                 {suggested && !composing && (

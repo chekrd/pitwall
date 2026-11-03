@@ -42,7 +42,7 @@ export function Artifacts({ session, item }: { session: Session; item: string | 
             Open in new tab <Icon name="external" size={14} />
           </a>
         </header>
-        <iframe ref={frame} key={shown.id} className={styles.frame} title={shown.title} src={artifactUrl(session.id, shown.id)} sandbox="allow-scripts" />
+        <iframe ref={frame} key={shown.id} className={styles.frame} data-explain={shown.title} src={artifactUrl(session.id, shown.id)} sandbox="allow-scripts" />
       </div>
     </div>
   );

@@ -132,7 +132,7 @@ export function Toasts() {
       {list.map((t) => (
         <div key={t.id} className={styles.toast} data-toast data-kind={t.kind} data-counting={t.until !== undefined || undefined} data-session={t.session} role={t.kind === 'error' ? 'alert' : 'status'}>
           <span className={styles.mark} aria-hidden />
-          <span className={styles.message} title={t.until !== undefined ? t.message : undefined}>{t.message}</span>
+          <span className={styles.message} data-explain={t.until !== undefined ? t.message : undefined}>{t.message}</span>
           {t.until !== undefined && <Countdown until={t.until} from={t.at} />}
           {t.action && (
             <button

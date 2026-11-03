@@ -291,13 +291,13 @@ function Diffs({ worktree }: { worktree: string }) {
         <div className={styles.toolbar}>
           {focused && (
             <>
-              <button type="button" className={styles.tool} title="Esc" onClick={back}>← {dir ? `${dir}/` : 'All files'}</button>
+              <button type="button" className={styles.tool} data-explain="Esc" onClick={back}>← {dir ? `${dir}/` : 'All files'}</button>
               <code className={styles.path}>{focused}</code>
             </>
           )}
           {!focused && dir && (
             <>
-              <button type="button" className={styles.tool} title="Esc" onClick={back}>← All files</button>
+              <button type="button" className={styles.tool} data-explain="Esc" onClick={back}>← All files</button>
               <code className={styles.path}>{dir}/</code>
               <span className={styles.stat}>
                 <span>{listed.length} {listed.length === 1 ? 'file' : 'files'}{shownQuery && ' match'}</span> · <span className={styles.add}>+{dirStat.add}</span>{' '}
@@ -316,10 +316,10 @@ function Diffs({ worktree }: { worktree: string }) {
               <span>{diff.stat.files} files</span> · <span className={styles.add}>+{diff.stat.insertions}</span>{' '}
               <span className={styles.del}>−{diff.stat.deletions}</span> against{' '}
               <code>{diff.base}</code>
-              {diff.mergeBase && <> @ <code title="The commit where this branch left the base branch">{diff.mergeBase.slice(0, 8)}</code></>}
+              {diff.mergeBase && <> @ <code data-explain="The commit where this branch left the base branch">{diff.mergeBase.slice(0, 8)}</code></>}
             </span>
           )}
-          <span className={styles.hint} title="The diff merges everything in the worktree, whether committed or not">{focused ? 'whole file' : 'committed + staged + unstaged + untracked'}</span>
+          <span className={styles.hint} data-explain="The diff merges everything in the worktree, whether committed or not">{focused ? 'whole file' : 'committed + staged + unstaged + untracked'}</span>
           <button type="button" className={styles.tool} onClick={load} disabled={loading}>
             <Icon name="refresh" size={14} />
             {loading ? 'Loading…' : 'Refresh'}
@@ -350,7 +350,7 @@ function Diffs({ worktree }: { worktree: string }) {
                 aria-valuemin={TREE_MIN}
                 aria-valuemax={TREE_MAX}
                 tabIndex={0}
-                title="Drag to resize the file list; double-click to reset"
+                data-explain="Drag to resize the file list; double-click to reset"
                 onPointerDown={startResize}
                 onKeyDown={resizeByKey}
                 onDoubleClick={() => resizeTo(TREE_WIDTH)}

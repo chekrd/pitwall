@@ -1,0 +1,25 @@
+@layer components {
+  .tooltip {
+    position: fixed;
+    inset: 0 auto auto 0;
+    margin: 0;
+    width: max-content;
+    max-width: min(340px, calc(100vw - 16px));
+    padding: 8px 11px;
+    border: 1px solid color-mix(in oklab, var(--line-2) 70%, transparent);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--raised) 72%, transparent);
+    backdrop-filter: blur(12px) saturate(1.3);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    font: 500 12.5px/1.45 var(--font);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    animation: tooltip-in 0.12s both;
+  }
+
+  @keyframes tooltip-in {
+    from { opacity: 0; }
+  }
+}

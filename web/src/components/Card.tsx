@@ -61,7 +61,7 @@ export interface CardProps {
 
 const NOTE_MS = 5000;
 
-const metaChip = (text: string, title?: string) => <span className={styles.chip} title={title}>{text}</span>;
+const metaChip = (text: string, title?: string) => <span className={styles.chip} data-explain={title}>{text}</span>;
 
 export function Card({ session, repos, deck, enter }: CardProps) {
   const q = useQueue();
@@ -242,7 +242,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
 
   const learnings = session.summary?.learnings ?? [];
   const rankReason = session.rankReason && (
-    <em className={styles.reason} title="Why it sits here in the queue; a model ranks the open decisions">{session.rankReason}</em>
+    <em className={styles.reason} data-explain="Why it sits here in the queue; a model ranks the open decisions">{session.rankReason}</em>
   );
   const mine = session.priority && metaChip(`${session.priority === 'high' ? 'High' : 'Low'} priority`, 'Your priority for this task, from More actions; the ranking weighs it with everything else');
   let meta: ReactNode;
@@ -253,7 +253,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   } else if (menu) {
     meta = <><Age at={menu.at} prefix="asked " />{metaChip('asked in the terminal', 'Claude opened a choice menu in its terminal; answering here picks the options there for you')}{mine}{rankReason}</>;
   } else if (kind === 'prompt') {
-    meta = <><Age at={session.updatedAt} />{session.tty && <code className={styles.tty} title="The terminal device Claude runs on">{session.tty}</code>}</>;
+    meta = <><Age at={session.updatedAt} />{session.tty && <code className={styles.tty} data-explain="The terminal device Claude runs on">{session.tty}</code>}</>;
   } else meta = <Age at={session.summary?.at ?? session.updatedAt} prefix="finished " />;
 
   const composer = {
@@ -282,7 +282,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           </span>
           {q.updated.has(session.id) && <span className={styles.updated} data-updated>Updated just now</span>}
           <BranchMark session={session} branch={branch} />
-          <a className={styles.name} href={sessionPath(session.id)} title="Open the task on its own page" data-open-task data-ux="task">{name}</a>
+          <a className={styles.name} href={sessionPath(session.id)} data-explain="Open the task on its own page" data-open-task data-ux="task">{name}</a>
           <span className={styles.spacer} />
           <nav className={styles.nav} aria-label="Open the task">
             <button type="button" onClick={() => openSheet(session.id, 'overview')}>Overview <kbd>O</kbd></button>
@@ -291,7 +291,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               <button type="button" onClick={() => openSheet(session.id, 'artifacts')}>Artifacts {session.artifacts.length}</button>
             )}
             {session.parked.length > 0 && (
-              <button type="button" data-later-count title="Messages you kept for later, on its Overview" onClick={() => openSheet(session.id, 'overview')}>
+              <button type="button" data-later-count data-explain="Messages you kept for later, on its Overview" onClick={() => openSheet(session.id, 'overview')}>
                 Later {session.parked.length}
               </button>
             )}
@@ -361,7 +361,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           data-primary
           data-guarded={guarded || undefined}
           disabled={primary.disabled}
-          title={menu ? "Picks your answers in Claude's terminal menu" : undefined}
+          data-explain={menu ? "Picks your answers in Claude's terminal menu" : undefined}
           onClick={pressPrimary}
         >
           <span className={styles.primaryLabel}>{primary.label}</span>
@@ -382,7 +382,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               <button type="button" className={styles.secondary} aria-pressed={composing} onClick={() => (composing ? closeComposer() : compose())}>
                 Write my own <kbd>W</kbd>
               </button>
-              <button type="button" className={styles.secondary} aria-pressed={whyOpen} title="A model reads the code and explains the background and each choice" onClick={toggleWhy}>
+              <button type="button" className={styles.secondary} aria-pressed={whyOpen} data-explain="A model reads the code and explains the background and each choice" onClick={toggleWhy}>
                 Elaborate <kbd>Y</kbd>
               </button>
             </>
@@ -390,7 +390,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           {kind === 'idle' && (
             <button type="button" className={styles.secondary} onClick={archiveIt}>Archive <kbd>X</kbd></button>
           )}
-          {kind === 'ask' && <button type="button" className={styles.dismiss} title="Clear the question without answering it" onClick={dismiss}>Dismiss</button>}
+          {kind === 'ask' && <button type="button" className={styles.dismiss} data-explain="Clear the question without answering it" onClick={dismiss}>Dismiss</button>}
         </div>
       </footer>
     </article>

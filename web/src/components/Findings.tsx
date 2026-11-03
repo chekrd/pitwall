@@ -152,22 +152,22 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
           )}
           <div className={styles.actions}>
             {ACTIONS.map((a) => (
-              <button key={a.kind} type="button" data-response={a.kind} title={a.title} disabled={sending} onClick={() => void respond(a.kind)}>{a.label}</button>
+              <button key={a.kind} type="button" data-response={a.kind} data-explain={a.title} disabled={sending} onClick={() => void respond(a.kind)}>{a.label}</button>
             ))}
             {expanded && (
-              <button type="button" data-response="reply" title="A new agent acts on your answer" disabled={sending || !note.trim()} onClick={() => void respond('reply')}>Reply</button>
+              <button type="button" data-response="reply" data-explain="A new agent acts on your answer" disabled={sending || !note.trim()} onClick={() => void respond('reply')}>Reply</button>
             )}
             <button
               type="button"
               data-response="solve"
               className={styles.solve}
-              title={unsettled.length ? `Done with it: marks its open ${unsettled.length === 1 ? 'subtask' : `${unsettled.length} subtasks`} solved` : 'Done with it, say fixed in this conversation: marks it solved. Nothing starts'}
+              data-explain={unsettled.length ? `Done with it: marks its open ${unsettled.length === 1 ? 'subtask' : `${unsettled.length} subtasks`} solved` : 'Done with it, say fixed in this conversation: marks it solved. Nothing starts'}
               disabled={sending}
               onClick={solve}
             >
               Mark solved
             </button>
-            <button type="button" data-response="reject" className={styles.reject} title="Mark it rejected; your note is kept as the reason. Nothing starts" disabled={sending} onClick={() => void respond('reject')}>Reject</button>
+            <button type="button" data-response="reject" className={styles.reject} data-explain="Mark it rejected; your note is kept as the reason. Nothing starts" disabled={sending} onClick={() => void respond('reject')}>Reject</button>
           </div>
         </div>
       )}
@@ -177,7 +177,7 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
             const shown = shownOf(o, busy);
             return (
               <li key={o.id}>
-                <button type="button" data-ux="subtask" data-subtask={o.id} title={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
+                <button type="button" data-ux="subtask" data-subtask={o.id} data-explain={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
                   <StateMark state={o.archived ? 'archived' : shown} size={8} />
                   <span>{SUBTASK_LABELS[o.parent!.kind]}</span>
                   <span className={styles.state}>{stateLabel(o, shown)}</span>
@@ -212,7 +212,7 @@ export function ParentCrumb({ session }: { session: Session }) {
       {chain.length ? chain.map((task, i) => (
         <span key={task.id} className={styles.crumbStep}>
           {i > 0 && <span className={styles.crumbSep} aria-hidden>›</span>}
-          <button type="button" data-ux="task" title="Open this task" onClick={() => openSheet(task.id)}>
+          <button type="button" data-ux="task" data-explain="Open this task" onClick={() => openSheet(task.id)}>
             <StateMark state={task.archived ? 'archived' : shownOf(task, busy)} size={7} />
             {sessionLabel(task, locate(repos, task).branch)}
           </button>
@@ -236,7 +236,7 @@ export function SubtaskOf({ session }: { session: Session }) {
       <div className={styles.originTask}>
         <span className={styles.label}><Icon name="subtask" size={14} />Subtask of</span>
         {task ? (
-          <button type="button" className={styles.originName} data-ux="task" title="Open the task this subtask belongs to" onClick={() => openSheet(task.id)}>
+          <button type="button" className={styles.originName} data-ux="task" data-explain="Open the task this subtask belongs to" onClick={() => openSheet(task.id)}>
             {name}
           </button>
         ) : <strong className={styles.originName}>{name}</strong>}
@@ -270,7 +270,7 @@ export function SubtaskOf({ session }: { session: Session }) {
             const shown = shownOf(o, busy);
             return (
               <li key={o.id}>
-                <button type="button" data-ux="subtask" data-subtask={o.id} title={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
+                <button type="button" data-ux="subtask" data-subtask={o.id} data-explain={o.parent!.text || undefined} onClick={() => openSheet(o.id)}>
                   <StateMark state={o.archived ? 'archived' : shown} size={8} />
                   <span>{SUBTASK_LABELS[o.parent!.kind]}</span>
                   <span className={styles.state}>{stateLabel(o, shown)}</span>

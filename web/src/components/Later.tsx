@@ -67,7 +67,7 @@ function Item({ session, draft, name, canSend }: { session: Session; draft: Park
         />
       )}
       <div className={styles.actions}>
-        <label {...explain(TIPS.auto, 'start', styles.auto)}>
+        <label className={styles.auto} {...explain(TIPS.auto)}>
           <input type="checkbox" checked={draft.auto} onChange={(e) => void park(session, 'edit-park', { draft: draft.id, auto: e.currentTarget.checked })} />
           Send when it's my turn
         </label>
@@ -111,7 +111,7 @@ export function Later({ session, name }: { session: Session; name: string }) {
   const armed = drafts.filter((d) => d.auto).length;
   return (
     <section className={styles.later} data-later data-ux-section="later">
-      <h3 className={styles.label} title="Drafts reach Claude only when you send them; a question asked on the side is answered by a copy of the conversation and never reaches it">
+      <h3 className={styles.label} data-explain="Drafts reach Claude only when you send them; a question asked on the side is answered by a copy of the conversation and never reaches it">
         Later {drafts.length > 0 && <span>· {drafts.length} {drafts.length === 1 ? 'draft' : 'drafts'}</span>}
         {session.asides.length > 0 && <span>· {session.asides.length} asked on the side</span>}
       </h3>
@@ -139,7 +139,7 @@ export function Later({ session, name }: { session: Session; name: string }) {
             onKeyDown={onEnter(add)}
           />
           <div className={styles.actions}>
-            <label {...explain(TIPS.auto, 'start', styles.auto)}>
+            <label className={styles.auto} {...explain(TIPS.auto)}>
               <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.currentTarget.checked)} />
               Send when it's my turn
             </label>

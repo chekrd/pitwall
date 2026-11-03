@@ -24,7 +24,7 @@ function ConnectionPill({ link }: { link: Link }) {
     ? `Lost the connection to Pitwall at ${clock(lostAt)}; what you see may be out of date. Answers you send wait and go out once it is back.`
     : undefined;
   return (
-    <span className={styles.link} data-link={link} title={title}>
+    <span className={styles.link} data-link={link} data-explain={title}>
       <span className={styles.dot} aria-hidden />
       <span className={styles.linkText}>{LINK_TEXT[link]}</span>
     </span>
@@ -58,7 +58,7 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
           className={`${styles.ghost} ${styles.bug}`}
           data-bug-report
           aria-label="Bug report"
-          title="Bug report (B): say what went wrong, and a Pitwall task reproduces it, fixes it and delivers the fix"
+          data-explain="Bug report (B): say what went wrong, and a Pitwall task reproduces it, fixes it and delivers the fix"
           onMouseDown={(e) => e.preventDefault()}
           onClick={openBugReport}
         >
@@ -71,7 +71,7 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
           data-pause
           aria-label="Pause"
           aria-pressed={pause.stopping.length > 0}
-          title="Pause before you close the laptop or restart the Mac: every Claude at work finishes its turn and stops its background tasks; Resume carries on"
+          data-explain="Pause before you close the laptop or restart the Mac: every Claude at work finishes its turn and stops its background tasks; Resume carries on"
           onClick={() => void pauseAll()}
         >
           <Icon name="pause" size={17} />

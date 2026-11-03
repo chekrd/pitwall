@@ -72,8 +72,8 @@ function PauseBanner({ folded }: { folded: boolean }) {
           )}
           {cleaning.length > 0 && <> · stopping the background tasks of <TaskLinks tasks={cleaning} /></>}
         </p>
-        {finishing.length > 0 && <button type="button" data-stop-now onClick={() => void stopNow()} title="Stop the turns still running with Esc, as Esc in the terminal would">Stop now</button>}
-        <button type="button" onClick={dismiss} title="Stop pausing; whatever has stopped stays stopped">Cancel</button>
+        {finishing.length > 0 && <button type="button" data-stop-now onClick={() => void stopNow()} data-explain="Stop the turns still running with Esc, as Esc in the terminal would">Stop now</button>}
+        <button type="button" onClick={dismiss} data-explain="Stop pausing; whatever has stopped stays stopped">Cancel</button>
       </section>
     );
   }
@@ -84,7 +84,7 @@ function PauseBanner({ folded }: { folded: boolean }) {
         {' '}Resume all has each one start its background tasks again and carry on.
       </p>
       <button type="button" data-variant="primary" disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>
-      <button type="button" onClick={dismiss} title="Forget the pause; the tasks wait for you as any other">Dismiss</button>
+      <button type="button" onClick={dismiss} data-explain="Forget the pause; the tasks wait for you as any other">Dismiss</button>
     </section>
   );
 }
@@ -175,7 +175,7 @@ function Recovery({ ended }: { ended: Session[] }) {
         </p>
       )}
       {ended.length > 0 && <button type="button" data-variant="primary" disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>}
-      <button type="button" onClick={dismiss} title={held.length ? 'Forget the restart and the pause; ended tasks stay on the Wall, Continue brings one back' : 'Forget what the restart cut short; ended tasks stay on the Wall, Continue brings one back'}>Dismiss</button>
+      <button type="button" onClick={dismiss} data-explain={held.length ? 'Forget the restart and the pause; ended tasks stay on the Wall, Continue brings one back' : 'Forget what the restart cut short; ended tasks stay on the Wall, Continue brings one back'}>Dismiss</button>
     </section>
   );
 }

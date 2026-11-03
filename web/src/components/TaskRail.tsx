@@ -21,7 +21,7 @@ export function TaskRail({ session, summaryText = true }: { session: Session; su
       )}
       {(text || progress.length > 0) && (
         <section>
-          <h3 className={parts.label} title="A short summary of the session, rewritten by a model after each of Claude's messages">
+          <h3 className={parts.label} data-explain="A short summary of the session, rewritten by a model after each of Claude's messages">
             Session summary {summary && <span className={styles.age}>· <Age at={summary.at} /></span>}
           </h3>
           {text && <p>{text}</p>}

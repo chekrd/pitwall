@@ -79,8 +79,8 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
     >
       <header className={styles.head}>
         <StateMark state={archived ? 'archived' : shown} />
-        <span className={styles.state} data-error={clearFailed || stoppedOnError(session, shown) || undefined} title={archived ? undefined : hintOf(session, shown)}>{label}</span>
-        <span className={styles.age} data-age title={asked !== undefined ? undefined : session.summary ? 'When the status was last updated' : 'When the session last changed'}>
+        <span className={styles.state} data-error={clearFailed || stoppedOnError(session, shown) || undefined} data-explain={archived ? undefined : hintOf(session, shown)}>{label}</span>
+        <span className={styles.age} data-age data-explain={asked !== undefined ? undefined : session.summary ? 'When the status was last updated' : 'When the session last changed'}>
           {asked !== undefined ? `asked ${ago(asked)}` : ago(session.summary?.at ?? session.updatedAt)}
         </span>
         <span className={styles.menu}>
@@ -96,7 +96,7 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
         <ul className={styles.restarted} aria-label="Subtasks ended by restart">
           {restarted.map((o) => (
             <li key={o.id} data-restart-subtask={o.id}>
-              <button type="button" data-ux="subtask" title="Open this subtask; Resume all or Continue brings it back" onClick={() => openSheet(o.id)}>
+              <button type="button" data-ux="subtask" data-explain="Open this subtask; Resume all or Continue brings it back" onClick={() => openSheet(o.id)}>
                 <span className={styles.restartedLabel}>Ended by restart</span>
                 <span className={styles.restartedName}>{sessionLabel(o, locate(repos, o).branch)}</span>
               </button>
@@ -107,14 +107,14 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
       {working && (
         <div className={styles.work}>
           <code>{session.activity?.step ?? 'Starting'}</code>
-          {session.activity && <span className={styles.clock} title="How long the turn has run"><Clock since={session.activity.since} /></span>}
+          {session.activity && <span className={styles.clock} data-explain="How long the turn has run"><Clock since={session.activity.since} /></span>}
         </div>
       )}
       {!archived && (
         <footer className={styles.foot}>
           <span className={styles.where}>{place} · {branch}</span>
           {tag && <span className={styles.tag}>{tag}</span>}
-          {!!session.summary?.learnings?.length && <span className={styles.know} title="Claude found something notable; open the task to read it">Worth knowing</span>}
+          {!!session.summary?.learnings?.length && <span className={styles.know} data-explain="Claude found something notable; open the task to read it">Worth knowing</span>}
           <PrChips prs={session.prs} status={session.status} />
         </footer>
       )}
