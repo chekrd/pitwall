@@ -593,7 +593,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           className={styles.prompt}
           rows={1}
           aria-label="What should Claude work on?"
-          placeholder={scheduling ? 'What should Claude work on? (a scheduled task needs a prompt)' : 'What should Claude work on? (optional; paste or drop files)'}
+          placeholder="What should Claude work on?"
           value={f.prompt}
           onChange={(e) => edit({ prompt: e.currentTarget.value })}
         />
