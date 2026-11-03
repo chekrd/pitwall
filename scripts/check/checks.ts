@@ -3296,7 +3296,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.2.1 ⏎ on s-cart deals it down and s-hooks comes up; the toast says Sending to Merge guest cart on login: “Merge both carts” on one line of a set width, counts down and offers Undo Esc; the meter counts 2 decisions; 5 s on, one accept-advice goes out with the second opinion it showed',
+    name: 'P5.2.1 ⏎ on s-cart deals it down and s-hooks comes up; the toast says Sending: “Merge both carts” on one line of a set width, counts down and offers Undo Esc; the meter counts 2 decisions; 5 s on, one accept-advice goes out with the second opinion it showed',
     async run({ page, mock, shot }) {
       const { advice } = await stateOf(mock, 's-cart');
       await openQueue(page, mock);
@@ -3307,7 +3307,7 @@ export const checks: Check[] = [
       await page.until('s-hooks at the front', frontIs, 's-hooks');
       assert.deepEqual(await page.eval(dealt), ['down']);
       const [held] = await page.until('the undo toast', toastsOf, 'undo');
-      assert.match(held.text, /^Sending to Merge guest cart on login: “Merge both carts”\s*· [1-5] s\s+Undo\s+Esc$/);
+      assert.match(held.text, /^Sending: “Merge both carts”\s*· [1-5] s\s+Undo\s+Esc$/);
       const count = () => Number(document.querySelector('[data-toast][data-kind="undo"]')?.textContent?.match(/· (\d) s/)?.[1]);
       const first = await page.eval(count);
       // The countdown follows the shared clock, which ticks once a second at its own phase.
@@ -3546,14 +3546,14 @@ export const checks: Check[] = [
       await page.key('Enter');
       await page.until('s-hooks at the front', frontIs, 's-hooks');
       assert.deepEqual(await page.eval(dealt), ['down']);
-      assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Sending to Merge guest cart on login: “Use the cache”/);
+      assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Sending: “Use the cache”/);
       assert.equal(await page.eval(() => document.activeElement?.closest('[data-card]')?.getAttribute('data-session') ?? null), 's-hooks', 'focus stayed on the page');
       const [sent] = await logged(mock, 'the answer', (e) => e.action === 'answer', POSTED_MS);
       assert.deepEqual([sent.status, sent.body], [204, { key: 'q:toolu_01Cart', text: 'Use the cache' }]);
     },
   },
   {
-    name: 'P5.2.12 a command: /compact and Enter hold it with a toast Sending to … : /compact, the card stays and its reply box is empty and says the question stays open; it goes out 5 s on; Z puts it back in the box instead',
+    name: 'P5.2.12 a command: /compact and Enter hold it with a toast Sending: /compact, the card stays and its reply box is empty and says the question stays open; it goes out 5 s on; Z puts it back in the box instead',
     clock: 'fast',
     async run({ wait, page, mock, shot }) {
       await openQueue(page, mock);
@@ -3567,7 +3567,7 @@ export const checks: Check[] = [
         return page.until('the undo toast', toastsOf, 'undo');
       };
       const [held] = await command();
-      assert.match(held.text, /^Sending to Merge guest cart on login: \/compact\s*· [1-5] s/);
+      assert.match(held.text, /^Sending: \/compact\s*· [1-5] s/);
       assert.deepEqual(await page.eval(() => [
         document.querySelector<HTMLElement>('[data-card]')?.dataset.session, document.querySelector<HTMLTextAreaElement>('[data-card] textarea')?.value,
         document.querySelector('[data-card] [role="status"]')?.textContent,
@@ -3852,7 +3852,7 @@ export const checks: Check[] = [
       await page.key('Enter');
       const [held] = await page.until('the undo toast', toastsOf, 'undo');
       assert.deepEqual({ ...held, text: undefined }, { kind: 'undo', text: undefined, inSheet: false, hit: true });
-      assert.match(held.text, /^Sending to Fix invoice PDF rounding: “Also round the tax lines”\s*· [1-5] s\s+Undo\s+Esc$/);
+      assert.match(held.text, /^Sending: “Also round the tax lines”\s*· [1-5] s\s+Undo\s+Esc$/);
       assert.deepEqual([await page.eval(sheetOpen), (await page.eval(replyIn, '#task-sheet'))?.value], [true, '']);
       await shot('sheet-held');
       const [sent] = await logged(mock, 'the message', (e) => e.action === 'answer', POSTED_MS);
@@ -4046,7 +4046,7 @@ export const checks: Check[] = [
       await page.type('Every 10 min, 6 tries');
       await page.key('Enter');
       await page.until('s-group at the front', frontIs, 's-group');
-      assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Sending to Retry failed webhooks: “Backoff: Every 10 min, 6 tries · Give up: Email the account owner, Disable the endpoint”/);
+      assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Sending: “Backoff: Every 10 min, 6 tries · Give up: Email the account owner, Disable the endpoint”/);
       const [sent] = await logged(mock, 'the menu answer', (e) => e.action === 'answer-menu', POSTED_MS);
       assert.deepEqual([sent.status, sent.body], [204, {
         toolUseId: 'toolu_01Hooks', answers: [{ labels: [], other: 'Every 10 min, 6 tries' }, { labels: ['Email the account owner', 'Disable the endpoint'], other: '' }],
