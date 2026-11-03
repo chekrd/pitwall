@@ -10,7 +10,7 @@ import { Icon } from './Icon.tsx';
 import { Markdown } from './Markdown.tsx';
 import { StateMark } from './StateMark.tsx';
 import { labelOf, STATE_LABELS } from './Status.tsx';
-import { resolveSubtask } from './SessionMenu.tsx';
+import { resolveSubtask, settleNote } from './SessionMenu.tsx';
 import { toast, UNDO_KBD } from './Toasts.tsx';
 import { explain, SENDS, type Explanation } from './explain.ts';
 
@@ -293,8 +293,8 @@ export function SubtaskOf({ session }: { session: Session }) {
         ) : (
           <>
             <span className={styles.state}>Done with it?</span>
-            <button type="button" data-variant="primary" onClick={() => resolveSubtask(session, 'solved', session.title ?? 'the subtask')}>Mark solved</button>
-            <button type="button" onClick={() => resolveSubtask(session, 'dropped', session.title ?? 'the subtask')}>Drop</button>
+            <button type="button" data-variant="primary" data-explain={settleNote(session, 'solved')} onClick={() => resolveSubtask(session, 'solved', session.title ?? 'the subtask')}>Mark solved</button>
+            <button type="button" data-explain={settleNote(session, 'dropped')} onClick={() => resolveSubtask(session, 'dropped', session.title ?? 'the subtask')}>Drop</button>
           </>
         )}
       </div>

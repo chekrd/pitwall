@@ -46,6 +46,12 @@ export function archive(session: Session, name: string) {
 
 // Solved and Dropped take the subtask out of the queue like Archive, and its page gives way to its task's; Undo opens it
 // again.
+export function settleNote(session: Session, state: Resolution['state']) {
+  const what = state === 'solved' ? 'Done with it' : 'Not going on with it';
+  const left = session.status === 'exited' ? 'its changes stay in the worktree' : 'its Claude keeps running and its changes stay in the worktree; Quit Claude stops it';
+  return `${what}: it leaves the queue and stops counting as open on its task; ${left}`;
+}
+
 export function resolveSubtask(session: Session, state: Resolution['state'] | null, name: string) {
   const { id } = session;
   if (state && session.parent) moveSheetOf(id, session.parent.id);
@@ -99,8 +105,8 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
           <Item label="Reopen" note={`Marked ${session.resolution.state}; back into the queue and its task's open count`} onClick={pick(() => resolveSubtask(session, null, name))} />
         ) : (
           <>
-            <Item label="Mark solved" note="Done; it stops counting as open on its task" onClick={pick(() => resolveSubtask(session, 'solved', name))} />
-            <Item label="Drop" note="Not going on with it; it stops counting as open on its task" onClick={pick(() => resolveSubtask(session, 'dropped', name))} />
+            <Item label="Mark solved" note={settleNote(session, 'solved')} onClick={pick(() => resolveSubtask(session, 'solved', name))} />
+            <Item label="Drop" note={settleNote(session, 'dropped')} onClick={pick(() => resolveSubtask(session, 'dropped', name))} />
           </>
         )) : session.archived ? (
           <Item label="Unarchive" note="Back into the queue and the strip" onClick={act('archive', { archived: false })} />
