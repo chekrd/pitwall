@@ -271,9 +271,15 @@ function Diffs({ worktree }: { worktree: string }) {
   useEffect(() => {
     const root = diffsRef.current;
     if (!root || focused) return;
+    // A callback lists only the sections that crossed the band, so the ones still in it are kept to pick the top one from.
+    const inBand = new Set<HTMLElement>();
     const observer = new IntersectionObserver((entries) => {
-      const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-      if (top) setSelected((top.target as HTMLElement).dataset.file ?? null);
+      for (const e of entries) {
+        if (e.isIntersecting) inBand.add(e.target as HTMLElement);
+        else inBand.delete(e.target as HTMLElement);
+      }
+      const top = [...inBand].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      if (top) setSelected(top.dataset.file ?? null);
     }, { root, rootMargin: '0px 0px -85% 0px' });
     for (const section of root.querySelectorAll('section')) observer.observe(section);
     return () => observer.disconnect();
