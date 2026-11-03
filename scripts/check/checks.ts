@@ -381,7 +381,7 @@ const stateOf = async (mock: Mock, id: string) => (await mock.get('/api/state'))
 // A send the page has posted and the mock answered.
 const sent = (e: Entry) => e.method === 'POST' && e.action !== null;
 
-const unguarded = () => !document.querySelector('[data-primary][data-guarded]');
+const unguarded = () => !document.querySelector('[data-card] footer[data-guarding]');
 
 // `id` is the card, and the guard that came with it is over, so an answer key counts.
 async function ready(page: Page, id: string) {
@@ -526,7 +526,7 @@ const docked = (n: number) => document.querySelectorAll('[data-dock] [data-capsu
 const primaryAtEnds = () => {
   const page = document.scrollingElement!;
   const inView = () => {
-    const r = document.querySelector('[data-primary]')!.getBoundingClientRect();
+    const r = document.querySelector('[data-card] [data-primary], [data-card] footer textarea')!.getBoundingClientRect();
     return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth;
   };
   page.scrollTop = 0;
@@ -2746,7 +2746,7 @@ export const checks: Check[] = [
     name: 'P5.1.8 W opens the reply box, focused; /re lists /review and /rename, Esc closes only the list, Tab completes "/rename ", and a second Esc closes the box and focuses the card',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       await page.key('w');
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
       await page.type('/re');
@@ -2774,7 +2774,7 @@ export const checks: Check[] = [
     name: 'P5.1.9 E opens the reply box with the second opinion\'s reply, focused',
     async run({ page, mock }) {
       await openQueue(page, mock);
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       await page.key('e');
       const box = await page.until('the reply box', () => {
         const field = document.querySelector<HTMLTextAreaElement>('[data-card] textarea');
@@ -2784,7 +2784,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.10 a click on peek 2 brings s-group to the front; the 5th meter segment shows Lazy-load product reviews as a Your-turn card with its summary, latest reply, Session summary, and the reply box in the footer between Reply ↵ and Archive X, on one row',
+    name: 'P5.1.10 a click on peek 2 brings s-group to the front; the 5th meter segment shows Lazy-load product reviews as a Your-turn card with its summary, latest reply, Session summary, and in the footer only the reply box and Archive X, on one row',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
@@ -2792,7 +2792,7 @@ export const checks: Check[] = [
       await page.click('[data-segment]:nth-child(5)');
       await page.until('s-reviews at the front', frontIs, 's-reviews');
       const shown = (await page.eval(card))!;
-      assert.deepEqual([shown.kind, shown.label, shown.primary], ['idle', 'Lazy-load product reviews · Your turn', 'Reply']);
+      assert.deepEqual([shown.kind, shown.label, shown.primary], ['idle', 'Lazy-load product reviews · Your turn', null]);
       for (const part of [
         'Reviews now load when scrolled into view', "CLAUDE'S LATEST REPLY", 'The reviews section now loads when it comes within 600 px', 'SESSION SUMMARY', 'Reviews split into a lazy chunk (41 kB)', 'Archive\nX',
       ]) assert.ok(shown.text.includes(part), `the card lacks ${part}`);
@@ -2800,9 +2800,9 @@ export const checks: Check[] = [
       const bar = await page.eval(() => {
         const foot = document.querySelector('[data-card] footer')!;
         const row = (e: Element | null) => e && Math.round(e.getBoundingClientRect().top + e.getBoundingClientRect().height / 2);
-        const [primary, box, archive] = [foot.querySelector('[data-primary]'), foot.querySelector('textarea'), [...foot.querySelectorAll('button')].find((b) => b.textContent!.startsWith('Archive')) ?? null];
+        const [box, archive] = [foot.querySelector('textarea'), [...foot.querySelectorAll('button')].find((b) => b.textContent!.startsWith('Archive')) ?? null];
         const x = (e: Element | null) => e?.getBoundingClientRect().left;
-        return { label: box?.getAttribute('aria-label'), oneRow: row(primary) === row(box) && row(box) === row(archive), order: x(primary)! < x(box)! && x(box)! < x(archive)! };
+        return { label: box?.getAttribute('aria-label'), oneRow: row(box) === row(archive), order: x(box)! < x(archive)! };
       });
       assert.deepEqual(bar, { label: 'Message Claude', oneRow: true, order: true });
       await page.until('the card to settle', still);
@@ -2822,7 +2822,7 @@ export const checks: Check[] = [
       await page.until('the card to settle', still);
       await shot('queue-needs-focus');
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       const pressed = Date.now();
       await page.key('Enter');
       const [focus] = await logged(mock, 'the terminal request', (e) => e.action === 'focus');
@@ -2863,7 +2863,7 @@ export const checks: Check[] = [
     name: 'P5.1.14 a new decision on s-cart, at the front, updates it in place: its key is q:toolu_02, it reads Updated just now, and the guard holds the primary for about 0.9 s',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       const before = (await page.eval(card))!;
       await mock.post('/mock/patch', {
         id: 's-cart',
@@ -2876,7 +2876,7 @@ export const checks: Check[] = [
       });
       assert.deepEqual([updated.session, updated.label], ['s-cart', before.label]);
       assert.match(updated.text, /Updated just now/);
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       const held = Date.now() - sent;
       assert.ok(held > 700 && held < 1600, `the guard ended ${held} ms after the update`);
       assert.match((await page.eval(card))!.text, /Merge the carts for app logins too\?[\s\S]*Yes, everywhere[\s\S]*Only on the web/);
@@ -3110,7 +3110,7 @@ export const checks: Check[] = [
       await page.until('the card to settle', still);
       await shot('queue-menu-stuck');
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       await page.key('Enter');
       const [focus] = await logged(mock, 'the terminal request', (e) => e.action === 'focus');
       assert.deepEqual([focus.sessionId, focus.status], ['s-hooks', 204]);
@@ -3122,7 +3122,7 @@ export const checks: Check[] = [
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
       await page.until('s-group at the front', frontIs, 's-group');
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       assert.deepEqual(await page.eval(() => {
         const c = document.querySelector<HTMLElement>('[data-card]')!;
         return [c.querySelector('[data-primary]')?.firstElementChild?.textContent, c.querySelector<HTMLButtonElement>('[data-primary]')?.disabled, c.querySelectorAll('[data-frozen]').length];
@@ -3138,7 +3138,7 @@ export const checks: Check[] = [
         };
       });
       assert.deepEqual(relabelled, { label: 'Suggestion ready · Accept', disabled: false, frozen: ['1By attention'] });
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       const held = Date.now() - done;
       assert.ok(held > 700 && held < 1600, `the guard ended ${held} ms after the advice finished`);
       await page.until('the card to settle', still);
@@ -3210,7 +3210,7 @@ export const checks: Check[] = [
     name: 'P5.1.n1-card typing in the reply box holds the card as it is: a new decision on it waits, then updates it in place with the same box and draft; the card leaving waits too, until focus leaves',
     async run({ page, mock }) {
       await openQueue(page, mock);
-      await page.until('the guard to end', () => !document.querySelector('[data-primary][data-guarded]'));
+      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       await page.key('w');
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
       await page.type('only if stock');
@@ -5360,9 +5360,9 @@ export const checks: Check[] = [
       await ready(page, 's-reviews');
       await page.click('[data-card] footer button', 'Archive');
       await page.until('s-anchors up, still guarded', () =>
-        document.querySelector<HTMLElement>('[data-card]')?.dataset.session === 's-anchors' && !document.documentElement.dataset.deal && !!document.querySelector('[data-primary][data-guarded]'));
+        document.querySelector<HTMLElement>('[data-card]')?.dataset.session === 's-anchors' && !document.documentElement.dataset.deal && !!document.querySelector('[data-card] footer[data-guarding]'));
       await page.click('[data-card] footer button', 'Archive');
-      assert.equal(await page.eval(() => !!document.querySelector('[data-primary][data-guarded]')), true, 'the click came after the guard');
+      assert.equal(await page.eval(() => !!document.querySelector('[data-card] footer[data-guarding]')), true, 'the click came after the guard');
       await sleep(600);
       assert.equal(await page.eval(frontIs, 's-anchors'), true);
       assert.deepEqual((await actions(mock)).map((e) => [e.action, e.sessionId]), [['archive', 's-reviews']]);
@@ -5440,7 +5440,7 @@ export const checks: Check[] = [
       assert.equal((await page.eval(card))?.primary, 'Send “Merge both carts”');
       const advice = await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Merge both carts', answer: 'Merge both carts, and also drop the stock cap so nothing is trimmed.' });
       await page.until('the suggestion under option 1', () => !!document.querySelector('[data-card] [data-option="1"]')?.parentElement?.querySelector('[data-suggestion]'));
-      assert.deepEqual(await page.eval(() => [document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent, !!document.querySelector('[data-primary][data-guarded]')]),
+      assert.deepEqual(await page.eval(() => [document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent, !!document.querySelector('[data-card] footer[data-guarding]')]),
         ['Send “Merge both carts”', true]);
       await page.key('1');
       await sleep(300);

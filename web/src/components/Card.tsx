@@ -349,8 +349,8 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           <TaskRail session={session} summaryText={kind !== 'idle'} />
         </div>
       </div>
-      <footer className={styles.foot} data-kind={kind}>
-        <button
+      <footer className={styles.foot} data-kind={kind} data-guarding={guarded || undefined}>
+        {kind !== 'idle' && <button
           type="button"
           className={styles.primary}
           data-primary
@@ -361,7 +361,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
         >
           <span className={styles.primaryLabel}>{primary.label}</span>
           <kbd>↵</kbd>
-        </button>
+        </button>}
         <span className={styles.steps}>
           <button type="button" aria-label="Previous card" disabled={deck < 2} onClick={() => queue.previous()}><Icon name="arrow-left" size={18} /></button>
           <button type="button" aria-label="Skip to the next card" disabled={deck < 2} onClick={() => queue.skip()}><Icon name="arrow-right" size={18} /></button>

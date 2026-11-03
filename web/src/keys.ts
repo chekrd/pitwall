@@ -113,7 +113,7 @@ function numbered(card: Card | null, n: number): Action | null {
 
 export const KEYS: readonly Row[] = [
   { keys: '1 – 9', help: 'Send that option; in a menu, pick it', scopes: ['queue'], guarded: true, matches: (e) => digit(e) > 0, act: (ctx, e) => numbered(ctx.card, digit(e)) },
-  { keys: '↵', help: 'What the main button says: send the choice, the picks or open the terminal', scopes: ['queue'], guarded: true, matches: named('Enter'), act: (ctx) => (ctx.card?.primary ? { type: 'primary' } : null) },
+  { keys: '↵', help: 'What the main button says: send the choice, the picks or open the terminal; on a finished turn, go to the reply box', scopes: ['queue'], guarded: true, matches: named('Enter'), act: (ctx) => (ctx.card?.primary ? { type: 'primary' } : null) },
   { keys: '→', help: 'Skip: the card goes to the back of the deck', scopes: ['queue'], repeats: true, matches: named('ArrowRight'), act: (ctx) => (ctx.card && ctx.deck > 1 ? { type: 'skip' } : null) },
   { keys: '←', help: 'Bring the last card back to the front', scopes: ['queue'], repeats: true, matches: named('ArrowLeft'), act: (ctx) => (ctx.card && ctx.deck > 1 ? { type: 'previous' } : null) },
   { keys: 'Space', help: "Show or hide Claude's details", scopes: ['queue'], matches: named(' '), act: (ctx) => (deciding(ctx.card) ? { type: 'details' } : null) },

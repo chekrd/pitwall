@@ -292,7 +292,12 @@
     .primary { height: 46px; padding: 0 14px 0 16px; }
     .steps { display: flex; }
     .actions { grid-column: 1 / -1; gap: 8px; &:empty { display: none; } }
-    .foot[data-kind="idle"] .actions { grid-column: auto; }
+    .foot[data-kind="idle"] {
+      grid-template-areas: "message message" "actions steps";
+      .message { grid-area: message; }
+      .actions { grid-area: actions; }
+      .steps { grid-area: steps; }
+    }
     .secondary { height: 38px; padding: 0 12px; font-size: 14px; }
     .dismiss { height: 38px; padding: 0 10px; }
   }
