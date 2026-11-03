@@ -6128,6 +6128,7 @@ export const checks: Check[] = [
       assert.equal(rest.length, 2);
       for (const s of rest) await mock.post(`/api/sessions/${s.id}/resolve`, { state: 'solved' });
       await page.until('all settled', () => document.querySelector('#task-sheet header [data-open-count]')?.textContent === 'All 4 subtasks solved or dropped');
+      assert.match(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet header [data-open-count]')!.dataset.explain!), /^Solved: “.+”\. Dropped: “.+”\.$/);
       await page.until('#3 settled with its subtask', () => document.querySelector<HTMLElement>('#task-sheet [data-finding="3"]')?.dataset.settled === 'solved');
       assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-settled-findings] [data-finding]')].map((f) => `${f.dataset.finding}:${f.dataset.settled}`)), ['1:rejected', '3:solved']);
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-findings] [data-settled-count]')!.textContent), '· 1 of 3 open');
