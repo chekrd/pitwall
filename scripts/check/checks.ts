@@ -6172,6 +6172,7 @@ export const checks: Check[] = [
       assert.equal(read.data!.screen, 'task/overview');
       assert.equal(read.data!.action, 'click');
       assert.ok(read.data!.sections.findings >= 2000, `findings were in view for ${read.data!.sections.findings} ms`);
+      assert.ok(read.data!.sections['message box'] >= 2000, `the message box was in view for ${read.data!.sections['message box']} ms`);
       assert.ok(!('links' in read.data!.sections), 'a section the task does not have is not read');
     },
   },

@@ -26,12 +26,15 @@ export const CONTENT_FIELDS = new Set([
   'body', 'description', 'summary', 'brief', 'context', 'problem', 'other', 'options', 'menu', 'message',
 ]);
 
-function scrub(value: unknown, depth = 0): unknown {
+// A `sections` object maps section names to milliseconds read, so a section named like a content field (`summary`)
+// keeps its timing; anything there that is not a number is dropped.
+function scrub(value: unknown, depth = 0, timings = false): unknown {
   if (typeof value === 'string') return value.slice(0, MAX_STRING);
   if (Array.isArray(value)) return depth > 3 ? null : value.slice(0, 20).map((v) => scrub(v, depth + 1));
   if (value && typeof value === 'object') {
     if (depth > 3) return null;
-    return Object.fromEntries(Object.entries(value).filter(([k]) => !CONTENT_FIELDS.has(k)).map(([k, v]) => [k, scrub(v, depth + 1)]));
+    const kept = Object.entries(value).filter(([k, v]) => (timings ? typeof v === 'number' : !CONTENT_FIELDS.has(k)));
+    return Object.fromEntries(kept.map(([k, v]) => [k, scrub(v, depth + 1, !timings && k === 'sections')]));
   }
   return value;
 }

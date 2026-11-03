@@ -251,7 +251,6 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           )}
           {(message || (writing && !archived)) && (
             <div
-              className={styles.message}
               data-ux-section="message box"
               onFocus={() => {
                 setWriting(true);

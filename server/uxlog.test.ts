@@ -111,6 +111,12 @@ test('no content reaches the table: question, options, advice and answer text st
   assert.deepEqual(JSON.parse(String(rows[3].data)), { kind: 'ask', waitMs: 0, confidence: 85, how: 'option-and-text', option: 0, files: 1, followed: 'edited' });
 });
 
+test('a read event keeps the time on every section, the summary among them, but nothing else under its sections', () => {
+  const sections = { summary: 1200, 'worth knowing': 800, facts: 600, text: 'Zephyr', prompt: { said: 'Zephyr' } };
+  const e = cleanEvent('read', { screen: 'task', sections, summary: 'Zephyr' }, NOW)!;
+  assert.deepEqual(JSON.parse(e.data!), { screen: 'task', sections: { summary: 1200, 'worth knowing': 800, facts: 600 } });
+});
+
 test('a migration keeps the rows recorded before it, as from the page', () => {
   const db = new DatabaseSync(':memory:');
   db.exec('CREATE TABLE ux_events (at INTEGER NOT NULL, page TEXT NOT NULL, name TEXT NOT NULL, data TEXT)');
