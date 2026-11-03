@@ -459,7 +459,9 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   }, null);
 
   const onFormKey = (e: KeyboardEvent<HTMLFormElement>) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    const inPrompt = e.target instanceof HTMLTextAreaElement && !e.shiftKey && !e.altKey;
+    if (inPrompt || e.metaKey || e.ctrlKey) {
       e.preventDefault();
       if (valid && !pending) e.currentTarget.requestSubmit();
     }
@@ -564,7 +566,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           </label>
         )}
         <button type="submit" className={styles.create} disabled={!valid || pending}>
-          {pending ? (scheduling ? 'Scheduling…' : 'Creating…') : scheduling ? 'Schedule' : 'Create'} <kbd>⌘↵</kbd>
+          {pending ? (scheduling ? 'Scheduling…' : 'Creating…') : scheduling ? 'Schedule' : 'Create'} <kbd>↵</kbd>
         </button>
       </div>
       <div className={styles.foot}>

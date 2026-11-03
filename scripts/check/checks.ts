@@ -1871,10 +1871,10 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.10 New task opened on the Wall: a space typed in the name or branch becomes a hyphen; Model and Effort name what Claude Code would pick by itself; ⌘↵ creates from the prompt, repository and name and opens the new sheet; a refused name shows inline and keeps the fields; the model and effort picked go with it and show on its Overview; Current checkout hides Branch and Worktree path, starts on the repository\'s default branch and lists the server\'s branches by name in a list under the field, with the hint',
+    name: 'P4.10 New task opened on the Wall: a space typed in the name or branch becomes a hyphen; Model and Effort name what Claude Code would pick by itself; Enter in the prompt creates from the prompt, repository and name and opens the new sheet; a refused name shows inline and keeps the fields; the model and effort picked go with it and show on its Overview; Current checkout hides Branch and Worktree path, starts on the repository\'s default branch and lists the server\'s branches by name in a list under the field, with the hint',
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
-      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
@@ -3070,7 +3070,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.1.21 typing in New task over the empty queue while a session arrives: "we fix 3 x" and Enter stay in the prompt, which keeps focus while the card comes up under the dialog; nothing is held, archived or undone',
+    name: 'P5.1.21 typing in New task over the empty queue while a session arrives: "we fix 3 x" and Shift+Enter stay in the prompt, which keeps focus while the card comes up under the dialog; nothing is held, archived or undone',
     scenario: 'zero',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
@@ -3080,7 +3080,7 @@ export const checks: Check[] = [
       await mock.post('/mock/add', { template: 'idle', id: 's-idle' });
       await page.until('the arrival in the meter', () => !!document.querySelector('[data-segment][data-session="s-idle"]'));
       for (const key of 'we fix 3 x') await page.key(key);
-      await page.key('Enter');
+      await page.key('Enter', { shift: true });
       await sleep(300);
       const held = await page.eval(() => ({
         open: !!document.querySelector('dialog#new-task:modal'),
@@ -5969,7 +5969,7 @@ export const checks: Check[] = [
   {
     name: 'M1 New task across a folder of repos: the picker lists the folder first, which hides the worktree options and says where Claude starts; ⌘↵ starts it in an empty task folder; the worktrees Claude opens show in the facts, each PR it opens shows as its own chip named by its repository and linked, the Diff groups them by repository, the tile names the repositories it works in and their branch, and Clear task names each worktree and its loss and clears them all',
     async run({ page, mock, shot }) {
-      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
@@ -6545,7 +6545,7 @@ export const checks: Check[] = [
   {
     name: 'S1 New task can repeat: Repeat under More offers weekdays at 09:00, needs a prompt, and the button reads Schedule; ⌘↵ posts the schedule, says so in a toast and lists it under Scheduled on the Wall with its next run; Run now opens a task named by the date whose facts name the schedule; Pause and Resume, and Delete with Undo',
     async run({ page, mock, shot }) {
-      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+      const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       assert.equal(await page.eval(() => !!document.querySelector('[data-schedules]')), false, 'no Scheduled list without a schedule');
@@ -6564,7 +6564,7 @@ export const checks: Check[] = [
           button: button.textContent, disabled: button.disabled,
         };
       });
-      assert.deepEqual(form, { time: '09:00', days: [true, true, true, true, true, false, false], button: 'Schedule ⌘↵', disabled: true });
+      assert.deepEqual(form, { time: '09:00', days: [true, true, true, true, true, false, false], button: 'Schedule ↵', disabled: true });
       await typeInPrompt(page);
       await page.type('Review the open PRs and summarise what needs me');
       await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
