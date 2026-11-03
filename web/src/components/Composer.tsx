@@ -166,12 +166,23 @@ const insertText = (text: string) => document.execCommand('insertText', false, t
 
 const onScreen = (el: Element) => !el.closest('[inert]') && el.checkVisibility();
 
+// A paste into any text field inserts the text the paste event carries: Chrome's own insert reads the clipboard again,
+// and that read can come back empty (seen as a beforeinput without data and no input), so a paste or dictation landed
+// only the second time.
 // A paste that lands on the page belongs in the reply box: a change of state takes the box away for a moment (a
 // permission prompt between two turns), and a dictation app's Cmd+V can come before the window has given focus back
 // to the field. It goes to the box that had focus while its task is on screen, even one not back yet, else to the
 // only box there is.
 addEventListener('paste', (e) => {
-  if (e.defaultPrevented || (e.target instanceof Element && e.target.closest('textarea, input, [contenteditable]:not([contenteditable="false"])'))) return;
+  if (e.defaultPrevented) return;
+  const target = e.target instanceof Element ? e.target : null;
+  const field = target?.closest('textarea, input');
+  if (field && (field instanceof HTMLTextAreaElement || (field instanceof HTMLInputElement && field.selectionStart !== null))) {
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    if (text && !files(e).length && document.activeElement === field && insertText(text)) e.preventDefault();
+    return;
+  }
+  if (target?.closest('input, [contenteditable]:not([contenteditable="false"])')) return;
   const boxes = [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-draft]')].filter(onScreen);
   const task = focusedBox && `[data-card][data-session="${CSS.escape(focusedBox)}"], #task-sheet[data-session="${CSS.escape(focusedBox)}"]`;
   const id = (task && [...document.querySelectorAll(task)].some(onScreen) ? focusedBox : null) ?? (boxes.length === 1 ? boxes[0].dataset.draft! : null);
@@ -271,18 +282,11 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
     setClosed(value.startsWith('/') && /\s/.test(value));
   };
 
-  // The text comes from the paste event itself: Chrome's own insert reads the clipboard again, and that read can come
-  // back empty (seen as a beforeinput without data and no input), so a paste or dictation landed only the second time.
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const list = files(e);
-    const text = e.clipboardData.getData('text/plain');
-    if (!list.length && !text) return;
+    if (!list.length) return;
     e.preventDefault();
-    if (list.length) attach(id, list);
-    else if (!insertText(text)) {
-      const box = e.currentTarget;
-      setText(box.value.slice(0, box.selectionStart) + text + box.value.slice(box.selectionEnd));
-    }
+    attach(id, list);
   };
   const onDragOver = (e: DragEvent) => {
     if (e.dataTransfer.types.includes('Files')) e.preventDefault();

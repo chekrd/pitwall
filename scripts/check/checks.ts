@@ -3948,6 +3948,34 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P5.2.32 a paste into New task\'s prompt and into Bug report\'s comment lands from the paste event itself, at the caret, though the browser\'s own insert comes up empty',
+    async run({ page, mock }) {
+      // A dispatched paste carries the text but has no insert of its own, as a paste whose clipboard read came back empty.
+      const paste = (selector: string, at: number) => page.eval((s: string, i: number) => {
+        const box = document.querySelector<HTMLTextAreaElement>(s)!;
+        box.setSelectionRange(i, i);
+        const clipboardData = new DataTransfer();
+        clipboardData.setData('text/plain', ' every');
+        return !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+      }, selector, at);
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      await page.type('Fix cent');
+      assert.equal(await paste('dialog#new-task textarea', 3), true, 'the prompt handled the paste');
+      await page.until('the pasted prompt', () => document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')!.value === 'Fix every cent');
+      assert.equal(await page.eval(() => document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')!.selectionStart), 9);
+      await page.key('Escape');
+      await page.until('New task to close', () => !document.querySelector('#new-task[open]'));
+
+      await page.key('b');
+      await page.until('Bug report, its comment focused', () => document.activeElement === document.querySelector('#bug-report textarea'));
+      await page.type('Lost paste');
+      assert.equal(await paste('#bug-report textarea', 4), true, 'the comment handled the paste');
+      await page.until('the pasted comment', () => document.querySelector<HTMLTextAreaElement>('#bug-report textarea')!.value === 'Lost every paste');
+    },
+  },
+  {
     name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word',
     async run({ page, mock, shot }) {
       const open = () => !!document.querySelector('#bug-report:modal') && document.activeElement === document.querySelector('#bug-report textarea');
