@@ -40,7 +40,7 @@ export function archive(session: Session, name: string) {
       else back();
       sessionAction(id, 'archive', { archived: false }).catch(failed(id));
     };
-    toast('undo', `Archived ${name}`, { session: id, action: { label: 'Undo', run: undo } });
+    toast('undo', `Archived ${name}`, { session: id, action: { label: 'Undo', kbd: UNDO_KBD, run: undo } });
   }, failed(id));
 }
 

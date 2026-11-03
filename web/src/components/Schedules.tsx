@@ -6,7 +6,7 @@ import { useStore } from '../store.ts';
 import type { Schedule } from '../types.ts';
 import { Icon } from './Icon.tsx';
 import styles from './Schedules.module.css';
-import { toast } from './Toasts.tsx';
+import { toast, UNDO_KBD } from './Toasts.tsx';
 
 function Row({ schedule: s }: { schedule: Schedule }) {
   const { repos, folders, sessions } = useStore();
@@ -31,7 +31,7 @@ function Row({ schedule: s }: { schedule: Schedule }) {
   const remove = () => act('delete', async () => {
     await api('DELETE', `/api/schedules/${s.id}`);
     toast('undo', `Deleted the schedule ${s.name}`, {
-      action: { label: 'Undo', run: () => void api('POST', '/api/schedules', { name: s.name, task: s.task, when: s.when }).catch((err) => toast('error', `Could not bring ${s.name} back: ${(err as Error).message}`)) },
+      action: { label: 'Undo', kbd: UNDO_KBD, run: () => void api('POST', '/api/schedules', { name: s.name, task: s.task, when: s.when }).catch((err) => toast('error', `Could not bring ${s.name} back: ${(err as Error).message}`)) },
     });
   });
 

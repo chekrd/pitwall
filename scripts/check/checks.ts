@@ -2061,7 +2061,7 @@ export const checks: Check[] = [
       await page.click('#task-sheet button[aria-label="Session actions"]');
       await page.click(':popover-open button', 'Archive');
       await logged(mock, 'the archive', (e) => e.action === 'archive' && e.body.archived === true && e.status === 204);
-      assert.deepEqual(await page.until('the undo toast', toastsOf, 'undo'), [{ kind: 'undo', text: 'Archived Fix invoice PDF rounding\nUndo', inSheet: false, hit: true }]);
+      assert.deepEqual(await page.until('the undo toast', toastsOf, 'undo'), [{ kind: 'undo', text: 'Archived Fix invoice PDF rounding\nUndo\n⌘Z', inSheet: false, hit: true }]);
       await shot('toasts-in-sheet');
       await page.click('[data-toast][data-kind="undo"] button', 'Undo');
       const [unarchived] = await logged(mock, 'the undo', (e) => e.action === 'archive' && e.body.archived === false);
@@ -3601,7 +3601,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P5.2.14 Your turn: ⏎ (Reply) focuses the reply box and Enter holds a message whose raw body has "key":null; X archives Fix broken doc anchors at once, its card goes sideways, and the toast\'s Undo unarchives it',
+    name: 'P5.2.14 Your turn: ⏎ (Reply) focuses the reply box and Enter holds a message whose raw body has "key":null; X archives Fix broken doc anchors at once, its card goes sideways, and the toast\'s Undo unarchives it, as ⌘Z does after a second X',
     clock: 'fast',
     async run({ page, mock }) {
       await openQueue(page, mock);
@@ -3629,11 +3629,21 @@ export const checks: Check[] = [
       await page.until('s-anchors gone', () => !document.querySelector('[data-card][data-session="s-anchors"]') && !document.documentElement.dataset.deal);
       assert.deepEqual(await page.eval(dealt), ['side']);
       const toast = await page.until('the archive toast', () => [...document.querySelectorAll<HTMLElement>('[data-toast][data-kind="undo"]')].find((t) => t.innerText.startsWith('Archived'))?.innerText);
-      assert.equal(toast, 'Archived Fix broken doc anchors\nUndo');
+      assert.equal(toast, 'Archived Fix broken doc anchors\nUndo\n⌘Z');
       await page.click('[data-toast][data-kind="undo"] button', 'Undo');
       const [back] = await logged(mock, 'the unarchive', (e) => e.action === 'archive' && e.body.archived === false);
       assert.deepEqual([back.sessionId, back.status], ['s-anchors', 204]);
       await page.until('s-anchors back at the front', frontIs, 's-anchors');
+
+      await ready(page, 's-anchors');
+      await page.key('x');
+      await page.until('s-anchors archived again', () => !document.querySelector('[data-card][data-session="s-anchors"]') && !document.documentElement.dataset.deal);
+      await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.key('z', { meta: true });
+      await page.until('s-anchors back at the front by ⌘Z', frontIs, 's-anchors');
+      const unarchives = await logged(mock, 'the second unarchive', (e) => e.action === 'archive' && e.body.archived === false && e.sessionId === 's-anchors' && e.at > back.at);
+      assert.equal(unarchives.length, 1);
+      assert.equal(await page.eval(() => document.querySelector('[data-segment][data-session="s-anchors"]') !== null), true, 's-anchors in the queue');
     },
   },
   {
@@ -6593,6 +6603,11 @@ export const checks: Check[] = [
       await page.until('the list gone', () => !document.querySelector('[data-schedules]'));
       await page.click('[data-toast] button', 'Undo');
       await page.until('the schedule back', () => !!document.querySelector('[data-schedule="nightly-review"]'));
+      await page.click('[data-schedule="nightly-review"] button[aria-label="Delete nightly-review"]');
+      await page.until('the list gone again', () => !document.querySelector('[data-schedules]'));
+      await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.key('z', { meta: true });
+      await page.until('the schedule back by ⌘Z', () => !!document.querySelector('[data-schedule="nightly-review"]'));
     },
   },
   {
