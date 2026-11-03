@@ -105,7 +105,7 @@ function Folder({ node, ...picks }: Picks & { node: Dir }) {
                 onSelect(f.name);
               }}
             >
-              <span className={styles.name}>{f.name.split('/').at(-1)}</span>
+              <span className={styles.name} data-deleted={f.type === 'deleted' || undefined}>{f.name.split('/').at(-1)}</span>
               {add > 0 && <span className={styles.add}>+{add}</span>}
               {del > 0 && <span className={styles.del}>−{del}</span>}
               <span className={styles.status} data-type={f.type} data-letter={letter(f)} title={typeHints[letter(f)]}>{letter(f)}</span>

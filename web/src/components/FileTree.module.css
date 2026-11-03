@@ -120,6 +120,7 @@
   }
 
   .name { overflow: hidden; text-overflow: ellipsis; margin-right: auto; }
+  .name[data-deleted] { text-decoration: line-through; }
   .add, .del { flex: none; font-variant-numeric: tabular-nums; }
   .add { color: #87d394; }
   .del { color: #ff9a8c; }
