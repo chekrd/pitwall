@@ -6957,15 +6957,17 @@ export const checks: Check[] = [
     },
   },
   {
-    name: "A1 Ask on the side: a question while Claude works is answered by a copy of the conversation, showing what it reads, and the task's Claude gets nothing; a follow-up goes to the same copy, Keep as a draft puts the answer under Later, and Close forgets it",
+    name: "A1 Ask on the side, the other button of the Later box: a question while Claude works is answered by a copy of the conversation, showing what it reads, and the task's Claude gets nothing; a follow-up goes to the same copy, Keep as a draft puts the answer under Later, and Close forgets it",
     async run({ page, mock, shot }) {
       type Snap = { sessions: { id: string; answered: unknown; parked: { text: string }[]; asides: { fork: string | null; state: string; turns: { question: string; answer: string | null }[] }[] }[] };
       const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', answered: null, activity: { step: 'Bash: pnpm test', since: Date.now() } } });
       await openSheetOf(page, mock, 's-invoice');
-      await page.click('#task-sheet [data-asides] textarea[aria-label="A question on the side"]');
+      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
       await page.type('Why integer cents?');
-      await page.key('Enter');
+      await page.click('#task-sheet [data-later] button', 'Ask on the side');
+      await page.until('the box emptied', () => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-later] textarea[aria-label="A message for later"]')!.value === '');
+      assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length), 0, 'asking keeps no draft');
       await page.until('the copy reading', () => document.querySelector('#task-sheet [data-aside][data-state="thinking"]')?.textContent?.includes('Read: src/invoice/LineItem.ts'));
       await page.until('the answer', () => !!document.querySelector('#task-sheet [data-aside][data-state="done"] strong'));
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-aside] p')!.textContent), 'Why integer cents?');

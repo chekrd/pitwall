@@ -3,6 +3,7 @@ import { sessionAction } from '../api.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
 import type { Parked, Session } from '../types.ts';
+import { AsideList, askAside, canAsk, MAX_ASIDES } from './Asides.tsx';
 import styles from './Later.module.css';
 import { toast } from './Toasts.tsx';
 
@@ -87,27 +88,31 @@ function Item({ session, draft, name, canSend }: { session: Session; draft: Park
   );
 }
 
-// Messages written while Claude works, kept on the task until you send them. Nothing here reaches Claude by itself,
-// except a draft set to go when its turn ends.
+// One box for what comes to mind while Claude works: kept as a draft for the task's Claude, sent when you decide or when
+// its turn ends, or asked on the side of a copy of the conversation that the task's Claude never sees.
 export function Later({ session, name }: { session: Session; name: string }) {
   const [text, setText] = useState('');
   const [auto, setAuto] = useState(false);
   const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.drafts ?? [] : [])));
   const drafts = session.parked.filter((d) => !sending.has(d.id));
   const canSend = session.status !== 'exited' && !session.archived;
-  const add = () => {
+  const take = (send: (t: string) => Promise<boolean>) => {
     const t = text.trim();
     if (!t) return;
     setText('');
-    void park(session, 'park', { text: t, auto }).then((ok) => {
+    void send(t).then((ok) => {
       if (!ok) setText((now) => now || t);
     });
   };
+  const add = () => take((t) => park(session, 'park', { text: t, auto }));
+  const ask = () => take((t) => askAside(session, t));
+  const asking = canAsk(session);
   const armed = drafts.filter((d) => d.auto).length;
   return (
     <section className={styles.later} data-later data-ux-section="later">
-      <h3 className={styles.label} title="Messages you write now and send to Claude when you decide; they do not reach Claude until then">
+      <h3 className={styles.label} title="Drafts reach Claude only when you send them; a question asked on the side is answered by a copy of the conversation and never reaches it">
         Later {drafts.length > 0 && <span>· {drafts.length} {drafts.length === 1 ? 'draft' : 'drafts'}</span>}
+        {session.asides.length > 0 && <span>· {session.asides.length} asked on the side</span>}
       </h3>
       {drafts.length > 0 && (
         <ul className={styles.list}>
@@ -121,12 +126,13 @@ export function Later({ session, name }: { session: Session; name: string }) {
           <button type="button" disabled={!canSend} onClick={() => sendNow(session, drafts, name)}>Send all now, as one message</button>
         </div>
       )}
+      <AsideList session={session} />
       {!session.archived && (
         <div className={styles.add}>
           <textarea
             className={styles.field}
             aria-label="A message for later"
-            placeholder="A message for later; Claude sees it only when you send it…"
+            placeholder="A message for later, or a question to ask on the side; Claude's work goes on…"
             value={text}
             onChange={(e) => setText(e.currentTarget.value)}
             onKeyDown={onEnter(add)}
@@ -137,6 +143,15 @@ export function Later({ session, name }: { session: Session; name: string }) {
               Send when it's my turn
             </label>
             <span className={styles.spacer} />
+            <button
+              type="button"
+              disabled={!text.trim() || !asking}
+              title={asking ? 'A copy of the conversation answers it, reading but changing nothing; the task\'s Claude never sees it'
+                : session.asides.length >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}` : 'Claude has no conversation to copy yet'}
+              onClick={ask}
+            >
+              Ask on the side
+            </button>
             <button type="button" disabled={!text.trim()} onClick={add}>Keep for later <kbd>↵</kbd></button>
           </div>
         </div>

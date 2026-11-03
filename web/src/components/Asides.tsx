@@ -11,13 +11,19 @@ const act = (s: Session, action: 'ask-aside' | 'stop-aside' | 'close-aside' | 'p
     return false;
   });
 
-function Ask({ session, aside, label, placeholder }: { session: Session; aside: string | null; label: string; placeholder: string }) {
+export const MAX_ASIDES = 10;
+
+export const canAsk = (s: Session) => !s.archived && s.lastTurn !== null && s.asides.length < MAX_ASIDES;
+
+export const askAside = (s: Session, text: string, aside: string | null = null) => act(s, 'ask-aside', { text, aside });
+
+function FollowUp({ session, aside, label, placeholder }: { session: Session; aside: string | null; label: string; placeholder: string }) {
   const [text, setText] = useState('');
   const ask = () => {
     const t = text.trim();
     if (!t) return;
     setText('');
-    void act(session, 'ask-aside', { text: t, aside }).then((ok) => {
+    void askAside(session, t, aside).then((ok) => {
       if (!ok) setText((now) => now || t);
     });
   };
@@ -57,7 +63,7 @@ function One({ session, aside }: { session: Session; aside: Aside }) {
           <button type="button" onClick={() => void act(session, 'stop-aside', { aside: aside.id })}>Stop</button>
         </div>
       ) : (
-        <Ask session={session} aside={aside.id} label="A follow-up question" placeholder="A follow-up, in the same copy…" />
+        <FollowUp session={session} aside={aside.id} label="A follow-up question" placeholder="A follow-up, in the same copy…" />
       )}
       <div className={styles.actions}>
         {last.answer && aside.state !== 'thinking' && (
@@ -72,22 +78,11 @@ function One({ session, aside }: { session: Session; aside: Aside }) {
 
 // Questions answered by a copy of the task's conversation, made when you ask: it knows all the task knows up to then,
 // reads but changes nothing, and the task's Claude never sees the question.
-export function Asides({ session }: { session: Session }) {
-  const canAsk = !session.archived && session.lastTurn !== null;
-  if (!canAsk && !session.asides.length) return null;
+export function AsideList({ session }: { session: Session }) {
+  if (!session.asides.length) return null;
   return (
-    <section className={styles.asides} data-asides data-ux-section="asides">
-      <h3 className={styles.label} title="Asked in a copy of the conversation, which reads but changes nothing; the task's Claude never sees it">
-        Ask on the side {session.asides.length > 0 && <span>· {session.asides.length}</span>}
-      </h3>
-      {session.asides.length > 0 && (
-        <ul className={styles.list}>
-          {session.asides.map((a) => <One key={a.id} session={session} aside={a} />)}
-        </ul>
-      )}
-      {canAsk && session.asides.length < 10 && (
-        <Ask session={session} aside={null} label="A question on the side" placeholder="A question for a copy of this conversation; Claude's work goes on…" />
-      )}
-    </section>
+    <ul className={styles.list} data-asides aria-label="Asked on the side">
+      {session.asides.map((a) => <One key={a.id} session={session} aside={a} />)}
+    </ul>
   );
 }
