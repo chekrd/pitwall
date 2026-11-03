@@ -3,7 +3,7 @@ import { api } from '../api.ts';
 import { SHEET_DIALOG } from '../keys.ts';
 import { closeSheet, openerOfTask, showTab, type Route, type Tab } from '../router.ts';
 import { useStore } from '../store.ts';
-import type { PrFlow, RepoView, Session, Upstream } from '../types.ts';
+import type { RepoView, Session, Upstream } from '../types.ts';
 import { useBusy } from '../sends.ts';
 import { locate, openSubtasks, sessionLabel, shownOf } from '../util.ts';
 import { Artifacts } from './Artifacts.tsx';
@@ -105,7 +105,7 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
             </span>
           )}
           <PrChips prs={session.prs} status={session.status} />
-          {session.repoId !== null && <UpstreamLine session={session} diffOpen={current === 'diff'} />}
+          {session.repoId !== null && <UpstreamMark session={session} diffOpen={current === 'diff'} />}
         </div>
         <nav className={styles.tabs} role="tablist" aria-label="Task">
           {tabs.map((t) => (
@@ -149,15 +149,8 @@ const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 // A pull request's own list of changed files, on GitHub and Azure DevOps.
 const prFilesUrl = (url: string) => (url.includes('/_git/') ? `${url}?_a=files` : `${url}/files`);
 
-function upstreamText(up: Upstream, localFiles: number | undefined, pr: PrFlow | undefined) {
-  if (up.state === 'behind') return `${up.upstream} has ${plural(up.behind, 'more commit')} · ${plural(up.behindFiles, 'file')}`;
-  if (up.state === 'ahead') return `${plural(up.ahead, 'commit')} not on ${up.upstream}`;
-  const here = localFiles === undefined ? '' : `, this checkout ${localFiles}`;
-  return `${up.upstream} was rewritten: ${pr ? 'the PR' : 'it'} has ${plural(up.branchFiles ?? 0, 'file')}${here}`;
-}
-
-// The branch against the origin branch it tracks, read when the page opens and again when the Diff does.
-function UpstreamLine({ session, diffOpen }: { session: Session; diffOpen: boolean }) {
+// Marks commits only the origin branch has, as when someone else pushed or rewrote it; read when the page opens and again when the Diff does.
+function UpstreamMark({ session, diffOpen }: { session: Session; diffOpen: boolean }) {
   const [up, setUp] = useState<Upstream | null>(null);
   useEffect(() => {
     if (!diffOpen && up) return;
@@ -168,19 +161,19 @@ function UpstreamLine({ session, diffOpen }: { session: Session; diffOpen: boole
       live = false;
     };
   }, [session.worktree, diffOpen]);
-  if (!up || up.state === 'same') return null;
+  if (!up?.behind) return null;
   const pr = session.prs.findLast((p) => p.url && p.repo === null);
-  const stale = up.fetchFailed ? ' · as of the last fetch' : '';
+  const local = session.diffstat ? `, this checkout ${plural(session.diffstat.files, 'file')}` : '';
   const explain = [
     up.state === 'diverged'
-      ? `This checkout and ${up.upstream} replace each other's commits (${up.ahead} here, ${up.behind} there), as after a force-push. The Diff shows this checkout.`
-      : `This branch against ${up.upstream}, which it tracks.`,
+      ? `${up.upstream} was rewritten, as by a force-push: this checkout's ${plural(up.ahead, 'commit')} are no longer on it. ${pr ? 'The PR' : 'It'} has ${plural(up.branchFiles ?? 0, 'file')}${local}; the Diff shows this checkout.`
+      : `${up.upstream} has ${plural(up.behind, 'commit')} this checkout does not, changing ${plural(up.behindFiles, 'file')}.`,
     up.fetchFailed && `Fetching ${up.upstream} failed, so this is as of the last fetch.`,
+    pr?.url && 'Opens the PR\'s changed files.',
   ].filter(Boolean).join('\n');
-  return (
-    <span className={styles.upstream} data-upstream={up.state} data-explain={explain}>
-      {upstreamText(up, session.diffstat?.files, pr)}{stale}
-      {up.state === 'diverged' && pr?.url && <> · <a href={prFilesUrl(pr.url)} target="_blank" rel="noreferrer" data-ux="pr-files">PR's diff</a></>}
-    </span>
-  );
+  const marks = { className: styles.upstream, 'data-upstream': up.state, 'data-explain': explain, 'aria-label': `${up.upstream} has changes this checkout does not` };
+  const text = <>↓ origin</>;
+  return pr?.url
+    ? <a {...marks} href={prFilesUrl(pr.url)} target="_blank" rel="noreferrer" data-ux="pr-files">{text}</a>
+    : <span {...marks}>{text}</span>;
 }

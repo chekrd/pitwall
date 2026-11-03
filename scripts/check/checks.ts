@@ -1580,7 +1580,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.5u the task page names how the branch stands against its upstream: nothing with no upstream or the same commits, the commits not pushed, the ones only origin has, and after a rewrite of origin the files the PR has against this checkout with a link to the PR\'s files; the Diff tab reads it again',
+    name: 'P4.5u the task page marks commits only origin has: no mark with no upstream, the same commits or only commits not pushed; a small mark explains the commits and files origin has, and after a rewrite of origin the files the PR has against this checkout, linking to the PR\'s files; the Diff tab reads it again',
     async run({ page, mock, shot }) {
       const worktree = '~/code/worktrees/guest-cart-merge/storefront';
       const up = (state: string, more: Record<string, unknown> = {}) => mock.post('/mock/upstream', {
@@ -1589,7 +1589,7 @@ export const checks: Check[] = [
       const line = (state: string | null) => {
         const el = document.querySelector('#task-sheet [data-upstream]');
         if (state && el?.getAttribute('data-upstream') !== state) return null;
-        return el && { state: el.getAttribute('data-upstream'), text: el.textContent, href: el.querySelector('a')?.getAttribute('href') ?? null };
+        return el && { state: el.getAttribute('data-upstream'), text: el.textContent, explain: el.getAttribute('data-explain'), href: el.getAttribute('href') };
       };
       const reads = async () => (await mock.log()).filter((e) => e.path === '/api/upstream' && e.status !== null).length;
       const open = async () => {
@@ -1608,13 +1608,13 @@ export const checks: Check[] = [
 
       await up('ahead', { ahead: 2 });
       await open();
-      assert.deepEqual(await page.until('the ahead line', line, 'ahead'), { state: 'ahead', text: '2 commits not on origin/guest-cart-merge', href: null });
+      assert.equal(await page.eval(line, null), null, 'a mark with only commits not pushed');
 
       await up('behind', { behind: 1, behindFiles: 3 });
       await mock.get('/mock/log?clear=1');
       await page.key('3');
       assert.deepEqual(await page.until('the behind line on opening the Diff', line, 'behind'), {
-        state: 'behind', text: 'origin/guest-cart-merge has 1 more commit · 3 files', href: null,
+        state: 'behind', text: '↓ origin', explain: 'origin/guest-cart-merge has 1 commit this checkout does not, changing 3 files.', href: null,
       });
       assert.equal(await reads(), 1, 'opening the Diff reads the upstream once');
 
@@ -1624,7 +1624,8 @@ export const checks: Check[] = [
       const files = (await mock.get('/api/state')).sessions.find((s: { id: string }) => s.id === 's-cart').diffstat.files;
       assert.deepEqual(await page.until('the diverged line', line, 'diverged'), {
         state: 'diverged',
-        text: `origin/guest-cart-merge was rewritten: the PR has 84 files, this checkout ${files} · as of the last fetch · PR's diff`,
+        text: '↓ origin',
+        explain: `origin/guest-cart-merge was rewritten, as by a force-push: this checkout's 6 commits are no longer on it. The PR has 84 files, this checkout ${files} files; the Diff shows this checkout.\nFetching origin/guest-cart-merge failed, so this is as of the last fetch.\nOpens the PR's changed files.`,
         href: 'https://dev.azure.com/acme/shop/_git/storefront/pullrequest/23914?_a=files',
       });
       await shot('sheet-upstream-diverged');
