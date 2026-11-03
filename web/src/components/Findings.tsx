@@ -11,7 +11,7 @@ import { Markdown } from './Markdown.tsx';
 import { StateMark } from './StateMark.tsx';
 import { labelOf, STATE_LABELS } from './Status.tsx';
 import { resolveSubtask } from './SessionMenu.tsx';
-import { toast } from './Toasts.tsx';
+import { toast, UNDO_KBD } from './Toasts.tsx';
 
 type Response = SubtaskKind | 'reject' | 'solve' | 'reopen';
 
@@ -72,6 +72,11 @@ interface ItemProps {
 
 type Settled = ReturnType<typeof settledAs>;
 
+const MARKED = { reject: 'Rejected', solve: 'Solved' } as const;
+
+const reopen = (session: Session, basis: string, index: number) =>
+  api('POST', `/api/sessions/${session.id}/finding`, { basis, finding: index, kind: 'reopen', text: '' }).catch((err: ApiError) => toast('error', `#${index + 1}: ${err.message}`));
+
 function Item({ session, basis, index, finding, subtasks, settled, compact }: ItemProps) {
   const [expanded, setExpanded] = useState(!compact && index === 0);
   const [note, setNote] = useState('');
@@ -87,6 +92,9 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
     try {
       const { id } = await api<{ id: string | null }>('POST', `/api/sessions/${session.id}/finding`, { basis, finding: index, kind, text: note });
       setNote('');
+      if (kind === 'reject' || kind === 'solve') {
+        toast('undo', `${MARKED[kind]} #${n} ${finding.title}`, { session: session.id, action: { label: 'Undo', kbd: UNDO_KBD, run: () => void reopen(session, basis, index) } });
+      }
       if (id) toast('info', `Started #${n} ${SUBTASK_LABELS[kind as SubtaskKind]}`, { action: { label: 'Open', run: () => openSheet(id) } });
     } catch (err) {
       toast('error', `#${n}: ${(err as ApiError).message}`);

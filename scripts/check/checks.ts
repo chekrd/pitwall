@@ -5681,7 +5681,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P8.findings-solve Mark solved on a finding settles its open subtasks, out of the queue too, or marks one without subtasks solved, which Reopen undoes; nothing starts',
+    name: 'P8.findings-solve Mark solved on a finding settles its open subtasks, out of the queue too, or marks one without subtasks solved, which the toast\'s Undo, ⌘Z and Reopen undo; nothing starts',
     scenario: 'findings',
     async run({ page, mock, shot }) {
       const state = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-finding]')].map((f) => ({
@@ -5714,9 +5714,20 @@ export const checks: Check[] = [
       ]);
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-settled-count]')!.textContent), '· all 3 settled');
 
+      const reopened = '#task-sheet [data-finding="3"]:not([data-settled-findings] *) [data-response="solve"]';
+      const toastKey = () => [...document.querySelectorAll('[data-toast][data-kind="undo"]')].find((t) => t.textContent!.startsWith('Solved #3 '))?.querySelector('kbd')?.textContent ?? null;
+      assert.equal(await page.until('the Undo toast', toastKey), '⌘Z');
+      await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.key('z', { meta: true });
+      await page.until('#3 open again by ⌘Z', (sel: string) => !!document.querySelector(sel), reopened);
+      assert.equal(await page.eval(toastKey), null, 'the toast stayed');
+      await logged(mock, 'the reopen', (e) => e.action === 'finding' && e.body.kind === 'reopen');
+
+      await page.click('#task-sheet [data-finding="3"] [data-response="solve"]');
+      await page.until('#3 marked solved again', () => !!document.querySelector('[data-settled-findings] [data-finding="3"]'));
       await page.eval(() => { document.querySelector<HTMLDetailsElement>('#task-sheet [data-settled-findings]')!.open = true; });
       await page.click('#task-sheet [data-finding="3"] [class*="rejected"] button');
-      await page.until('#3 open again', () => !!document.querySelector('#task-sheet [data-finding="3"]:not([data-settled-findings] *) [data-response="solve"]'));
+      await page.until('#3 open again', (sel) => !!document.querySelector(sel), reopened);
     },
   },
   {
@@ -5766,7 +5777,7 @@ export const checks: Check[] = [
       await page.click('#task-sheet header button[aria-label="Session actions"]');
       assert.deepEqual(await page.until('the subtask menu', menuItems), ['Terminal', 'Open in Finder', 'Open in VS Code', 'Quit Claude', 'Mark solved', 'Drop']);
       await page.key('Escape');
-      await page.until('the menu to close', () => !document.querySelector(':popover-open'));
+      await page.until('the menu to close', () => !document.querySelector(':popover-open:not([popover="manual"])'));
       const text = (sel: string) => page.eval((q) => document.querySelector<HTMLElement>(q)!.innerText.replace(/\s+/g, ' ').trim(), sel);
       assert.equal(await text('#task-sheet header [data-parent]'), 'Subtask of Review the lazy reviews branch');
       const origin = await text('#task-sheet [aria-label="Subtask of"]');

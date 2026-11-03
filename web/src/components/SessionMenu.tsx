@@ -9,7 +9,7 @@ import { tilde } from '../util.ts';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { Icon } from './Icon.tsx';
 import styles from './SessionMenu.module.css';
-import { toast } from './Toasts.tsx';
+import { toast, UNDO_KBD } from './Toasts.tsx';
 
 const TYPED_MS = 2000;
 
@@ -53,7 +53,7 @@ export function resolveSubtask(session: Session, state: Resolution['state'] | nu
   if (state) queue.leave(id, change);
   else change();
   sessionAction(id, 'resolve', { state }).then(() => {
-    if (state) toast('undo', `${state === 'solved' ? 'Solved' : 'Dropped'} ${name}`, { session: id, action: { label: 'Undo', run: () => resolveSubtask(session, null, name) } });
+    if (state) toast('undo', `${state === 'solved' ? 'Solved' : 'Dropped'} ${name}`, { session: id, action: { label: 'Undo', kbd: UNDO_KBD, run: () => resolveSubtask(session, null, name) } });
   }, failed(id));
 }
 

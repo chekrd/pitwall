@@ -269,9 +269,10 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
         await mouse('mousePressed', x, y, count);
         await mouse('mouseReleased', x, y, count);
       },
-      async key(key: string, { shift = false } = {}) {
+      async key(key: string, { shift = false, meta = false } = {}) {
         const k = KEYS[key] ?? { code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0), text: key };
-        const base = { key, code: k.code, windowsVirtualKeyCode: k.keyCode, ...(shift && { modifiers: 8 }) };
+        const modifiers = (shift ? 8 : 0) | (meta ? 4 : 0);
+        const base = { key, code: k.code, windowsVirtualKeyCode: k.keyCode, ...(modifiers && { modifiers }) };
         await cdp('Input.dispatchKeyEvent', { type: k.text ? 'keyDown' : 'rawKeyDown', ...base, ...(k.text && { text: k.text, unmodifiedText: k.text }) });
         await cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
       },

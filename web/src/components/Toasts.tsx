@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { SHEET_DIALOG } from '../keys.ts';
 import { useNow } from '../now.ts';
+import { isEditable } from '../useKeys.ts';
 import { scrubName, track } from '../ux.ts';
 import { Icon } from './Icon.tsx';
 import styles from './Toasts.module.css';
@@ -24,6 +26,8 @@ interface Toast {
   until?: number;
   at: number;
 }
+
+export const UNDO_KBD = '⌘Z';
 
 const LASTS_MS: Record<ToastKind, number> = { info: 4200, error: 8000, undo: 8000 };
 const SHOWN = 3;
@@ -53,6 +57,22 @@ export function toast(kind: ToastKind, message: string, o: { session?: string; a
 function Countdown({ until, from }: { until: number; from: number }) {
   const left = Math.max(0, Math.ceil((until - Math.max(useNow(), from)) / 1000));
   return <span className={styles.count}>· {left} s</span>;
+}
+
+function run(t: Toast) {
+  dismissToast(t.id);
+  t.action!.run();
+}
+
+// ⌘Z (Ctrl+Z too) takes back the newest change whose toast offers it, unless a field has focus, where it undoes
+// typing, or a dialog other than the task page is open.
+function onUndoKey(e: KeyboardEvent) {
+  if (e.key.toLowerCase() !== 'z' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.defaultPrevented) return;
+  if (isEditable(e.target) || document.querySelector(`dialog:modal:not(#${SHEET_DIALOG})`)) return;
+  const t = toasts.findLast((x) => x.action?.kbd === UNDO_KBD);
+  if (!t) return;
+  e.preventDefault();
+  run(t);
 }
 
 const subscribe = (fn: () => void) => {
@@ -91,9 +111,11 @@ export function Toasts() {
     const onRejection = (e: PromiseRejectionEvent) => failed(e.reason);
     addEventListener('error', onError);
     addEventListener('unhandledrejection', onRejection);
+    addEventListener('keydown', onUndoKey);
     return () => {
       removeEventListener('error', onError);
       removeEventListener('unhandledrejection', onRejection);
+      removeEventListener('keydown', onUndoKey);
     };
   }, []);
 
@@ -116,10 +138,7 @@ export function Toasts() {
             <button
               type="button"
               className={styles.action}
-              onClick={() => {
-                dismissToast(t.id);
-                t.action!.run();
-              }}
+              onClick={() => run(t)}
             >
               {t.action.label}
               {t.action.kbd && <kbd>{t.action.kbd}</kbd>}
