@@ -249,6 +249,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <FocusButton session={session} />
             </section>
           )}
+          {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} />}
           {(message || (writing && !archived)) && (
             <div
               data-ux-section="message box"
@@ -272,6 +273,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               />
             </div>
           )}
+          {learnings.length > 0 && (
+            <section className={styles.know} data-ux-section="worth knowing">
+              <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>
+              {learnings.map((k) => <p key={k}>{k}</p>)}
+            </section>
+          )}
           <section className={styles.status} data-ux-section="summary">
             <h3 className={styles.label} title="A short summary of the session, rewritten by a model after each of Claude's messages">
               Session summary {summary && <span>· updated {ago(summary.at)}</span>}
@@ -279,13 +286,6 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             <p>{summary?.text || 'No summary yet; it is written once Claude replies.'}</p>
             {!!summary?.progress?.length && <ul>{summary.progress.map((k) => <li key={k}>{k}</li>)}</ul>}
           </section>
-          {learnings.length > 0 && (
-            <section className={styles.know} data-ux-section="worth knowing">
-              <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>
-              {learnings.map((k) => <p key={k}>{k}</p>)}
-            </section>
-          )}
-          {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} />}
         </div>
         <aside className={styles.aside}>
           <section aria-label="Facts" data-ux-section="facts">
