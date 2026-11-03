@@ -8,6 +8,8 @@ export interface HeadlessOptions {
   args: string[];
   timeoutMs: number;
   signal?: AbortSignal;
+  // Keeps the run's session, which a later run can resume.
+  persist?: boolean;
   onEvent?: (event: Record<string, any>) => void;
 }
 
@@ -15,7 +17,7 @@ export interface HeadlessOptions {
 export function headless(prompt: string, opts: HeadlessOptions): Promise<Record<string, any>> {
   const format = opts.onEvent ? ['--output-format', 'stream-json', '--verbose'] : ['--output-format', 'json'];
   return new Promise((resolve, reject) => {
-    const child = spawn(CLAUDE, ['-p', ...format, '--no-session-persistence', ...opts.args], {
+    const child = spawn(CLAUDE, ['-p', ...format, ...(opts.persist ? [] : ['--no-session-persistence']), ...opts.args], {
       cwd: opts.cwd,
       env: loginEnv,
       signal: opts.signal,

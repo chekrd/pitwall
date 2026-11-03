@@ -18,6 +18,7 @@ import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
 import { addParked, editParked, removeParked, turnEnds } from '../../server/parked.ts';
+import { asking } from '../../server/asides.ts';
 import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
@@ -304,6 +305,22 @@ function sendDueDrafts() {
   }
 }
 
+// As the server's asides, with a fork that answers after a moment instead of a claude -p run.
+let forks = 0;
+const asides = asking({
+  get: find,
+  save: (id, list) => update(id, { asides: list }),
+  run: (_s, prompt, fork, signal, activity) => new Promise((done, fail) => {
+    const question = prompt.split('\n').at(-1)!.replace(/^Question: /, '');
+    const scenario = state;
+    later(300, () => activity('Read: src/invoice/LineItem.ts'));
+    later(1200, () => (scenario !== state ? fail(new Error('the mock loaded another scenario meanwhile'))
+      : done({ fork: fork ?? `fork-${++forks}`, answer: `On the side: **${question}** is answered from the conversation so far.` })));
+    signal.addEventListener('abort', () => fail(new Error('stopped')));
+  }),
+  discard: async () => {},
+});
+
 async function answerWithDrafts(s: Session, body: any) {
   await answers.answer(s.id, body);
   const now = find(s.id);
@@ -418,6 +435,9 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
   park: (s, body) => update(s.id, { parked: addParked(s.parked, body) }),
   'edit-park': (s, body) => update(s.id, { parked: editParked(s.parked, body) }),
   unpark: (s, body) => update(s.id, { parked: removeParked(s.parked, [body.draft]) }),
+  'ask-aside': (s, body) => ({ id: asides.ask(s.id, body) }),
+  'stop-aside': (s, body) => asides.stop(s.id, body.aside),
+  'close-aside': (s, body) => asides.close(s.id, body.aside),
   dismiss: (s, body) => closeQuestion({ get: find, update }, s.id, body.key),
   rename: (s, body) => rename(s, body.title),
   'answer-menu': (s, body) => (args.legacy ? legacyAnswerMenu(s, body) : answers.answerMenu(s.id, body)),
@@ -541,7 +561,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
     firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, rank: null, rankReason: null, priority: null, diffstat: null,
     lastMessage: null, lastPrompt: null, lastTurn: null, waitingFor: null, dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null,
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null,
-    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, parked: [], archived: false, createdAt: now, updatedAt: now,
+    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, parked: [], asides: [], archived: false, createdAt: now, updatedAt: now,
   });
   push();
   return id;

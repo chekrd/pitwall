@@ -82,6 +82,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN parked TEXT');
   },
+  // 4: questions asked on the side, each answered by a fork of the task's conversation.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN asides TEXT');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

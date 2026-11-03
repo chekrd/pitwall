@@ -6956,4 +6956,36 @@ export const checks: Check[] = [
       assert.deepEqual((posted.body as { drafts: string[] }).drafts.length, 1);
     },
   },
+  {
+    name: "A1 Ask on the side: a question while Claude works is answered by a copy of the conversation, showing what it reads, and the task's Claude gets nothing; a follow-up goes to the same copy, Keep as a draft puts the answer under Later, and Close forgets it",
+    async run({ page, mock, shot }) {
+      type Snap = { sessions: { id: string; answered: unknown; parked: { text: string }[]; asides: { fork: string | null; state: string; turns: { question: string; answer: string | null }[] }[] }[] };
+      const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', answered: null, activity: { step: 'Bash: pnpm test', since: Date.now() } } });
+      await openSheetOf(page, mock, 's-invoice');
+      await page.click('#task-sheet [data-asides] textarea[aria-label="A question on the side"]');
+      await page.type('Why integer cents?');
+      await page.key('Enter');
+      await page.until('the copy reading', () => document.querySelector('#task-sheet [data-aside][data-state="thinking"]')?.textContent?.includes('Read: src/invoice/LineItem.ts'));
+      await page.until('the answer', () => !!document.querySelector('#task-sheet [data-aside][data-state="done"] strong'));
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-aside] p')!.textContent), 'Why integer cents?');
+      await shot('aside-answered');
+
+      await page.click('#task-sheet [data-aside] textarea[aria-label="A follow-up question"]');
+      await page.type('And for refunds?');
+      await page.key('Enter');
+      await page.until('the follow-up answered', () => document.querySelectorAll('#task-sheet [data-aside][data-state="done"] strong').length === 2);
+      const one = (await invoice()).asides[0];
+      assert.match(one.fork ?? '', /^fork-\d+$/);
+      assert.deepEqual(one.turns.map((t) => t.question), ['Why integer cents?', 'And for refunds?'], 'the follow-up went to the same copy');
+
+      await page.click('#task-sheet [data-aside] button', 'Keep as a draft');
+      await page.until('the answer under Later', () => document.querySelector('#task-sheet [data-later] li[data-parked] p')?.textContent?.startsWith('On the side: **And for refunds?**'));
+      await page.click('#task-sheet [data-aside] button', 'Close');
+      await page.until('the aside gone', () => !document.querySelector('#task-sheet [data-aside]'));
+      const after = await invoice();
+      assert.deepEqual([after.asides, after.answered], [[], null], "nothing reached the task's Claude");
+      assert.equal((await mock.log()).filter((e) => e.sessionId === 's-invoice' && e.action === 'answer').length, 0);
+    },
+  },
 ];

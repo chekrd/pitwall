@@ -14,6 +14,7 @@ import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { Findings, Subtasks, SubtaskOf } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
+import { Asides } from './Asides.tsx';
 import { Later } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { MenuBody } from './MenuBody.tsx';
@@ -313,6 +314,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </div>
           )}
           {(!archived || session.parked.length > 0) && <Later session={session} name={name} />}
+          <Asides session={session} />
           {learnings.length > 0 && (
             <section className={styles.know} data-ux-section="worth knowing">
               <h3 className={styles.label} title="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>

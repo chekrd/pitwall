@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
 import { answering, liveTty } from './answering.ts';
 import { listCommands } from './commands.ts';
-import { alive, conversationMeta, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, transcriptFile, type ConversationLog } from './conversations.ts';
+import { alive, conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, transcriptFile, type ConversationLog } from './conversations.ts';
 import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { checkDecision } from './decision.ts';
@@ -15,10 +15,11 @@ import { handOver, taskOf } from './handover.ts';
 import { sessions, type Parent, type Session } from './db.ts';
 import { quote } from './env.ts';
 import { isClean, listBranches, switchBranch } from './git.ts';
-import { CLAUDE } from './headless.ts';
+import { CLAUDE, headless } from './headless.ts';
+import { asking } from './asides.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
-import { scheduleRerank, trackDecisions } from './priority.ts';
+import { clip, scheduleRerank, trackDecisions } from './priority.ts';
 import { notify, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
 import { sync } from './ingest.ts';
@@ -208,6 +209,58 @@ export function unpark(id: string, draft: unknown) {
   sessions.update(id, { parked: removeParked(must(id).parked, [draft]) });
   notify();
 }
+
+const ASIDE_TOOLS = 'Read,Grep,Glob,WebFetch,WebSearch';
+const ASIDE_MS = 15 * 60_000;
+
+// A fork reads the task's files and the web on the task's own model, without its MCP servers or hooks, which could
+// act on the task. A first question that fails after forking leaves no fork behind.
+const asides = asking({
+  get: sessions.get,
+  save: (id, list) => {
+    sessions.update(id, { asides: list });
+    notify();
+  },
+  run: async (s, prompt, fork, signal, activity) => {
+    let started: string | null = null;
+    try {
+      const out = await headless(prompt, {
+        cwd: s.cwd,
+        timeoutMs: ASIDE_MS,
+        signal,
+        persist: true,
+        onEvent: (e) => {
+          if (e.type === 'system' && typeof e.session_id === 'string') started = e.session_id;
+          const tool = e.type === 'assistant' && e.message?.content?.findLast?.((b: any) => b.type === 'tool_use');
+          if (tool) activity(clip(describeTool(tool).replaceAll(s.worktree, '.'), 140));
+        },
+        args: [
+          ...folderArgs(s.cwd), '--resume', fork ?? s.conversation, ...(fork ? [] : ['--fork-session']),
+          ...(s.model ? ['--model', s.model] : []), ...(s.effort ? ['--effort', s.effort] : []),
+          '--settings', JSON.stringify({ disableAllHooks: true }), '--strict-mcp-config', '--tools', ASIDE_TOOLS, '--allowedTools', ASIDE_TOOLS,
+        ],
+      });
+      const answer = String(out.result ?? '').trim();
+      if (out.is_error || !answer) throw new Error(answer || 'the fork gave no answer');
+      return { fork: String(out.session_id ?? started), answer };
+    } catch (err) {
+      if (!fork && started) await discardFork(s, started).catch(() => {});
+      throw err;
+    }
+  },
+  discard: (s, fork) => discardFork(s, fork),
+});
+
+async function discardFork(s: Session, fork: string) {
+  const file = await guessedTranscriptFile(s.cwd, fork);
+  await rm(file, { force: true });
+  await rm(file.replace(/\.jsonl$/, ''), { recursive: true, force: true });
+}
+
+export const askAside = (id: string, body: { text?: unknown; aside?: unknown }) => asides.ask(id, body);
+export const stopAside = (id: string, aside: unknown) => asides.stop(id, aside);
+export const closeAside = (id: string, aside: unknown) => asides.close(id, aside);
+export const settleAsides = () => asides.settle(sessions.all());
 
 const ends = turnEnds();
 const autoSending = new Set<string>();

@@ -335,6 +335,9 @@ async function act(c: Context, id: string, action: string, body: any) {
     case 'park': S.park(id, body); break;
     case 'edit-park': S.editPark(id, body); break;
     case 'unpark': S.unpark(id, body.draft); break;
+    case 'ask-aside': return c.json({ id: S.askAside(id, body) });
+    case 'stop-aside': S.stopAside(id, body.aside); break;
+    case 'close-aside': await S.closeAside(id, body.aside); break;
     default: return c.text('unknown action', 404);
   }
   return c.body(null, 204);
@@ -461,6 +464,7 @@ app.get('*', async (c) => {
 
 await refreshWorkspace({ scan: true });
 await sync();
+S.settleAsides();
 setInterval(() => void sync().then(() => {
   S.pauseStep();
   S.sendDueDrafts();

@@ -141,6 +141,24 @@ export interface Parked {
   at: number;
 }
 
+// A question asked on the side: a fork of the task's conversation answers it, and the task's Claude never sees it.
+// `fork` is the fork's session id once its first answer came back; follow-ups resume it.
+export interface AsideTurn {
+  question: string;
+  answer: string | null;
+  error: string | null;
+  at: number;
+}
+
+export interface Aside {
+  id: string;
+  fork: string | null;
+  state: 'thinking' | 'done' | 'failed';
+  activity: string | null;
+  turns: AsideTurn[];
+  at: number;
+}
+
 export type SubtaskKind = 'accept' | 'elaborate' | 'second-look' | 'reply';
 
 // A subtask's task and the finding it was started from.
@@ -223,6 +241,7 @@ export interface Session {
   turnError: TurnError | null;
   scheduled: Scheduled | null;
   parked: Parked[];
+  asides: Aside[];
   archived: boolean;
   createdAt: number;
   updatedAt: number;
@@ -282,6 +301,7 @@ const toSession = (r: Row): Session => ({
   turnError: r.turn_error ? JSON.parse(r.turn_error) : null,
   scheduled: r.scheduled ? JSON.parse(r.scheduled) : null,
   parked: r.parked ? JSON.parse(r.parked) : [],
+  asides: r.asides ? JSON.parse(r.asides) : [],
   archived: !!r.archived,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -348,6 +368,7 @@ const columns: Record<string, string> = {
   turnError: 'turn_error',
   scheduled: 'scheduled',
   parked: 'parked',
+  asides: 'asides',
   archived: 'archived',
   conversation: 'conversation',
   history: 'history',
@@ -372,7 +393,7 @@ export const sessions = {
       ON CONFLICT(id) DO UPDATE SET pid = excluded.pid, tty = excluded.tty, status = excluded.status, archived = 0, updated_at = excluded.updated_at`)
       .run(s.id, s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'parked' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');
