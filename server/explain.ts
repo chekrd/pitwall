@@ -29,23 +29,46 @@ Read the code involved (you may only read) and explain, in Markdown under 500 wo
 Name the files and functions you looked at. Do not recommend one choice unless the code clearly settles it; then say why. Start directly with the explanation, no preamble.`;
 }
 
+const running = new Map<string, { key: string; controller: AbortController }>();
+
+// One explanation per task at a time; one shown as thinking with no run behind it, as after a restart, starts again.
 export function elaborate(id: string) {
   const s = sessions.get(id);
   if (!s) throw new Error('unknown session');
   const d = openDecision(s);
   if (!d) throw new Error('nothing to decide right now');
   const key = d.key;
-  if (s.explanation?.key === key && s.explanation.state !== 'failed') return;
+  const run = running.get(id);
+  if (s.explanation?.key === key && (s.explanation.state === 'done' || (s.explanation.state === 'thinking' && run?.key === key))) return;
+  run?.controller.abort();
   sessions.update(id, { explanation: { key, state: 'thinking', text: '', at: Date.now() } });
   notify();
-  void explain(s, d);
+  const controller = new AbortController();
+  running.set(id, { key, controller });
+  void explain(s, d, controller.signal)
+    .catch((err) => console.warn('explanation failed', id, err))
+    .finally(() => {
+      if (running.get(id)?.controller === controller) running.delete(id);
+    });
 }
 
-async function explain(s: Session, d: OpenDecision) {
+export function stopExplanation(id: string) {
+  running.get(id)?.controller.abort();
+}
+
+// An explanation that was being written when the board stopped has no run any more.
+export function settleExplanations() {
+  for (const s of sessions.all()) {
+    if (s.explanation?.state !== 'thinking' || running.has(s.id)) continue;
+    sessions.update(s.id, { explanation: { ...s.explanation, state: 'failed', error: 'Pitwall restarted before the explanation came', at: Date.now() } });
+  }
+}
+
+async function explain(s: Session, d: OpenDecision, signal: AbortSignal) {
   const key = d.key;
   const save = (patch: Partial<Explanation>) => {
     const current = sessions.get(s.id)?.explanation;
-    if (current?.key !== key) return;
+    if (current?.key !== key || running.get(s.id)?.controller.signal !== signal) return;
     sessions.update(s.id, { explanation: { ...current, ...patch, at: Date.now() } });
     notify();
   };
@@ -53,6 +76,8 @@ async function explain(s: Session, d: OpenDecision) {
     const out = await headless(prompt(s, d), {
       cwd: s.worktree,
       timeoutMs: TIMEOUT_MS,
+      signal,
+      urgent: true,
       args: ['--model', MODEL, '--setting-sources', '', '--strict-mcp-config', '--tools', 'Read,Grep,Glob', '--allowedTools', 'Read,Grep,Glob'],
     });
     const text = String(out.result ?? '').trim();
