@@ -3,23 +3,9 @@ import { api, sessionAction } from '../api.ts';
 import { queue } from '../queue.ts';
 import { closeSheetOf } from '../router.ts';
 import { patchSession, unpatch, useStore } from '../store.ts';
-import type { Session } from '../types.ts';
+import type { Session, WorktreeLoss as Loss } from '../types.ts';
 import { tilde } from '../util.ts';
 import styles from './DeleteWorktreeDialog.module.css';
-
-interface Loss {
-  branch: string | null;
-  deletesBranch: boolean;
-  files: number;
-  commits: number;
-  // The task runs in the repository's main checkout, which clearing it keeps.
-  checkout?: boolean;
-  // Its worktree was removed already, outside the board.
-  gone?: boolean;
-  subtasks?: number;
-  // A task across a folder of repos: what each of its worktrees would lose.
-  repos?: { name: string; branch: string | null; deletesBranch: boolean; files: number; commits: number }[];
-}
 
 type Check = { state: 'checking' } | { state: 'done'; loss: Loss } | { state: 'failed'; error: string };
 

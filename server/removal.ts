@@ -5,7 +5,7 @@ import { stopAdvice } from './advisor.ts';
 import { clearings } from './clearing.ts';
 import { alive, liveConversations } from './conversations.ts';
 import { SESSIONS_DIR } from './config.ts';
-import { sessions, type Session } from './db.ts';
+import { repos, sessions, type Session } from './db.ts';
 import { changedFiles, isClean, removeWorktree, unpushedCommits } from './git.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
@@ -18,6 +18,16 @@ export async function stopWorktree(worktree: string) {
   const gone = sessions.all().filter((s) => s.worktree === worktree);
   for (const s of gone) if (s.pid && alive(s.pid)) process.kill(s.pid, 'SIGTERM');
   sessions.removeByWorktree(worktree);
+  await Promise.all([...gone.map((s) => rm(join(SESSIONS_DIR, s.id), { recursive: true, force: true })), dropAsides(gone)]);
+  scheduleRerank();
+  notify();
+}
+
+// Its Claudes keep running, as Remove promises; what the board ran for its tasks goes with them.
+export async function hideRepo(id: number) {
+  const gone = sessions.all().filter((s) => s.repoId === id);
+  for (const s of gone) stopAdvice(s.id);
+  repos.hide(id);
   await Promise.all([...gone.map((s) => rm(join(SESSIONS_DIR, s.id), { recursive: true, force: true })), dropAsides(gone)]);
   scheduleRerank();
   notify();
@@ -81,8 +91,22 @@ const longLived = (repo: RepoView, branch: string) =>
 
 const subtasksOf = (id: string): Session[] => sessions.all().filter((o) => o.parent?.id === id).flatMap((o) => [o, ...subtasksOf(o.id)]);
 
+export interface WorktreeLoss {
+  branch: string | null;
+  deletesBranch: boolean;
+  files: number;
+  commits: number;
+  // The task runs in the repository's main checkout, which clearing it keeps.
+  checkout?: boolean;
+  // Its worktree was removed already, outside the board.
+  gone?: boolean;
+  subtasks: number;
+  // A task across a folder of repos: what each of its worktrees would lose.
+  repos?: { name: string; branch: string | null; deletesBranch: boolean; files: number; commits: number }[];
+}
+
 // What Clear task would throw away or leave unpushed, for its confirmation. A task in the main checkout keeps it, and its branch.
-export async function deleteWorktreeLoss(id: string) {
+export async function deleteWorktreeLoss(id: string): Promise<WorktreeLoss> {
   const s = must(id);
   if (s.parent) throw new Error(NOT_A_SUBTASK);
   const subtasks = subtasksOf(id).length;
@@ -96,7 +120,7 @@ export async function deleteWorktreeLoss(id: string) {
   return { branch: worktree.branch, deletesBranch, files, commits, subtasks };
 }
 
-async function taskFolderLoss(folder: string, subtasks: number) {
+async function taskFolderLoss(folder: string, subtasks: number): Promise<WorktreeLoss> {
   const repos = await Promise.all(taskWorktrees(folder).map(async ({ repo, worktree }) => {
     const deletesBranch = !!worktree.branch && !longLived(repo, worktree.branch);
     const [files, commits] = await Promise.all([changedFiles(worktree.path), unpushedCommits(worktree.path)]);

@@ -4,7 +4,7 @@ import { wsUrl } from './api.ts';
 import { orderKey } from './order.ts';
 import { active } from './outbox.ts';
 import { sends } from './sends.ts';
-import type { Drift, FolderView, RepoView, Schedule, Session, Usage } from './types.ts';
+import type { Drift, FolderView, RepoView, Schedule, Session, Snapshot, Usage } from './types.ts';
 import { menuOpen } from './layers.ts';
 import { isEditable } from './useKeys.ts';
 import { record } from './recorder.ts';
@@ -197,7 +197,7 @@ async function connect() {
       const ws = new WebSocketStream(wsUrl('/ws/events'));
       const { readable } = await ws.opened;
       for await (const message of readable) {
-        const { uiEntry, ...next } = JSON.parse(String(message));
+        const { uiEntry, ...next }: Snapshot = JSON.parse(String(message));
         sends.reconcile(next.sessions);
         sends.confirm(next.sessions);
         sends.reconnected();

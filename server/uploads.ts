@@ -3,7 +3,7 @@ import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { UPLOADS_DIR } from './config.ts';
 
-const MAX_BYTES = 30 * 1024 * 1024;
+export const MAX_BYTES = 30 * 1024 * 1024;
 const KEEP_MS = 30 * 24 * 3600_000;
 
 const safeName = (name: string) => name.split(/[\\/]/).at(-1)!.replace(/[^\w.-]+/g, '-').replace(/^[.-]+/, '').slice(-120) || 'file';
