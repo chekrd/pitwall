@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// The always-on board (the launchd service). On it one key answers a real session.
-export const LIVE_PORT = 7420;
+// The always-on board (the launchd service), on the port server/config.ts takes. On it one key answers a real session.
+export const LIVE_PORT = Number(process.env.PITWALL_PORT ?? 7420);
 
 export function refuseLive(target: string | number) {
   const port = typeof target === 'number' ? target : Number(new URL(target).port);
