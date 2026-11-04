@@ -2087,6 +2087,34 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P4.9.conversation-long a long transcript opens on its last prompt with the replies near it drawn as Markdown and the far ones as written; scrolled up, the earliest is drawn as Markdown too, and the last prompt stays where it was until then',
+    async run({ page, mock }) {
+      const now = Date.now();
+      const history = Array.from({ length: 80 }, (_, i) => ({ id: `c-old-${i}`, lastMessage: `Reply ${i} with **bold** and \`code\`.`, until: now - (80 - i) * 60_000 }));
+      const long = Array.from({ length: 30 }, (_, i) => `Checked the rounding of line ${i + 1}.`).join('\n\n');
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { history, lastMessage: long } });
+      await openFromWall(page, mock, 's-invoice');
+      await page.click('#task-sheet [role="tab"]', 'Conversation');
+      await page.until('the conversation', () => document.querySelectorAll('#task-sheet article[data-exchange]').length === 83);
+      const drawn = () => [...document.querySelectorAll('#task-sheet article[data-exchange]')].map((a) => !!a.querySelector('[data-reply] strong'));
+      const first = await page.eval(drawn);
+      assert.equal(first[79], true, 'a reply in view is drawn as Markdown');
+      assert.equal(first[0], false, 'the far first reply was drawn as Markdown too');
+      assert.ok(first.filter(Boolean).length < 40, `${first.filter(Boolean).length} replies drawn at once`);
+      const lastPrompt = () => {
+        const prompt = [...document.querySelectorAll('#task-sheet [data-prompt]')].at(-1)!.getBoundingClientRect().top;
+        return Math.round(prompt - document.querySelector('#task-sheet [role="tabpanel"]')!.getBoundingClientRect().top);
+      };
+      const at = await page.eval(lastPrompt);
+      await sleep(300);
+      assert.deepEqual([at, await page.eval(lastPrompt)], [18, 18], 'the last prompt moved as the replies near it were drawn');
+      assert.match(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet article[data-exchange] [data-reply] > div')!.textContent), /^Reply 0 with \*\*bold\*\* and `code`\.$/);
+      await page.eval(() => document.querySelector('#task-sheet [role="tabpanel"] > div')!.scrollTo({ top: 0 }));
+      await page.until('the first reply drawn as Markdown', () => !!document.querySelector('#task-sheet article[data-exchange]')?.querySelector('[data-reply] strong'));
+      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet article[data-exchange] [data-reply] > div')!.innerText.trim()), 'Reply 0 with bold and code.');
+    },
+  },
+  {
     name: 'P4.10 New task opened on the Wall: a space typed in the name or branch becomes a hyphen; Model and Effort name what Claude Code would pick by itself; Enter in the prompt creates from the prompt, repository and name and opens the new sheet; a refused name shows inline and keeps the fields; the model and effort picked go with it and show on its Overview; Current checkout hides Branch and Worktree path, starts on the repository\'s default branch and lists the server\'s branches by name in a list under the field, with the hint',
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {

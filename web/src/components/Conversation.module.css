@@ -69,6 +69,9 @@
     color: var(--text-2);
   }
 
+  /* A reply far from view, as written until it comes near; one off screen is not even laid out. */
+  .plain { white-space: pre-wrap; overflow-wrap: anywhere; content-visibility: auto; contain-intrinsic-size: auto 12lh; }
+
   .none { padding: 0 4px; font-size: 13.5px; color: var(--muted); font-style: italic; }
 
   .cleared {
