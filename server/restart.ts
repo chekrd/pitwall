@@ -15,10 +15,11 @@ let boot: Promise<number | null> | undefined;
 export const bootTime = () =>
   (boot ??= run('/usr/sbin/sysctl', ['-n', 'kern.boottime']).then(({ stdout }) => parseBootTime(stdout), () => null));
 
-// The board writes a task's row only while it runs, and its first sync after a boot finds the dead Claudes before
-// anything else touches their rows: one it last wrote before the boot was alive until the restart killed it.
-export function interruption(s: Pick<Session, 'status' | 'updatedAt' | 'waitingFor' | 'menu'>, boot: number | null): Interrupted | null {
-  if (s.status === 'exited' || boot === null || s.updatedAt >= boot) return null;
+// No process outlives a boot, so a task whose Claude the sync last saw alive before the boot, and which it had not seen
+// end, was alive until the restart killed it. A row from before aliveAt was recorded goes by its last write, which
+// is as good only while nothing but the sync writes to the rows of ended Claudes.
+export function interruption(s: Pick<Session, 'status' | 'aliveAt' | 'updatedAt' | 'waitingFor' | 'menu'>, boot: number | null): Interrupted | null {
+  if (s.status === 'exited' || boot === null || (s.aliveAt ?? s.updatedAt) >= boot) return null;
   return { at: boot, status: s.status, waitingFor: s.waitingFor, menu: s.menu };
 }
 

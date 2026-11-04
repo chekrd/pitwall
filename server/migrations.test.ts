@@ -15,6 +15,7 @@ test('a new database gets every step and the full schema', () => {
   assert.equal(sessions.find((c) => c.name === 'repo_id')!.notnull, false);
   assert.ok(columns(db, 'repos').some((c) => c.name === 'hidden'));
   assert.ok(sessions.some((c) => c.name === 'scheduled'));
+  assert.ok(sessions.some((c) => c.name === 'alive_at'));
   assert.ok(columns(db, 'schedules').length);
 });
 

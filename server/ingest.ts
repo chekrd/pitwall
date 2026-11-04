@@ -23,6 +23,7 @@ const run = promisify(execFile);
 const STARTUP_GRACE_MS = 60_000;
 const STARTUP_PROMPT_MS = 8000;
 const IGNORE_RETRY_MS = 30_000;
+const ALIVE_MS = 60_000;
 
 export async function ttyOf(pid: number) {
   const { stdout } = await run('/bin/ps', ['-o', 'tty=', '-p', String(pid)]).catch(() => ({ stdout: '' }));
@@ -206,6 +207,8 @@ async function syncLive() {
       if (s.status === 'working' && status !== 'working') void refreshDiffstat(s.id);
       changed = true;
     }
+    const now = Date.now();
+    if (s.aliveAt === null || now - s.aliveAt >= ALIVE_MS) sessions.alive(s.id, now);
   }
   let starting: Set<string> | undefined;
   for (const s of sessions.all()) {

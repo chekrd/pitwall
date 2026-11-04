@@ -86,6 +86,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN asides TEXT');
   },
+  // 5: when the sync last saw each task's Claude alive, which tells the Claudes a restart ended from the others.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN alive_at INTEGER');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

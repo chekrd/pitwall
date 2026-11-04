@@ -242,6 +242,9 @@ export interface Session {
   scheduled: Scheduled | null;
   parked: Parked[];
   asides: Aside[];
+  // When the sync last saw the task's Claude alive, written about once a minute while it runs; null for a row it has
+  // not seen alive since this was recorded.
+  aliveAt: number | null;
   archived: boolean;
   createdAt: number;
   updatedAt: number;
@@ -302,6 +305,7 @@ const toSession = (r: Row): Session => ({
   scheduled: r.scheduled ? JSON.parse(r.scheduled) : null,
   parked: r.parked ? JSON.parse(r.parked) : [],
   asides: r.asides ? JSON.parse(r.asides) : [],
+  aliveAt: r.alive_at ?? null,
   archived: !!r.archived,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -401,6 +405,8 @@ export const sessions = {
       v === null || v === undefined ? null : typeof v === 'object' ? JSON.stringify(v) : typeof v === 'boolean' ? Number(v) : v);
     db.prepare(`UPDATE sessions SET ${sets}, updated_at = ? WHERE id = ?`).run(...values, Date.now(), id);
   },
+  // Leaves updated_at, which tells how long a task has waited.
+  alive: (id: string, at: number) => db.prepare('UPDATE sessions SET alive_at = ? WHERE id = ?').run(at, id),
   remove: (id: string) => db.prepare('DELETE FROM sessions WHERE id = ?').run(id),
   removeByWorktree: (worktree: string) => db.prepare('DELETE FROM sessions WHERE worktree = ?').run(worktree),
 };
