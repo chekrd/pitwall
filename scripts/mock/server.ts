@@ -25,7 +25,7 @@ import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, 
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
-import type { deleteWorktreeLoss } from '../../server/removal.ts';
+import type { WorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
 import { refuseLive } from '../isolate.ts';
@@ -533,13 +533,13 @@ const longLived = (repo: RepoView, branch: string) =>
 
 const subtasksOf = (id: string): Session[] => state.sessions.filter((o) => o.parent?.id === id).flatMap((o) => [o, ...subtasksOf(o.id)]);
 
-function deleteLoss(s: Session): Awaited<ReturnType<typeof deleteWorktreeLoss>> {
+function deleteLoss(s: Session): WorktreeLoss {
   if (flagged(s.id, 'lossFails')) throw new Error('git status failed: fatal: unable to read the index');
   const repo = repoOf(s.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);
   if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");
   const subtasks = subtasksOf(s.id).length;
-  const shared = { deletesBranch: false, files: 0, commits: 0, checkout: true, shared: true, subtasks };
+  const shared = { deletesBranch: false, files: 0, commits: 0, checkout: true as const, shared: true as const, subtasks };
   if (s.repoId === null && sharedWith(s)) return { branch: null, ...shared };
   if (s.repoId === null) {
     const repos = taskWorktrees(s.worktree).map(({ repo: r, worktree: w }, i) => ({

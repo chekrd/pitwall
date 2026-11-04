@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 import { createApp, UI_INDEX } from './app.ts';
 import { onDrift } from './claudeFormat.ts';
+import { settleExplanations } from './explain.ts';
 import { HOST, PORT, USAGE_FILE } from './config.ts';
 import { schedules, uxEvents } from './db.ts';
 import { sync } from './ingest.ts';
@@ -31,6 +32,7 @@ setInterval(pruneUx, 86_400_000).unref();
 await refreshWorkspace({ scan: true });
 await sync();
 S.settleAsides();
+settleExplanations();
 setInterval(() => void sync().then(() => {
   S.pauseStep();
   S.sendDueDrafts();
