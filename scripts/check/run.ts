@@ -4,11 +4,12 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { LIVE_PORT, refuseLive } from '../isolate.ts';
 import { launch, lookName, sleep, within, type Browser, type Look, type Page } from './cdp.ts';
-import { checks, NEW_TASK_MORE, type Check } from './checks.ts';
+import { checks } from './checks/index.ts';
+import { NEW_TASK_MORE, type Check } from './helpers.ts';
 import { startMock, type Mock } from './mock.ts';
 
 // pnpm e2e [--only <pattern>] [--matrix] [--workers <n>] [--port <mock port>] [--shots <dir>] [--dist <dir>] [--stale]
-// Runs the checks in checks.ts against the mock in a headless Brave of its own. While changing something, run the
+// Runs the checks in checks/ against the mock in a headless Brave of its own. While changing something, run the
 // checks it touches with --only and the whole suite once before committing. Each worker has a mock on a free port
 // and a browser of its own (--workers, default half the cores, at most 6); with --port, one worker uses that mock.
 // Each check runs once, in dark: a check switches the system to light and back for its colour assertions (themes())
