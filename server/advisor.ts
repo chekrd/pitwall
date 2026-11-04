@@ -12,7 +12,7 @@ import { addScratchCopies, addScratchCopy, removeScratchCopy } from './git.ts';
 import { headless } from './headless.ts';
 import { menuKeystrokes } from './menu.ts';
 import { clip, scheduleRerank } from './priority.ts';
-import { notify, placeOf, repoView, taskWorktrees } from './workspace.ts';
+import { notify, placeOf, repoView, taskFolderOf, taskWorktrees } from './workspace.ts';
 
 const MODEL = 'opus';
 const MAX_PARALLEL = 2;
@@ -90,7 +90,7 @@ export function adviseOpen() {
     const d = openDecision(s);
     if (!d || !needsAdvice(s, d)) continue;
     if (running.size >= MAX_PARALLEL) return;
-    void advise(s, d);
+    void advise(s, d).catch((err) => console.warn('second opinion failed', s.id, err));
   }
 }
 
@@ -186,6 +186,15 @@ ${reply}
 - reasoning: one to three sentences for the developer on why, naming what you checked or tried.`;
 }
 
+// Where the advisor must not edit: the task's worktree or, for a task across a folder of repos, its task folder with
+// the worktrees in it and the main checkouts beside it. Only its scratch copy is its own.
+export function readOnly(s: Pick<Session, 'repoId' | 'worktree'>) {
+  const dirs = s.repoId === null
+    ? [s.worktree, ...taskWorktrees(s.worktree).map(({ worktree }) => worktree.path), ...(taskFolderOf(s.worktree)?.repos.map((r) => r.path) ?? [])]
+    : [s.worktree];
+  return [...new Set(dirs)].flatMap((dir) => ['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(/${dir}/**)`));
+}
+
 async function advise(s: Session, d: OpenDecision) {
   const token = randomUUID();
   let advice: Advice = {
@@ -215,13 +224,14 @@ async function advise(s: Session, d: OpenDecision) {
       cwd: s.worktree,
       timeoutMs: TIMEOUT_MS,
       signal: run.controller.signal,
+      urgent: true,
       args: [
         '--model', MODEL,
         '--mcp-config', JSON.stringify(mcpConfig),
         '--settings', JSON.stringify(guard),
         '--add-dir', SCRATCH_DIR,
         '--allowedTools', `mcp__${MCP_NAME}__${SCRATCH_TOOL}`,
-        '--disallowedTools', ASK_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME, `Edit(/${s.worktree}/**)`, `Write(/${s.worktree}/**)`, `NotebookEdit(/${s.worktree}/**)`, 'Bash(git push:*)',
+        '--disallowedTools', ASK_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME, ...readOnly(s),'Bash(git push:*)',
         '--permission-prompts', 'none',
         '--json-schema', JSON.stringify(schema(d)),
       ],
