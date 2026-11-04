@@ -84,6 +84,25 @@ export async function headless(prompt: string, opts: HeadlessOptions): Promise<R
   }
 }
 
+// A group of its own leaves the server's, which launchd ends with the server; so the server ends the groups itself.
+const groups = new Set<number>();
+const endGroups = () => {
+  for (const pid of groups) {
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch {
+      // already gone
+    }
+  }
+};
+process.on('exit', endGroups);
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  process.once(sig, () => {
+    endGroups();
+    process.kill(process.pid, sig);
+  });
+}
+
 // Claude runs in a process group of its own, so the shells and servers it started go with it when it is stopped.
 export function runCommand(command: string, prompt: string, opts: HeadlessOptions, graceMs = GRACE_MS): Promise<Record<string, any>> {
   const format = opts.onEvent ? ['--output-format', 'stream-json', '--verbose'] : ['--output-format', 'json'];
@@ -94,8 +113,9 @@ export function runCommand(command: string, prompt: string, opts: HeadlessOption
       env: loginEnv,
       detached: true,
     });
+    if (child.pid !== undefined) groups.add(child.pid);
     let closed = false;
-    let killer: NodeJS.Timeout | undefined;
+    let ending = false;
     let timedOut = false;
     const signalGroup = (signal: NodeJS.Signals) => {
       try {
@@ -105,9 +125,10 @@ export function runCommand(command: string, prompt: string, opts: HeadlessOption
       }
     };
     const stop = () => {
-      if (closed || killer || child.pid === undefined) return;
+      if (closed || ending || child.pid === undefined) return;
+      ending = true;
       signalGroup('SIGTERM');
-      killer = setTimeout(() => signalGroup('SIGKILL'), graceMs);
+      setTimeout(() => signalGroup('SIGKILL'), graceMs).unref();
     };
     const timer = setTimeout(() => {
       timedOut = true;
@@ -139,15 +160,13 @@ export function runCommand(command: string, prompt: string, opts: HeadlessOption
       opts.signal?.removeEventListener('abort', stop);
       reject(e);
     });
+    // What Claude left running, such as a server holding its output open, goes when Claude ends.
+    child.on('exit', stop);
     child.on('close', (code, signal) => {
       closed = true;
       clearTimeout(timer);
       opts.signal?.removeEventListener('abort', stop);
-      // The group may outlive its leader; whatever is left of it goes now.
-      if (killer) {
-        clearTimeout(killer);
-        signalGroup('SIGKILL');
-      }
+      groups.delete(child.pid!);
       if (opts.signal?.aborted) return reject(new Error('stopped'));
       if (timedOut) return reject(new Error('claude -p timed out'));
       if (code !== 0) return reject(new Error(signal ? `claude -p was killed by ${signal}` : `claude -p exited ${code}: ${err || out}`.slice(0, 1000)));

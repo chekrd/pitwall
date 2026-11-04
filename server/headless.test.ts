@@ -87,6 +87,19 @@ test('stopping a run kills its whole process group, with SIGKILL once the grace 
   assert.ok(gone(child), 'the grandchild was killed with the group');
 });
 
+test('what a run left running in the background goes when Claude ends, so its answer does not wait for it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pitwall-headless-'));
+  const script = join(dir, 'claude');
+  writeFileSync(script, `#!/bin/sh\nsleep 30 &\necho $! > "${dir}/child"\necho '{"result":"done"}'\n`);
+  chmodSync(script, 0o755);
+  const at = Date.now();
+  assert.deepEqual(await runCommand(script, 'prompt', { cwd: dir, args: [], timeoutMs: 60_000 }, 300), { result: 'done' });
+  assert.ok(Date.now() - at < 5000, 'the answer waited for the background process');
+  const child = Number(readFileSync(join(dir, 'child'), 'utf8'));
+  while (!gone(child) && Date.now() - at < 3000) await sleep(20);
+  assert.ok(gone(child));
+});
+
 test('a run past its time limit is killed and says it timed out', async () => {
   const { dir, script } = stubborn();
   await assert.rejects(runCommand(script, 'prompt', { cwd: dir, args: [], timeoutMs: 200 }, 100), /timed out/);
