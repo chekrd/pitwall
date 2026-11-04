@@ -39,6 +39,20 @@ export function trackDecisions() {
   scheduleRerank();
 }
 
+export const UNRANKED_REASON = 'Left out of the ranking, so placed after the ranked ones';
+
+// The model's order over the open decisions: each once, where it first named it; the ones it left out after them, in
+// the order they were given; ids it made up are dropped.
+export function ranks(order: { id: unknown; reason: unknown }[], open: string[]) {
+  const wanted = new Set(open);
+  const placed = new Map<string, string>();
+  for (const { id, reason } of order) {
+    if (typeof id === 'string' && wanted.has(id) && !placed.has(id)) placed.set(id, String(reason ?? ''));
+  }
+  for (const id of open) if (!placed.has(id)) placed.set(id, UNRANKED_REASON);
+  return [...placed].map(([id, reason], i) => ({ id, rank: i + 1, reason }));
+}
+
 export function scheduleRerank() {
   clearTimeout(timer);
   timer = setTimeout(rerank, 1500);
@@ -97,15 +111,14 @@ Reply with order: every decision, from highest to lowest priority, each with a r
       args: ['--model', 'sonnet', '--setting-sources', '', '--strict-mcp-config', '--tools', '', '--json-schema', JSON.stringify(schema)],
       timeoutMs: 180_000,
     });
-    const ranked: { id: string; reason: string }[] = out.structured_output?.order ?? [];
+    const order = out.structured_output?.order;
+    const ranked: { id: unknown; reason: unknown }[] = Array.isArray(order) ? order.filter((o) => o && typeof o === 'object') : [];
     if (!ranked.length) throw new Error(`no ranking: ${String(out.result ?? '').slice(0, 300)}`);
     const keys = new Map(open.map(({ s, d }) => [s.id, d.key]));
-    ranked.forEach(({ id, reason }, i) => {
+    for (const { id, rank, reason } of ranks(ranked, open.map(({ s }) => s.id))) {
       const current = sessions.get(id);
-      if (current && openDecision(current)?.key === keys.get(id)) {
-        sessions.update(id, { rank: i + 1, rankReason: reason });
-      }
-    });
+      if (current && openDecision(current)?.key === keys.get(id)) sessions.update(id, { rank, rankReason: reason });
+    }
     notify();
   } catch (err) {
     console.warn('priority rerank failed', err);
