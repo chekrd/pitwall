@@ -15,13 +15,13 @@ export async function stop(name: string) {
 }
 
 export async function tmuxSessions() {
-  return new Set((await tmux.panes()).values());
+  return new Set([...(await tmux.panes()).values()].map((p) => p.session));
 }
 
 async function driver(tty: string) {
-  const name = (await tmux.panes()).get(tty);
-  return name
-    ? { paste: (text: string) => tmux.paste(name, text), keys: (strokes: ghostty.Keystroke[]) => tmux.keys(name, strokes) }
+  const pane = (await tmux.panes()).get(tty);
+  return pane
+    ? { paste: (text: string) => tmux.paste(pane, text), keys: (strokes: ghostty.Keystroke[]) => tmux.keys(pane, strokes) }
     : { paste: (text: string) => ghostty.paste(tty, text), keys: (strokes: ghostty.Keystroke[]) => ghostty.keys(tty, strokes) };
 }
 
@@ -52,7 +52,7 @@ export async function keys(tty: string, strokes: ghostty.Keystroke[]) {
 // A tmux session already attached in a Ghostty tab gets that tab; otherwise a new tab attaches.
 export async function show(tty: string | null, name: string, cwd: string) {
   const panes = await tmux.panes();
-  const session = tty ? panes.get(tty) : [...panes.values()].find((n) => n === name);
+  const session = tty ? panes.get(tty)?.session : [...panes.values()].find((p) => p.session === name)?.session;
   if (!session) {
     if (!tty) throw new Error('this session has no terminal yet');
     return ghostty.focus(tty);

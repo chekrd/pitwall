@@ -14,7 +14,8 @@ const SOCKET = 'pitwall';
 // Sessions started before the rename to Pitwall run on the old socket until they end.
 const OLD_SOCKET = 'agent-board';
 const argsOf = (socket: string) => ['-u', '-L', socket, '-f', join(ROOT, 'config', 'tmux.conf')];
-const socketOf = new Map<string, string>();
+// Filled from the latest list of panes, so a session that ended leaves it then.
+let socketOf = new Map<string, string>();
 const on = (name: string) => socketOf.get(name) ?? SOCKET;
 
 async function run(socket: string, args: string[], stdin?: string) {
@@ -30,31 +31,40 @@ const localeArgs = ['LANG', 'LC_ALL', 'LC_CTYPE'].flatMap((k) => (loginEnv[k] ? 
 
 export async function start(name: string, cwd: string, command: string) {
   await run(SOCKET, ['new-session', '-d', '-s', name, '-c', cwd, '-x', '200', '-y', '50', ...localeArgs, command]);
-  socketOf.set(name, SOCKET);
 }
 
 export async function kill(name: string) {
   for (const socket of [OLD_SOCKET, SOCKET]) await run(socket, ['kill-session', '-t', `=${name}`]).catch(() => {});
+  socketOf.delete(name);
 }
 
-// tty → tmux session name, for every pane on Pitwall's sockets.
+// One pane of a tmux session; `id` (`%N`) names it alone, wherever the session's active pane is.
+export interface Pane {
+  session: string;
+  id: string;
+  socket: string;
+}
+
+// tty → its pane, for every pane on Pitwall's sockets.
 export async function panes() {
-  const byTty = new Map<string, string>();
+  const byTty = new Map<string, Pane>();
   if (!TMUX) return byTty;
+  const sockets = new Map<string, string>();
   for (const socket of [OLD_SOCKET, SOCKET]) {
     let out = '';
     try {
-      out = await run(socket, ['list-panes', '-a', '-F', '#{pane_tty}\t#{session_name}']);
+      out = await run(socket, ['list-panes', '-a', '-F', '#{pane_tty}\t#{session_name}\t#{pane_id}']);
     } catch (err) {
       if (/no server running|error connecting/.test(String((err as { stderr?: string }).stderr))) continue;
       throw err;
     }
     for (const line of out.split('\n').filter(Boolean)) {
-      const [tty, name] = line.split('\t');
-      byTty.set(tty, name);
-      socketOf.set(name, socket);
+      const [tty, session, id] = line.split('\t');
+      byTty.set(tty, { session, id, socket });
+      sockets.set(session, socket);
     }
   }
+  socketOf = sockets;
   return byTty;
 }
 
@@ -62,11 +72,11 @@ export async function clients(name: string) {
   return (await run(on(name), ['list-clients', '-t', `=${name}`, '-F', '#{client_tty}'])).split('\n').filter(Boolean);
 }
 
-const tmux = (name: string) => (args: string[], stdin?: string) => run(on(name), args, stdin);
+const tmux = (pane: Pane) => (args: string[], stdin?: string) => run(pane.socket, args, stdin);
 
-export const paste = (name: string, text: string) => input.paste(tmux(name), name, text);
+export const paste = (pane: Pane, text: string) => input.paste(tmux(pane), pane.id, text);
 
-export const keys = (name: string, strokes: Keystroke[]) => input.keys(tmux(name), name, strokes);
+export const keys = (pane: Pane, strokes: Keystroke[]) => input.keys(tmux(pane), pane.id, strokes);
 
 // `exec`, so the tab closes when the session ends; closing the tab only detaches.
 export const attachCommand = (name: string) => `exec ${[TMUX, ...argsOf(on(name)), 'attach-session', '-t', `=${name}`].map(quote).join(' ')}`;
