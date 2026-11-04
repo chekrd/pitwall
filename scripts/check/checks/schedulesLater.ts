@@ -89,13 +89,13 @@ export const schedulesLater: Check[] = [
       assert.match(facts.Schedule ?? '', /^nightly-review, started with Run now today at \d\d:\d\d$/);
       await page.click('#task-sheet button[aria-label^="Back to"]');
       await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
-      await page.until('the last run', () => /^Ran today at/.test(document.querySelector('[data-schedule="nightly-review"] [data-last="ran"]')?.textContent ?? ''));
+      await page.until('the last run', () => document.querySelector('[data-schedule="nightly-review"] [data-last="ran"]')?.textContent?.startsWith('Ran today at'));
 
       await page.click('[data-schedule="nightly-review"] button', 'Pause');
       await page.until('paused', () => document.querySelector('[data-schedule="nightly-review"]')?.hasAttribute('data-paused') &&
         document.querySelector('[data-schedule="nightly-review"] [data-next]')?.textContent === 'Paused');
       await page.click('[data-schedule="nightly-review"] button', 'Resume');
-      await page.until('resumed', () => /^Next /.test(document.querySelector('[data-schedule="nightly-review"] [data-next]')?.textContent ?? ''));
+      await page.until('resumed', () => document.querySelector('[data-schedule="nightly-review"] [data-next]')?.textContent?.startsWith('Next '));
 
       await page.click('[data-schedule="nightly-review"] button[aria-label="Delete nightly-review"]');
       await page.until('the list gone', () => !document.querySelector('[data-schedules]'));
