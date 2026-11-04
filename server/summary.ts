@@ -52,6 +52,7 @@ const schema = {
 let looping = false;
 let again = false;
 
+// Never rejects: every caller fires and forgets it.
 export async function summarizeStale() {
   if (looping) return void (again = true);
   looping = true;
@@ -60,12 +61,14 @@ export async function summarizeStale() {
       if (running.size >= MAX_PARALLEL) return;
       const s = sessions.get(id);
       if (!s || !due(s)) continue;
-      const meta = await conversationMeta(s.cwd, s.conversation);
+      const meta = await conversationMeta(s.cwd, s.conversation).catch((err) => void console.warn('summary transcript unread', id, err));
       const latest = meta?.turns.at(-1);
       const current = sessions.get(id);
       if (!latest || latest.role !== 'claude' || !current || !due(current) || fresh(current, latest.id)) continue;
-      void summarize(current, meta!.turns);
+      void summarize(current, meta!.turns).catch((err) => console.warn('summary failed', id, err));
     }
+  } catch (err) {
+    console.warn('summaries failed', err);
   } finally {
     looping = false;
     if (again) {

@@ -28,10 +28,16 @@ const failed = new Map<string, number>();
 
 const undescribed = (s: Session) => !s.archived && Date.now() - (failed.get(s.id) ?? 0) >= RETRY_AFTER_MS && s.links.some((l) => l.about === null);
 
-// One run at a time, a session's undescribed links at once: they are few and the model is the cheapest.
+// One run at a time, a session's undescribed links at once: they are few and the model is the cheapest. Never
+// rejects: every caller fires and forgets it.
 export async function describeLinks() {
   if (running) return;
-  const s = sessions.all().find(undescribed);
+  let s: Session | undefined;
+  try {
+    s = sessions.all().find(undescribed);
+  } catch (err) {
+    return console.warn('link descriptions failed', err);
+  }
   if (!s) return;
   running = true;
   const batch = s.links.filter((l) => l.about === null).slice(0, PER_RUN);

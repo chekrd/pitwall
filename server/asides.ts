@@ -78,14 +78,14 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
       if (s.asides.length >= MAX_ASIDES) throw new Error(`close an aside first; a task keeps at most ${MAX_ASIDES}`);
       const aside: Aside = { id: randomUUID(), fork: null, state: 'thinking', activity: null, turns: [turn], at: now() };
       save(id, [...s.asides, aside]);
-      void answer(id, aside.id, question, null);
+      void answer(id, aside.id, question, null).catch((err) => console.warn('aside failed', aside.id, err));
       return aside.id;
     }
     const aside = s.asides.find((a) => a.id === body.aside);
     if (!aside) throw new Error('this aside is closed');
     if (aside.state === 'thinking') throw new Error('wait for the answer before asking again');
     change(id, aside.id, (a) => ({ ...a, state: 'thinking', activity: null, turns: [...a.turns, turn], at: now() }));
-    void answer(id, aside.id, question, aside.fork);
+    void answer(id, aside.id, question, aside.fork).catch((err) => console.warn('aside failed', aside.id, err));
     return aside.id;
   }
 
