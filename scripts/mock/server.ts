@@ -70,7 +70,7 @@ const run = promisify(execFile);
 
 class HttpError extends Error {
   status: number;
-  code?: string;
+  code?: string | undefined;
   constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
@@ -254,7 +254,7 @@ function resume(s: Session) {
   update(s.id, { status: 'idle', pid: 42_000 + state.sessions.indexOf(s), tty: '/dev/ttys042', archived: false });
 }
 
-const flagged = (id: string, flag: Flag) => !!state.flags[id]?.includes(flag);
+const flagged = (id: string, flag: Flag) => state.flags[id]?.includes(flag) === true;
 
 const repoOf = (id: number | null) => state.repos.find((r) => r.id === id);
 
@@ -406,8 +406,8 @@ function stopAdvice(s: Session) {
   if (a?.state === 'thinking' && a.key === openDecision(s)?.key) update(s.id, { advice: { ...a, state: 'failed', activity: null, error: 'stopped', at: Date.now() } });
 }
 
-async function rename(s: Session, title: unknown) {
-  const name = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+async function rename(s: Session, title: string | null | undefined) {
+  const name = (title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
   if (!name) throw new Error('the name is empty');
   if (s.status !== 'exited') {
     if (!args.legacy) await answers.type(s.id, `/rename ${name}`);
@@ -430,11 +430,11 @@ const SUBTASK_LABELS: Record<SubtaskKind, string> = { accept: 'Fix', elaborate: 
 
 // As the server's respond(): Reject, Solve and Reopen mark the finding, any other answer starts a subtask in its worktree.
 function respond(s: Session, body: ActionInput<'finding'>) {
-  const index = Number(body.finding);
+  const index = body.finding;
   const f = s.findings?.items[index];
   if (!s.findings || s.findings.basis !== body.basis || !f) throw new Refusal('these findings were replaced; read them again', 'stale');
   const kind = body.kind as SubtaskKind | 'reject' | 'solve' | 'reopen';
-  const text = String(body.text ?? '').trim();
+  const text = (body.text ?? '').trim();
   if (kind === 'reject' || kind === 'solve' || kind === 'reopen') {
     const at = Date.now();
     const marks = { rejected: kind === 'reject' ? { reason: text, at } : null, solved: kind === 'solve' ? { at } : null };
@@ -581,7 +581,7 @@ const MODELS: { models: Record<string, string>; efforts: Record<string, string |
   efforts: { '': 'medium', fable: 'high', opus: 'medium', sonnet: 'high', haiku: null },
 };
 
-function startSession(repoId: number | null, worktree: string, o: { id?: string; title?: string | null; prompt?: string | null; model?: string; effort?: string; scheduled?: Scheduled }) {
+function startSession(repoId: number | null, worktree: string, o: { id?: string; title?: string | null; prompt?: string | null; model?: string; effort?: string | undefined; scheduled?: Scheduled | undefined }) {
   const now = Date.now();
   const id = o.id ?? randomUUID();
   const working = !!o.prompt;
@@ -597,7 +597,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
 }
 
 function addWorktree(repo: RepoView, body: { name?: string; branch?: string; path?: string; existingBranch?: boolean }) {
-  const name = String(body.name ?? '').trim();
+  const name = (body.name ?? '').trim();
   const branch = body.branch?.trim();
   if (body.existingBranch) {
     if (!branch) throw new Error('pick a branch');
@@ -721,7 +721,7 @@ type Read<K extends Route> = Omit<Request, 'body'> & { body: K extends keyof typ
 function api<K extends Route>(key: K, handler: (req: Read<K>) => Answer<Responses[K]> | Promise<Answer<Responses[K]>>) {
   const [method, path] = key.split(' ');
   const schema: z.ZodType | undefined = Object.hasOwn(bodies, key) ? bodies[key as keyof typeof bodies] : undefined;
-  route(method, path, (req) => handler({ ...req, body: schema ? input(req.raw, schema) : req.body } as Read<K>));
+  route(method, path, (req) => handler({ ...req, body: schema ? input(req.raw, schema) : req.body }));
 }
 
 api('GET /api/state', () => snapshot());
@@ -731,7 +731,7 @@ api('POST /api/open', () => NONE);
 // As the server's: a folder in a repository adds the repository, any other folder is scanned for repositories. Here a
 // folder that holds known repositories is one to scan, and any other one a new repository.
 api('POST /api/repos', ({ body }) => {
-  const path = String(body.path ?? '').trim().replace(/(.)\/$/, '$1');
+  const path = (body.path ?? '').trim().replace(/(.)\/$/, '$1');
   if (!isAbsolute(path)) throw new Error(`not a folder: ${path}`);
   if (state.repos.some((r) => path === r.path || path.startsWith(`${r.path}/`))) return { scanned: false };
   if (state.repos.some((r) => r.path.startsWith(`${path}/`))) {
@@ -778,7 +778,7 @@ api('GET /api/repos/:id/models', ({ params }) => {
 function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const model = MODELS.models[req.model ?? ''] ?? req.model;
   const effort = req.effort || MODELS.efforts[req.model ?? ''] || undefined;
-  const name = String(req.name ?? '').trim();
+  const name = (req.name ?? '').trim();
   const prompt = taskPrompt(req.prompt ?? '', checkUploads(req.files));
   if (req.kind === 'folder') {
     const folder = folders().find((f) => f.path === req.folder);
@@ -794,12 +794,13 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   return { path, sessionId: startSession(repo.id, path, { title: req.scheduled || !req.existingBranch ? name : '', prompt, model, effort, scheduled: req.scheduled }) };
 }
 
-api('POST /api/worktrees', ({ body }) => startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
+api('POST /api/worktrees', ({ body: { branch = '', path = '', prompt = '', model = '', effort = '', existingBranch = false, ...body } }) =>
+  startTask({ kind: 'repo', ...body, branch, path, prompt, model, effort, existingBranch }));
 api('GET /api/folders/models', ({ url }) => {
   if (!folders().some((f) => f.path === url.searchParams.get('path'))) throw new Error('unknown folder');
   return MODELS;
 });
-api('POST /api/folder-tasks', ({ body }) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
+api('POST /api/folder-tasks', ({ body: { prompt = '', model = '', effort = '', ...body } }) => startTask({ kind: 'folder', ...body, prompt, model, effort }));
 
 // The server's scheduler over the mock's tasks; /mock/schedules/step runs a step as if the clock read `at`.
 let clockAt: number | null = null;
@@ -828,7 +829,7 @@ api('POST /api/schedules', ({ body }) => {
 api('PATCH /api/schedules/:id', ({ params, body }) => {
   const s = schedules.find((x) => x.id === params[0]);
   if (!s) throw new Error('unknown schedule');
-  s.paused = !!body.paused;
+  s.paused = body.paused;
   if (!s.paused && repeats(s.when)) s.next = nextRun(s.when, Date.now());
   push();
   return NONE;
@@ -1233,7 +1234,10 @@ const server = createServer((req, res) => {
 });
 
 server.on('connection', (socket) => {
-  if (Date.now() < dropUntil) return socket.destroy();
+  if (Date.now() < dropUntil) {
+    socket.destroy();
+    return;
+  }
   sockets.add(socket);
   socket.on('close', () => sockets.delete(socket));
 });
@@ -1241,13 +1245,17 @@ server.on('connection', (socket) => {
 const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
-  if (new URL(req.url ?? '/', 'http://x').pathname !== '/ws/events' || !allowed(req)) return socket.destroy();
-  wss.handleUpgrade(req, socket, head, async (ws) => {
-    const read = await ui.fresh();
-    if (ws.readyState !== ws.OPEN) return;
-    clients.add(ws);
-    ws.on('close', () => clients.delete(ws));
-    ws.send(JSON.stringify({ ...snapshot(), uiEntry: announced ?? (args.legacy ? read : ui.settled()) } satisfies Snapshot));
+  if (new URL(req.url ?? '/', 'http://x').pathname !== '/ws/events' || !allowed(req)) {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    void ui.fresh().then((read) => {
+      if (ws.readyState !== ws.OPEN) return;
+      clients.add(ws);
+      ws.on('close', () => clients.delete(ws));
+      ws.send(JSON.stringify({ ...snapshot(), uiEntry: announced ?? (args.legacy ? read : ui.settled()) } satisfies Snapshot));
+    }, (err) => ws.close(1011, String(err)));
   });
 });
 
