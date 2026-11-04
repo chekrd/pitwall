@@ -41,7 +41,10 @@ function show(el: Element) {
   if (!el.hasAttribute('aria-description')) el.setAttribute('aria-describedby', t.id);
 }
 
-function hide() {
+// The board's keys decide what an Esc does while a tooltip shows (keys.ts), and any Esc they act on dismisses it.
+export const tooltipShown = () => !!tip?.matches(':popover-open');
+
+export function hideTooltip() {
   clearTimeout(timer);
   if (target?.getAttribute('aria-describedby') === 'tooltip') target.removeAttribute('aria-describedby');
   target = null;
@@ -50,7 +53,7 @@ function hide() {
 
 function aim(el: Element | null) {
   if (el === target) return;
-  hide();
+  hideTooltip();
   if (!el) return;
   target = el;
   timer = setTimeout(() => show(el), SHOW_MS);
@@ -63,25 +66,16 @@ export function installTooltips() {
     if (e.pointerType !== 'touch') aim(explained(e.target));
   });
   document.addEventListener('pointerout', (e) => {
-    if (target && !(e.relatedTarget instanceof Node && target.contains(e.relatedTarget))) hide();
+    if (target && !(e.relatedTarget instanceof Node && target.contains(e.relatedTarget))) hideTooltip();
   });
   document.addEventListener('focusin', (e) => {
     if (e.target instanceof Element && e.target.matches(':focus-visible')) aim(explained(e.target));
   });
-  document.addEventListener('focusout', hide);
-  document.addEventListener('pointerdown', hide, true);
+  document.addEventListener('focusout', hideTooltip);
+  document.addEventListener('pointerdown', hideTooltip, true);
   // A tooltip still to come stays: it is placed when it shows, where the element is by then.
   document.addEventListener('scroll', () => {
-    if (tip?.matches(':popover-open')) hide();
+    if (tip?.matches(':popover-open')) hideTooltip();
   }, true);
-  // An Esc with a tooltip showing only dismisses it; the next does what Esc does there.
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !target) return;
-    const shown = !!tip?.matches(':popover-open');
-    hide();
-    if (!shown) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }, true);
-  addEventListener('resize', hide);
+  addEventListener('resize', hideTooltip);
 }

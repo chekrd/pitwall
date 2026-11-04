@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from '@pierre/diffs';
-import { useState, type Ref } from 'react';
+import { useState } from 'react';
 import styles from './FileTree.module.css';
 import { Icon } from './Icon.tsx';
 
@@ -123,10 +123,9 @@ interface TreeProps extends Omit<Picks, 'collapsed' | 'onToggle'> {
   onAll: () => void;
   query: string;
   onQuery: (query: string) => void;
-  filterRef: Ref<HTMLInputElement>;
 }
 
-export function FileTree({ files, all, onAll, query, onQuery, filterRef, ...picks }: TreeProps) {
+export function FileTree({ files, all, onAll, query, onQuery, ...picks }: TreeProps) {
   const [collapsed, setCollapsed] = useState(() => new Set<string>());
   const [shown, setShown] = useState(picks.selected);
   if (shown !== picks.selected) {
@@ -146,7 +145,6 @@ export function FileTree({ files, all, onAll, query, onQuery, filterRef, ...pick
       <div className={styles.filter}>
         <Icon name="search" size={14} />
         <input
-          ref={filterRef}
           type="search"
           value={query}
           placeholder="Filter files"
@@ -155,6 +153,12 @@ export function FileTree({ files, all, onAll, query, onQuery, filterRef, ...pick
           spellCheck={false}
           autoComplete="off"
           onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || e.nativeEvent.isComposing) return;
+            e.preventDefault();
+            if (query) onQuery('');
+            else e.currentTarget.blur();
+          }}
         />
       </div>
       <button type="button" className={styles.all} aria-pressed={all} onClick={onAll}>

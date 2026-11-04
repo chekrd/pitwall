@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent } from 'react';
 import { openBugReport } from './components/BugReportDialog.tsx';
-import { stepFile } from './components/DiffView.tsx';
+import { diffNarrowed, stepFile, widenDiff } from './components/DiffView.tsx';
 import { toggleKeys } from './components/KeysDialog.tsx';
 import { openNewTask } from './components/NewTaskForm.tsx';
 import { keyAction, KEYS_DIALOG, LOCK_MS, rowFor, SHEET_DIALOG, typingLock, type Action, type Card, type KeyContext, type Key, type Target } from './keys.ts';
@@ -9,6 +9,7 @@ import { queue } from './queue.ts';
 import { record } from './recorder.ts';
 import { closeSheet, go, showTab, viewPath, type Route } from './router.ts';
 import { holding, undo } from './sends.ts';
+import { hideTooltip, tooltipShown } from './tooltip.ts';
 import { track } from './ux.ts';
 
 // The reply box's paperclip counts as part of its field: focus on it is still writing a reply.
@@ -56,25 +57,27 @@ function trackKey(ctx: KeyContext, e: Key & { repeat: boolean }, action: Action 
   lastMiss = { at: now, data };
 }
 
-function dom(e: KeyboardEvent): Pick<KeyContext, 'target' | 'modal' | 'popovers'> {
+function dom(e: KeyboardEvent): Pick<KeyContext, 'target' | 'modal' | 'popovers' | 'tip'> {
   const modal = document.querySelector(`dialog:modal:not(#${SHEET_DIALOG})`);
   return {
     target: target(e.target),
     modal: modal ? (modal.id === KEYS_DIALOG ? 'keys' : 'other') : null,
     popovers: openPopovers(),
+    tip: tooltipShown(),
   };
 }
 
 // The board's one keydown listener. `context` gives what the app knows (view, sheet, front card, guard); the DOM
 // gives the rest. A field that unmounts while typed in leaves focus on the page, and the typing lock takes the keys
 // that follow until the typing stops.
-export function useKeys(context: () => Omit<KeyContext, 'target' | 'modal' | 'popovers'>, dispatch: (action: Action, e: KeyboardEvent) => void) {
+export function useKeys(context: () => Omit<KeyContext, 'target' | 'modal' | 'popovers' | 'tip'>, dispatch: (action: Action, e: KeyboardEvent) => void) {
   const press = useEffectEvent((e: KeyboardEvent) => {
     const ctx = { ...context(), ...dom(e) };
     const action = keyAction(ctx, e);
     trackKey(ctx, e, action);
     if (!action) return;
     e.preventDefault();
+    if (e.key === 'Escape') hideTooltip();
     dispatch(action, e);
   });
 
@@ -163,7 +166,7 @@ export function useBoardKeys({ route, deck, repos, artifacts }: { route: Route; 
   useKeys(
     () => ({
       view: route.view,
-      sheet: route.sheet ? { tab: route.sheet.tab, artifacts } : null,
+      sheet: route.sheet ? { tab: route.sheet.tab, artifacts, narrowed: route.sheet.tab === 'diff' && diffNarrowed() } : null,
       card: front?.card ?? null,
       deck,
       guarded: queue.guarded(),
@@ -179,6 +182,8 @@ export function useBoardKeys({ route, deck, repos, artifacts }: { route: Route; 
       else if (action.type === 'tab') showTab(action.tab);
       else if (action.type === 'file') stepFile(action.step);
       else if (action.type === 'back') closeSheet();
+      else if (action.type === 'close' && action.what === 'tooltip') return;
+      else if (action.type === 'close' && action.what === 'file') widenDiff();
       else front?.act(action, e);
     },
   );

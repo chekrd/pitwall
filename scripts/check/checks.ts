@@ -2526,6 +2526,70 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P4.esc-tooltip Esc with the pointer on the held send\'s toast, its tooltip showing, takes the send back and nothing goes out; with nothing held, Esc on a tooltip only dismisses it, and the next Esc leaves the Wall',
+    async run({ page, mock }) {
+      const tip = () => !!document.querySelector('#tooltip:popover-open');
+      await openQueue(page, mock);
+      await ready(page, 's-cart');
+      await page.key('Enter');
+      await page.until('s-hooks at the front', frontIs, 's-hooks');
+      await page.hover('[data-toast][data-kind="undo"] [data-explain]');
+      await page.until('the toast\'s tooltip', tip);
+      await page.key('Escape');
+      await page.until('s-cart back at the front', frontIs, 's-cart');
+      assert.equal(await page.eval(toastsOf, 'undo'), null, 'the undo toast stayed');
+      await page.until('the tooltip gone', () => !document.querySelector('#tooltip:popover-open'));
+      await sleep(HELD_MS);
+      assert.deepEqual(await actions(mock), [], 'the send went out');
+
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await page.hover('[data-window]');
+      await page.until('the usage\'s tooltip', tip);
+      await page.key('Escape');
+      await page.until('the tooltip gone', () => !document.querySelector('#tooltip:popover-open'));
+      await sleep(150);
+      assert.equal(await page.eval(() => location.pathname), '/wall', 'the Esc on the tooltip left the Wall');
+      await page.key('Escape');
+      await page.until('the queue', () => location.pathname === '/');
+    },
+  },
+  {
+    name: 'P4.esc-diff over one file of the diff, Esc takes back a send held from the reply box and keeps the file, and Esc in the rename field only cancels the rename; the next Esc goes back to all files, and the reply box has the message back',
+    async run({ page, mock }) {
+      // The page's clock runs slow, so the hold outlasts the steps to the file.
+      await page.fastClock(0.4);
+      await openFromWall(page, mock, 's-invoice');
+      await page.click('#task-sheet textarea');
+      await page.type('Also round the tax lines');
+      await page.key('Enter');
+      await page.until('the undo toast', toastsOf, 'undo');
+      await page.click('#task-sheet [role="tab"]', 'Diff');
+      await page.until('the file tree', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 12);
+      await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
+      await page.until('server/git.ts whole', wholeFile, 'server/git.ts');
+      assert.ok(await page.eval(toastsOf, 'undo'), 'the hold ran out before the file opened');
+      await page.key('Escape');
+      await page.until('the undo toast gone', () => !document.querySelector('[data-toast][data-kind="undo"]'));
+      await sleep(150);
+      assert.deepEqual([await page.eval(sheetOpen), await page.eval(wholeFile, 'server/git.ts')], [true, true], 'the Esc that took the send back left the file');
+
+      await page.click('#task-sheet h2 button');
+      await page.until('the rename field', () => document.activeElement?.getAttribute('aria-label') === 'Task name');
+      await page.type(' X');
+      await page.key('Escape');
+      await page.until('the title back', () => document.querySelector('#task-sheet h2')?.textContent === 'Fix invoice PDF rounding');
+      await sleep(150);
+      assert.deepEqual([await page.eval(sheetOpen), await page.eval(wholeFile, 'server/git.ts')], [true, true], 'the Esc in the rename field left the file');
+
+      await page.key('Escape');
+      await page.until('all files again', () => document.querySelectorAll('section[data-file]').length === 12);
+      await page.click('#task-sheet [role="tab"]', 'Overview');
+      await page.until('the message back in the reply box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')?.value === 'Also round the tax lines');
+      assert.deepEqual(await actions(mock), [], 'the send went out');
+    },
+  },
+  {
     name: 'P4.close-in-place a sheet loaded in a tab after another page of the board closes in place: the page does not load again, and it says the task is gone',
     async run({ page, mock }) {
       await page.goto(`${mock.url}/`);

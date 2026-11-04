@@ -3,7 +3,6 @@ import type { ThemeRegistration } from 'shiki';
 import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { api } from '../api.ts';
-import { SHEET_DIALOG } from '../keys.ts';
 import type { FullDiff } from '../types.ts';
 import styles from './DiffView.module.css';
 import { counts, fileAnchor, FileTree, inDir, matching, treeOrder } from './FileTree.tsx';
@@ -23,12 +22,14 @@ const POOL = {
   highlighterOptions: { theme: 'darcula', lineDiffType: 'word' },
 } as const;
 
-const COVERS_SHEET = `dialog:modal:not(#${SHEET_DIALOG}), [popover="auto"]:popover-open`;
-
 // J and K step through the files of the diff on screen.
 let stepper: ((by: 1 | -1) => void) | null = null;
+// Esc steps back from one file to its folder or all files, and from a folder to all files, keeping the task open.
+let widen: (() => void) | null = null;
 
 export const stepFile = (by: 1 | -1) => stepper?.(by);
+export const diffNarrowed = () => !!widen;
+export const widenDiff = () => widen?.();
 
 const TREE_WIDTH = 260;
 const TREE_MIN = 140;
@@ -83,7 +84,6 @@ function Diffs({ worktree }: { worktree: string }) {
   const [seeking, setSeeking] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const shownQuery = useDeferredValue(query);
-  const filterRef = useRef<HTMLInputElement>(null);
   const diffsRef = useRef<HTMLDivElement>(null);
   const returnTo = useRef<string | null>(null);
   const opening = useRef<string | null>(null);
@@ -243,29 +243,11 @@ function Diffs({ worktree }: { worktree: string }) {
       const name = order[Math.max(0, Math.min(order.length - 1, to))];
       if (name && name !== current) focus(name);
     };
+    widen = focused || dir ? back : null;
     return () => {
       stepper = null;
+      widen = null;
     };
-  });
-
-  // Esc steps back from one file to its folder or all files, and from a folder to all files, keeping the task open,
-  // so it runs before the board's keys, which would leave the task. A dialog or the ⋯ menu over the task takes the Esc
-  // first: cancelling it here would keep that layer open. In the filter, Esc clears it, then leaves the field.
-  useLayoutEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector(COVERS_SHEET)) return;
-      if (e.target === filterRef.current) {
-        e.preventDefault();
-        if (query) filter('');
-        else filterRef.current?.blur();
-        return;
-      }
-      if (!focused && !dir) return;
-      e.preventDefault();
-      back();
-    };
-    addEventListener('keydown', onKey, true);
-    return () => removeEventListener('keydown', onKey, true);
   });
 
   useEffect(() => {
@@ -339,7 +321,6 @@ function Diffs({ worktree }: { worktree: string }) {
                 onAll={showAll}
                 query={query}
                 onQuery={filter}
-                filterRef={filterRef}
               />
               <div
                 className={styles.resizer}

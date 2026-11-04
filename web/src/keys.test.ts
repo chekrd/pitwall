@@ -7,7 +7,7 @@ const page: Target = { editable: false, control: false, option: false, resizer: 
 const card = (kind: Kind, patch: Partial<Card> = {}): Card =>
   ({ kind, options: 3, questions: [], lone: false, suggestion: false, primary: true, why: false, composing: false, ...patch });
 const ctx = (patch: Partial<KeyContext> = {}): KeyContext =>
-  ({ view: 'queue', sheet: null, card: card('ask'), deck: 3, guarded: false, held: false, repos: true, target: page, modal: null, popovers: [], ...patch });
+  ({ view: 'queue', sheet: null, card: card('ask'), deck: 3, guarded: false, held: false, repos: true, target: page, modal: null, popovers: [], tip: false, ...patch });
 
 const CODES: Record<string, string> = { Enter: 'Enter', Escape: 'Escape', ' ': 'Space', '?': 'Slash', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight' };
 const key = (k: string, patch: Partial<Key> = {}): Key => ({ key: k, code: CODES[k] ?? (/^\d$/.test(k) ? `Digit${k}` : `Key${k.toUpperCase()}`), ...patch });
@@ -73,19 +73,19 @@ test('Enter or Space on a focused button is the button\'s; Space on a focused op
 test('Z takes back the last send anywhere, guarded or not, in the sheet too', () => {
   assert.deepEqual(keyAction(ctx({ guarded: true }), key('Z')), { type: 'undo' });
   assert.deepEqual(keyAction(ctx({ view: 'wall', card: null, deck: 0 }), key('z')), { type: 'undo' });
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false } }), key('z')), { type: 'undo' });
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, narrowed: false } }), key('z')), { type: 'undo' });
 });
 
 test('in the sheet 1 to 4 switch tabs (4 when there are artifacts), J and K act only on Diff, Esc goes back, and V, N and the card keys do nothing', () => {
-  const overview = ctx({ sheet: { tab: 'overview', artifacts: false } });
+  const overview = ctx({ sheet: { tab: 'overview', artifacts: false, narrowed: false } });
   assert.deepEqual(keyAction(overview, { key: '+', code: 'Digit1' }), { type: 'tab', tab: 'overview' });
   assert.deepEqual(keyAction(overview, key('2')), { type: 'tab', tab: 'conversation' });
   assert.deepEqual(keyAction(overview, key('3')), { type: 'tab', tab: 'diff' });
   assert.equal(keyAction(overview, key('4')), null);
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: true } }), key('4')), { type: 'tab', tab: 'artifacts' });
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: true, narrowed: false } }), key('4')), { type: 'tab', tab: 'artifacts' });
   assert.equal(keyAction(overview, key('5')), null);
   assert.equal(keyAction(overview, key('j')), null);
-  const diff = ctx({ sheet: { tab: 'diff', artifacts: false } });
+  const diff = ctx({ sheet: { tab: 'diff', artifacts: false, narrowed: false } });
   assert.deepEqual(keyAction(diff, key('j')), { type: 'file', step: 1 });
   assert.deepEqual(keyAction(diff, key('K', { repeat: true })), { type: 'file', step: -1 });
   for (const k of ['v', 'Enter', 'ArrowRight', 'w']) assert.equal(keyAction(diff, key(k)), null, `${k} in the sheet`);
@@ -104,10 +104,26 @@ test('V switches views (to an empty queue too), N needs a repository, and Esc cl
   assert.deepEqual(keyAction(ctx({ card: card('ask', { composing: true }) }), key('Escape')), { type: 'close', what: 'composer' });
   assert.equal(keyAction(ctx(), key('Escape')), null);
   assert.deepEqual(keyAction(ctx({ view: 'wall' }), key('Escape')), { type: 'view', to: 'queue' });
-  for (const at of [ctx({ held: true }), ctx({ held: true, view: 'wall' }), ctx({ held: true, sheet: { tab: 'diff', artifacts: false } }), ctx({ held: true, card: card('ask', { composing: true }) })]) {
+  for (const at of [ctx({ held: true }), ctx({ held: true, view: 'wall' }), ctx({ held: true, sheet: { tab: 'diff', artifacts: false, narrowed: false } }), ctx({ held: true, card: card('ask', { composing: true }) })]) {
     assert.deepEqual(keyAction(at, key('Escape')), { type: 'undo' }, 'a held send goes back first');
   }
   assert.equal(keyAction(ctx({ view: 'wall', deck: 0, card: null }), key('Escape')), null);
+});
+
+test('Esc has one order: a held send goes back first, then a tooltip is dismissed, then one file of the diff steps back to all files, then the task closes; a field keeps its own Esc', () => {
+  const file = { tab: 'diff' as const, artifacts: false, narrowed: true };
+  assert.deepEqual(keyAction(ctx({ sheet: file, held: true, tip: true }), key('Escape')), { type: 'undo' }, 'hovering the Undo toast');
+  assert.deepEqual(keyAction(ctx({ sheet: file, held: true }), key('Escape')), { type: 'undo' }, 'over one file of the diff');
+  assert.deepEqual(keyAction(ctx({ sheet: file, tip: true }), key('Escape')), { type: 'close', what: 'tooltip' });
+  assert.deepEqual(keyAction(ctx({ sheet: file }), key('Escape')), { type: 'close', what: 'file' });
+  assert.deepEqual(keyAction(ctx({ sheet: file, target: { ...page, resizer: true } }), key('Escape')), { type: 'close', what: 'file' }, 'on the resize handle');
+  assert.deepEqual(keyAction(ctx({ sheet: { ...file, narrowed: false } }), key('Escape')), { type: 'back' });
+  assert.equal(keyAction(ctx({ sheet: file, held: true, target: { ...page, editable: true } }), key('Escape')), null, 'the rename field or the filter');
+  assert.deepEqual(keyAction(ctx({ view: 'wall', tip: true }), key('Escape')), { type: 'close', what: 'tooltip' });
+  for (const over of [ctx({ modal: 'other', held: true, tip: true }), ctx({ popovers: ['auto', 'hint'], held: true, tip: true })]) {
+    assert.deepEqual(keyAction(over, key('Escape')), { type: 'close', what: 'tooltip' }, 'a tooltip over a dialog or menu goes, and the layer stays');
+    assert.equal(keyAction({ ...over, tip: false }, key('Escape')), null, 'the layer closes itself');
+  }
 });
 
 test('each card kind takes its own keys: W, E, Y and Space on decisions, X and W on Your turn, O and D on any card', () => {
@@ -140,8 +156,8 @@ test('every row of the Keys table does something, so the Keys dialog lists exact
     V: [ctx(), key('v')],
     N: [ctx(), key('n')],
     B: [ctx(), key('b')],
-    '1 / 2 / 3 / 4': [ctx({ sheet: { tab: 'overview', artifacts: true } }), key('4')],
-    'J / K': [ctx({ sheet: { tab: 'diff', artifacts: true } }), key('k')],
+    '1 / 2 / 3 / 4': [ctx({ sheet: { tab: 'overview', artifacts: true, narrowed: false } }), key('4')],
+    'J / K': [ctx({ sheet: { tab: 'diff', artifacts: true, narrowed: false } }), key('k')],
     Esc: [ctx({ view: 'wall' }), key('Escape')],
     '?': [ctx(), key('?')],
   };

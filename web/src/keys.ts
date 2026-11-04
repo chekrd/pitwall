@@ -43,7 +43,8 @@ export interface Card {
 
 export interface KeyContext {
   view: 'queue' | 'wall';
-  sheet: { tab: Tab; artifacts: boolean } | null;
+  // `narrowed`: the Diff tab shows one file or one folder, which Esc steps back from.
+  sheet: { tab: Tab; artifacts: boolean; narrowed: boolean } | null;
   card: Card | null;
   deck: number;
   guarded: boolean;
@@ -55,6 +56,8 @@ export interface KeyContext {
   modal: 'keys' | 'other' | null;
   // The `popover` attribute of each open popover.
   popovers: readonly string[];
+  // A tooltip shows: an Esc only dismisses it, unless a send waits to go out.
+  tip: boolean;
 }
 
 export type Action =
@@ -76,7 +79,7 @@ export type Action =
   | { type: 'keys' }
   | { type: 'tab'; tab: Tab }
   | { type: 'file'; step: 1 | -1 }
-  | { type: 'close'; what: 'why' | 'composer' }
+  | { type: 'close'; what: 'why' | 'composer' | 'tooltip' | 'file' }
   | { type: 'back' };
 
 export const KEYS_DIALOG = 'keys';
@@ -111,6 +114,17 @@ function numbered(card: Card | null, n: number): Action | null {
   return null;
 }
 
+// Esc's one order, in the Esc row below. A dialog or the ⋯ menu over the board takes Esc itself, but for a tooltip on it.
+function escape(ctx: KeyContext): Action | null {
+  if (ctx.modal || ctx.popovers.includes('auto')) return ctx.tip ? { type: 'close', what: 'tooltip' } : null;
+  if (ctx.held) return { type: 'undo' };
+  if (ctx.tip) return { type: 'close', what: 'tooltip' };
+  if (ctx.sheet) return ctx.sheet.narrowed ? { type: 'close', what: 'file' } : { type: 'back' };
+  if (ctx.view === 'wall') return ctx.deck ? { type: 'view', to: 'queue' } : null;
+  if (ctx.card?.why) return { type: 'close', what: 'why' };
+  return ctx.card?.composing ? { type: 'close', what: 'composer' } : null;
+}
+
 export const KEYS: readonly Row[] = [
   { keys: '1 – 9', help: 'Send that option; in a menu, pick it', scopes: ['queue'], guarded: true, matches: (e) => digit(e) > 0, act: (ctx, e) => numbered(ctx.card, digit(e)) },
   { keys: '↵', help: 'What the main button says: send the choice, the picks or open the terminal; on a finished turn, go to the reply box', scopes: ['queue'], guarded: true, matches: named('Enter'), act: (ctx) => (ctx.card?.primary ? { type: 'primary' } : null) },
@@ -132,22 +146,20 @@ export const KEYS: readonly Row[] = [
       : ctx.sheet?.artifacts ? { type: 'tab', tab: 'artifacts' } : null),
   },
   { keys: 'J / K', help: 'In the diff: next or previous file', scopes: ['sheet'], repeats: true, matches: named('j', 'k'), act: (ctx, e) => (ctx.sheet?.tab === 'diff' ? { type: 'file', step: e.key.toLowerCase() === 'j' ? 1 : -1 } : null) },
-  {
-    keys: 'Esc', help: 'Take back a send that waits to go out; else close what is open; from a task, back to where it was opened; then back to the queue', scopes: ['queue', 'wall', 'sheet'], matches: named('Escape'),
-    act: (ctx) => (ctx.held ? { type: 'undo' } : ctx.sheet ? { type: 'back' } : ctx.view === 'wall' ? (ctx.deck ? { type: 'view', to: 'queue' } : null)
-      : ctx.card?.why ? { type: 'close', what: 'why' } : ctx.card?.composing ? { type: 'close', what: 'composer' } : null),
-  },
+  { keys: 'Esc', help: 'Take back a send that waits to go out; else close what is open; from a task, back to where it was opened; then back to the queue', scopes: ['queue', 'wall', 'sheet'], matches: named('Escape'), act: escape },
   { keys: '?', help: 'These keys', scopes: ['queue', 'wall', 'sheet'], matches: named('?'), act: () => ({ type: 'keys' }) },
 ];
 
 // The row a key press belongs to, or null when the press is not the board's: a shortcut with a modifier, a key in a
-// field or on the resize handle, Enter or Space on a control (native activation wins, except Space on an option,
-// which toggles the details), or a dialog or the ⋯ menu open. Toasts and hover cards are popovers too, but not menus.
+// field, a key but Esc on the resize handle, Enter or Space on a control (native activation wins, except Space on an option,
+// which toggles the details), or a dialog or the ⋯ menu open, but for Esc on a tooltip over them. Toasts and hover
+// cards are popovers too, but not menus. Esc is decided here alone: a field's own Esc stays the field's.
 export function rowFor(ctx: KeyContext, e: Key): Row | null {
   if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return null;
-  if (ctx.target.editable || ctx.target.resizer) return null;
-  if (ctx.popovers.includes('auto')) return null;
-  if (ctx.modal && !(ctx.modal === 'keys' && e.key === '?')) return null;
+  if (ctx.target.editable || (ctx.target.resizer && e.key !== 'Escape')) return null;
+  const tip = e.key === 'Escape' && ctx.tip;
+  if (ctx.popovers.includes('auto') && !tip) return null;
+  if (ctx.modal && !tip && !(ctx.modal === 'keys' && e.key === '?')) return null;
   if (ctx.target.control && (e.key === 'Enter' || (e.key === ' ' && !ctx.target.option))) return null;
   const scope: Scope = ctx.sheet ? 'sheet' : ctx.view;
   return KEYS.find((r) => r.scopes.includes(scope) && r.matches(e)) ?? null;
