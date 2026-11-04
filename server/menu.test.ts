@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { MenuQuestion } from './conversations.ts';
+import { parseMenu, type MenuQuestion } from './conversations.ts';
 import { menuKeystrokes } from './menu.ts';
 
 const question = (multiSelect = false): MenuQuestion => ({
@@ -50,4 +50,9 @@ test('refuses answers it cannot type', () => {
   assert.throws(() => menuKeystrokes(menu(question(true)), [{ labels: ['Red'], other: 'x' }]), /multiple-choice/);
   assert.throws(() => menuKeystrokes(menu(question(true)), [{ labels: [], other: '' }]), /at least one/);
   assert.throws(() => menuKeystrokes(menu(question()), [{ labels: ['Red', 'Blue'], other: '' }]), /pick one/);
+});
+
+test('a dialog without questions is no menu, as no answer to it could be typed', () => {
+  assert.equal(parseMenu('t', { questions: [] }), null);
+  assert.equal(parseMenu('t', { questions: [{ question: 'Colour?', header: 'Colour', options: [{ label: 'Red' }] }] })?.questions.length, 1);
 });

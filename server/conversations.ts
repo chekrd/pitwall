@@ -61,7 +61,7 @@ export interface MenuQuestion {
   question: string;
   header: string;
   multiSelect: boolean;
-  options: { label: string; description?: string }[];
+  options: { label: string; description?: string | undefined }[];
 }
 
 export interface Menu {
@@ -328,7 +328,7 @@ export function describeTool(tool: Record<string, any>) {
 }
 
 export function parseMenu(toolUseId: string, input: any): Menu | null {
-  if (!toolUseId || !Array.isArray(input?.questions)) return null;
+  if (!toolUseId || !Array.isArray(input?.questions) || !input.questions.length) return null;
   return {
     toolUseId,
     questions: input.questions.map((q: any) => ({
