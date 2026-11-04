@@ -35,10 +35,10 @@ export interface Item<R = unknown> extends Request {
   key: string | null;
   typed: boolean;
   command: boolean;
-  // The session as the press found it, to tell from a later snapshot that the send took.
+  // The session as the post found it, or the press until it posts, to tell from a later snapshot that the send took.
   status: SessionStatus;
   lastTurn: string | null;
-  // When the board last answered the session, by the press.
+  // When the board last answered the session, by then.
   answeredAt: number | null;
   restore: R;
   dueAt: number;
@@ -131,7 +131,17 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
   const posting = new Set<string>();
   const waiters: (() => void)[] = [];
 
+  // The newest snapshot's sessions, which the adopted items are judged against when their time is up.
+  let latest: readonly Session[] | null = null;
+
   const find = (id: string) => items.find((i) => i.id === id);
+
+  // The session as the newest snapshot has it, for a held item about to post: what changed since the press is not its
+  // doing. A waiting item keeps the one from its first post, which may have landed.
+  function base(i: Item<R>): Partial<Item<R>> {
+    const s = latest?.find((x) => x.id === i.sessionId);
+    return s ? { status: s.status, lastTurn: s.lastTurn, answeredAt: s.answered?.at ?? null } : {};
+  }
 
   function set(next: readonly Item<R>[]) {
     items = next;
@@ -165,8 +175,15 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     schedule(id, CONFIRM_MS, () => drop(id));
   }
 
+  // A post whose answer was lost may still have reached the server, as the newest snapshot can already show.
+  function landed(id: string) {
+    const i = find(id);
+    const s = i && latest?.find((x) => x.id === i.sessionId);
+    return !!s && wentOut(i, s);
+  }
+
   function refused(id: string, err: unknown) {
-    if (err instanceof TypeError) return patch(id, { state: 'waiting' });
+    if (err instanceof TypeError) return landed(id) ? sent(id) : patch(id, { state: 'waiting' });
     const code = (err as { code?: string } | null)?.code;
     if (code === 'answered') return sent(id);
     patch(id, { state: 'failed', error: err instanceof Error ? err.message : String(err), code });
@@ -201,7 +218,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     const item = find(id);
     if (item?.state !== 'held' && item?.state !== 'waiting') return;
     clear(id);
-    patch(id, { state: 'sending' });
+    patch(id, { state: 'sending', ...(item.state === 'held' && base(item)) });
     const before = chains.get(item.sessionId);
     const run = before ? before.then(() => attempt(id)) : attempt(id);
     chains.set(item.sessionId, run);
@@ -213,15 +230,14 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
   // What the server would answer now, judged from a snapshot, for a held or waiting item; null when it would take it.
   function verdict(i: Item<R>, s: Session | undefined): Partial<Item<R>> | null {
     if (!s) return { state: 'failed', error: 'the task is gone', code: 'gone' };
+    if (i.state === 'waiting' && wentOut(i, s)) return { state: 'sent', sentAt: now() };
     if (s.status === 'exited') return { state: 'failed', error: 'this session has ended; continue it first', code: 'ended' };
     try {
       checkDecision(s, i.key, i.typed);
       return null;
     } catch (err) {
       if (!(err instanceof Refusal)) throw err;
-      if (err.code !== 'answered') return { state: 'failed', error: err.message, code: err.code };
-      // A waiting item may have landed on its first try, before the connection broke.
-      return i.state === 'waiting' ? { state: 'sent', sentAt: now() } : { state: 'answered' };
+      return err.code === 'answered' ? { state: 'answered' } : { state: 'failed', error: err.message, code: err.code };
     }
   }
 
@@ -238,12 +254,9 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     return open !== null && open !== i.key;
   }
 
-  // The newest snapshot's sessions, which the adopted items are judged against when their time is up.
-  let latest: readonly Session[] | null = null;
-
-  // Whether an adopted item reached the server, as far as a snapshot tells: its decision was answered, by it or from
-  // elsewhere; a dismissal's question closed; or the board answered a note's session after the press, or the session
-  // moved on.
+  // Whether an adopted or waiting item reached the server, as far as a snapshot tells: its decision was answered, by it
+  // or from elsewhere; a dismissal's question closed; or the board answered a note's session after the post started,
+  // or the session moved on.
   function wentOut(i: Item<R>, s: Session) {
     if (i.action === 'dismiss') return decisionKey(s) !== i.key;
     if (i.key !== null) return s.answered?.key === i.key;
@@ -350,7 +363,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
       const posts = fold(due).map((out) => [out, send(out)] as const);
       const at = now();
       for (const i of due) clear(i.id);
-      set(items.flatMap((i) => (!due.includes(i) ? [i] : i.command ? [] : [{ ...i, state: 'sent' as const, sentAt: at }])));
+      set(items.flatMap((i) => (!due.includes(i) ? [i] : i.command ? [] : [{ ...i, ...(i.state === 'held' && base(i)), state: 'sent' as const, sentAt: at }])));
       for (const i of due) if (!i.command) schedule(i.id, CONFIRM_MS, () => drop(i.id));
       for (const [out, posted] of posts) {
         Promise.resolve(posted).catch((err) => {

@@ -125,6 +125,62 @@ test('a network error makes the item wait, reconnected() posts the same body aga
   assert.deepEqual([posts.length, states()], [2, ['failed']], 'a late reply changes nothing, and nothing retries');
 });
 
+test('a note whose post landed though its answer was lost counts as sent: the snapshot that shows it posts nothing again, and Claude asking meanwhile does not fail it', async (t) => {
+  const { box, posts, tick, states } = outbox(t);
+  box.hold(reviews, note('Bump the version'), '');
+  tick(5000);
+  posts[0].fail(new TypeError('Failed to fetch'));
+  await settle();
+  assert.deepEqual(states(), ['waiting']);
+  const landed = { ...reviews, status: 'working' as const, answered: { key: null, text: 'Bump the version', at: 1_000_001 } };
+  assert.deepEqual(box.reconcile([landed]), []);
+  box.confirm([landed]);
+  box.reconnected();
+  assert.deepEqual([posts.length, states()], [1, []]);
+
+  box.hold(reviews, note('Bump'), '');
+  tick(5000);
+  posts[1].fail(new TypeError('Failed to fetch'));
+  await settle();
+  const asked = session('reviews', { question: question('q9'), answered: { key: null, text: 'Bump', at: 1_000_002 } });
+  assert.deepEqual(box.reconcile([asked]), []);
+  assert.deepEqual(states(), ['sent']);
+  box.reconnected();
+  assert.equal(posts.length, 2);
+});
+
+test('a note whose post did not land goes out again, also when Claude ended a turn while it was held', async (t) => {
+  const { box, posts, tick, states } = outbox(t);
+  const busy = { ...reviews, status: 'working' as const };
+  box.reconcile([busy]);
+  box.hold(busy, note('Bump the version'), '');
+  tick(1000);
+  const done = { ...reviews, lastTurn: 't2' };
+  box.reconcile([done]);
+  tick(4000);
+  posts[0].fail(new TypeError('Failed to fetch'));
+  await settle();
+  assert.deepEqual(states(), ['waiting']);
+  box.reconcile([done]);
+  box.reconnected();
+  assert.deepEqual([posts.length, states()], [2, ['sending']]);
+  assert.deepEqual(posts[1].out, posts[0].out);
+});
+
+test('a note whose landing a snapshot showed before its post failed is not handed to a flush', async (t) => {
+  const { box, posts, tick, states } = outbox(t);
+  box.reconcile([reviews]);
+  box.hold(reviews, note('Bump the version'), '');
+  tick(5000);
+  box.reconcile([{ ...reviews, status: 'working', answered: { key: null, text: 'Bump the version', at: 1_005_000 } }]);
+  posts[0].fail(new TypeError('Failed to fetch'));
+  await settle();
+  assert.deepEqual(states(), ['sent']);
+  const flushed: Folded[] = [];
+  box.flush((out) => flushed.push(out));
+  assert.deepEqual(flushed, []);
+});
+
 test('the early check: another decision fails a held item unposted, an answer from elsewhere drops it quietly, and a plain message may meet the end-of-turn decision it answers', async (t) => {
   const { box, posts, tick } = outbox(t);
   const moved = box.hold(cart, answer('q:q1', { choice: 'Keep' }), 'draft');
