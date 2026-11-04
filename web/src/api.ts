@@ -14,10 +14,12 @@ const unreachable = () => Object.assign(new TypeError('Pitwall could not be reac
 
 export async function api<T = void>(method: string, path: string, body?: unknown, { keepalive = false } = {}): Promise<T> {
   if (method !== 'GET') track('api', { method, path: path.split('?')[0].replace(/\/(?:[0-9a-f-]{8,}|\d+)(?=\/|$)/g, '/:id') });
+  // Every change goes as JSON, also one without a body: the server refuses other types, which a cross-site form can send.
+  const json = method === 'GET' ? undefined : (body ?? {});
   const res = await fetch(path, {
     method,
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: json === undefined ? {} : { 'content-type': 'application/json' },
+    body: json === undefined ? undefined : JSON.stringify(json),
     keepalive,
   }).catch((err: unknown) => {
     record('api-failed', { method, path, error: String(err) });

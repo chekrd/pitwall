@@ -32,7 +32,7 @@ import { refuseLive } from '../isolate.ts';
 import { addFromTemplate, artifactPage, COMMANDS, DELETE_LOSS, PROJECT_COMMANDS, explanationOf, TEMPLATES, worktreeRootOf, type Template } from './fixtures.ts';
 import { scenarios, type Flag, type Scenario } from './scenarios.ts';
 
-// The contract of server/main.ts over made-up sessions, without a Claude, tmux, Ghostty or the live board behind it.
+// The contract of server/app.ts over made-up sessions, without a Claude, tmux, Ghostty or the live board behind it.
 
 if (homedir() !== HOME) throw new Error(`the mock runs in ${homedir()}, not in its own ${HOME}`);
 
@@ -156,7 +156,7 @@ const snapshot = () => ({
   ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: `${HOME}/git/github/pitwall` }),
 });
 
-// As in server/main.ts: every snapshot names the entry the polls have taken, and a socket that opens first reads
+// As in server/app.ts: every snapshot names the entry the polls have taken, and a socket that opens first reads
 // index.html, which can only cast doubt on it. On --legacy only a socket that opens is told an entry, what that read
 // finds. A src that /mock/ui-entry sets is named instead of either until {src: null} or a scenario load clears it.
 const ui = watchEntry(() => readEntry(join(DIST, 'index.html')), () => {
@@ -1088,9 +1088,9 @@ async function serveStatic(res: ServerResponse, pathname: string) {
 
 let port = 0;
 
-// Like server/main.ts: loopback alone does not stop a web page elsewhere from calling us.
+// Like server/app.ts: loopback alone does not stop a web page elsewhere from calling us.
 function allowed(req: IncomingMessage) {
-  const hosts = [`127.0.0.1:${port}`, `localhost:${port}`, '127.0.0.1:5173', 'localhost:5173'];
+  const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
   const origin = req.headers.origin;
   return hosts.includes(req.headers.host ?? '') && (!origin || hosts.some((h) => origin === `http://${h}`));
 }
@@ -1154,6 +1154,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       res.end(JSON.stringify(data));
     }
   };
+  if (api && !['GET', 'HEAD', 'OPTIONS'].includes(req.method ?? '')) {
+    const upload = url.pathname === '/api/uploads';
+    if (upload ? !req.headers['x-filename'] : !/^application\/json\s*(;|$)/i.test(req.headers['content-type'] ?? '')) {
+      return reply(415, { error: upload ? 'an upload names its file in x-filename' : 'send the body as application/json' });
+    }
+  }
   const match = routes.map(([method, pattern, handler]) => ({ method, handler, params: url.pathname.match(pattern) })).find((r) => r.method === req.method && r.params);
   if (!match) return reply(404, 'not found');
   try {
