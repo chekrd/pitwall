@@ -18,7 +18,8 @@ interface Stage {
 
 export interface PauseDeps {
   escape: (id: string) => Promise<void>;
-  type: (id: string, text: string) => Promise<void>;
+  // `wanted` says, when the prompt's turn to be typed comes, whether it should still go.
+  type: (id: string, text: string, wanted: () => boolean) => Promise<void>;
   mark: (id: string, paused: Interrupted) => void;
   safe?: () => void;
   now?: () => number;
@@ -34,9 +35,12 @@ export const pauseMark = (at: number): Interrupted => ({ at, status: 'working', 
 export function pauser({ escape, type, mark, safe = () => {}, now = Date.now }: PauseDeps) {
   const stages = new Map<string, Stage>();
 
+  // A prompt still waiting for its turn when the pause is cancelled, or the task left it, is not typed.
   const ask = (id: string, stage: Stage) => {
     Object.assign(stage, { step: 'asked', since: now() });
-    void type(id, PAUSE_PROMPT).catch((err) => {
+    const current = () => stages.get(id) === stage;
+    void type(id, PAUSE_PROMPT, current).catch((err) => {
+      if (!current()) return;
       console.warn('pause prompt failed', id, err);
       stage.step = 'stopping';
     });

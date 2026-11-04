@@ -112,6 +112,17 @@ test('a Claude that ends while pausing is paused, so Resume brings it back; one 
   assert.deepEqual(p.stopping(), ['b']);
 });
 
+test('Cancel calls off a pause prompt still waiting for its turn to be typed, and a new pause asks again', () => {
+  const asked: (() => boolean)[] = [];
+  const p = pauser({ escape: async () => {}, type: async (_id, _text, wanted) => void asked.push(wanted), mark: () => {} });
+  p.start([row('a', 'working', true)]);
+  assert.equal(asked[0](), true);
+  p.cancel();
+  assert.equal(asked[0](), false);
+  p.start([row('a', 'working', true)]);
+  assert.deepEqual(asked.map((wanted) => wanted()), [false, true]);
+});
+
 test('Cancel stops following the tasks, and says nothing', () => {
   const { p, safe } = setup();
   p.start([row('a', 'working')]);

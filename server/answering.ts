@@ -16,6 +16,9 @@ export interface AnsweringDeps {
   checkUploads: (files: unknown) => Promise<string[]>;
 }
 
+// A send whose `wanted` said no when its turn came: nothing was typed.
+export class Called extends Error {}
+
 export interface Reply {
   key?: string | null;
   choice?: string;
@@ -100,13 +103,15 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     return done;
   }
 
-  async function answer(id: string, reply: Reply, commands = true) {
+  // `wanted` is asked again when the send's turn comes, so one that waited behind another can be called off.
+  async function answer(id: string, reply: Reply, commands = true, wanted = () => true) {
     const text = reply.text?.trim() ?? '';
     const files = await checkUploads(reply.files);
     if (!reply.choice && !text && !files.length) throw new Error('empty answer');
     // Slash commands and `!` shell commands go in verbatim and are not an answer to the question.
     const command = commands && !reply.choice && !files.length && (await isCommand(must(id), text));
     await inTurn(id, () => {
+      if (!wanted()) throw new Called('this send was called off');
       const s = must(id);
       const to = promptTarget(s);
       if (command) return { type: () => send(to, text) };
@@ -143,10 +148,19 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
   }
 
   // For typing that answers nothing, such as a /rename: it takes its turn too, so it never lands inside another send.
-  async function type(id: string, text: string) {
+  async function type(id: string, text: string, wanted = () => true) {
     await inTurn(id, () => {
+      if (!wanted()) throw new Called('this send was called off');
       const to = promptTarget(must(id));
       return { type: () => send(to, text) };
+    });
+  }
+
+  // Keys that answer nothing, such as the Esc that stops a turn, also in their turn.
+  async function press(id: string, strokes: Keystroke[]) {
+    await inTurn(id, () => {
+      const to = liveTarget(must(id));
+      return { type: () => keys(to, strokes) };
     });
   }
 
@@ -165,5 +179,5 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     }
   }
 
-  return { answer, answerMenu, acceptAdvice, dismiss, type, settled };
+  return { answer, answerMenu, acceptAdvice, dismiss, type, press, settled };
 }

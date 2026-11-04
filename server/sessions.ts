@@ -5,7 +5,7 @@ import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
-import { answering, liveTarget } from './answering.ts';
+import { answering, Called } from './answering.ts';
 import { listCommands } from './commands.ts';
 import { alive, conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, transcriptFile, type ConversationLog } from './conversations.ts';
 import { report } from './claudeFormat.ts';
@@ -270,12 +270,16 @@ export function sendDueDrafts() {
   for (const due of ends.observe(sessions.all(), pausing.stopping())) {
     if (autoSending.has(due.id)) continue;
     autoSending.add(due.id);
-    void answers.answer(due.id, { key: null, text: due.text }, false)
+    // A pause that began while they waited for their turn keeps them.
+    const wanted = () => !pausing.stopping().includes(due.id) && !sessions.get(due.id)?.interrupted;
+    void answers.answer(due.id, { key: null, text: due.text }, false, wanted)
       .then(() => {
         sessions.update(due.id, { parked: removeParked(must(due.id).parked, due.ids) });
         notify();
       })
-      .catch((err) => console.warn('drafts not sent at the end of the turn', due.id, err))
+      .catch((err) => {
+        if (!(err instanceof Called)) console.warn('drafts not sent at the end of the turn', due.id, err);
+      })
       .finally(() => autoSending.delete(due.id));
   }
 }
@@ -287,10 +291,7 @@ function notifyPaused() {
 }
 
 const pausing = pauser({
-  escape: async (id) => {
-    await answers.settled(id);
-    await terminal.keys(liveTarget(must(id)), [{ key: 'escape' }]);
-  },
+  escape: (id) => answers.press(id, [{ key: 'escape' }]),
   type: answers.type,
   mark: (id, interrupted) => sessions.update(id, { interrupted }),
   safe: notifyPaused,

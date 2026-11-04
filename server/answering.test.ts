@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setImmediate as flush } from 'node:timers/promises';
-import { answering } from './answering.ts';
+import { answering, Called } from './answering.ts';
 import type { Advice, Session } from './db.ts';
 import { claim, decisionKey } from './decision.ts';
 import { Unsent, type Target } from './delivery.ts';
@@ -235,6 +235,34 @@ test("each send names the Claude it is for, by pid, tty and conversation, and on
     { pid: 1, tty: '/dev/ttys001', conversation: 's', prompt: true },
     { pid: 1, tty: '/dev/ttys001', conversation: 's', prompt: false },
   ]);
+});
+
+test('keys pressed while a send types, such as the Esc of a pause, wait for it to finish', async () => {
+  const w = world(session({ status: 'working' }), { hold: true });
+  const note = w.answers.answer('s', { key: null, text: 'Also bump the version' });
+  await flush();
+  const esc = w.answers.press('s', [{ key: 'escape' }]);
+  await flush();
+  assert.deepEqual(w.pressed, [], 'not between the paste and its Enter');
+  w.sends[0].done();
+  await note;
+  await esc;
+  assert.deepEqual(w.pressed, [[{ key: 'escape' }]]);
+});
+
+test('a send no longer wanted when its turn comes types nothing', async () => {
+  const w = world(session({ summary }), { hold: true });
+  const answer = w.answers.answer('s', { key: 's:t2', choice: 'Ship' });
+  await flush();
+  let wanted = true;
+  const pause = w.answers.type('s', 'Pausing', () => wanted);
+  const drafts = w.answers.answer('s', { key: null, text: 'Later' }, false, () => wanted);
+  wanted = false;
+  w.sends[0].done();
+  await answer;
+  await assert.rejects(pause, Called);
+  await assert.rejects(drafts, Called);
+  assert.deepEqual(w.typed, ['My decision: Ship.']);
 });
 
 test('accepting the second opinion is claimed like an answer: a second accept is refused while the first types', async () => {
