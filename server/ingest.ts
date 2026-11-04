@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
@@ -89,11 +90,13 @@ async function adopt(id: string, p: LiveProcess) {
   const meta = await conversationMeta(p.cwd, id);
   const tty = await ttyOf(p.pid);
   if (deleting.has(worktree.path) || !existsSync(p.cwd)) return false;
+  // The task this conversation started still has its id, running another conversation since a /clear.
+  const row = sessions.get(id) ? randomUUID() : id;
   sessions.insert({
-    id, repoId: worktree.repoId, worktree: worktree.path, cwd: p.cwd, pid: p.pid, tty,
+    id: row, conversation: id, repoId: worktree.repoId, worktree: worktree.path, cwd: p.cwd, pid: p.pid, tty,
     title: meta?.title ?? null, firstPrompt: meta?.firstPrompt ?? null, status: statusOf(p),
   });
-  void refreshDiffstat(id);
+  void refreshDiffstat(row);
   return true;
 }
 
@@ -164,10 +167,11 @@ async function syncLive() {
   const live = await liveConversations();
   const livePids = new Set([...live.values()].map((p) => p.pid));
   let changed = false;
+  const liveIds = new Set(live.keys());
   for (const [conversation, p] of live) {
-    let s = taskOf(sessions.all(), conversation);
+    let s = taskOf(sessions.all(), conversation, liveIds);
     if (!s) {
-      const left = leftBy(sessions.all(), p.pid, new Set(live.keys()));
+      const left = leftBy(sessions.all(), p.pid, liveIds);
       if (!left || !(await startedByClear(p.cwd, conversation))) {
         changed = (await adopt(conversation, p)) || changed;
         continue;

@@ -386,12 +386,12 @@ export const sessions = {
     const r = db.prepare('SELECT * FROM sessions WHERE conversation = ?').get(conversation);
     return r ? toSession(r) : undefined;
   },
-  insert: (s: Pick<Session, 'id' | 'repoId' | 'worktree' | 'cwd' | 'pid' | 'tty' | 'title' | 'firstPrompt' | 'status'>) => {
+  insert: (s: Pick<Session, 'id' | 'repoId' | 'worktree' | 'cwd' | 'pid' | 'tty' | 'title' | 'firstPrompt' | 'status'> & { conversation?: string }) => {
     const now = Date.now();
     db.prepare(`INSERT INTO sessions (id, conversation, repo_id, worktree, cwd, pid, tty, title, first_prompt, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET pid = excluded.pid, tty = excluded.tty, status = excluded.status, archived = 0, updated_at = excluded.updated_at`)
-      .run(s.id, s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
+      .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
   },
   update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);

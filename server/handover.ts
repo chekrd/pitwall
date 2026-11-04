@@ -2,9 +2,12 @@ import type { Session } from './db.ts';
 
 type Task = Pick<Session, 'id' | 'conversation' | 'history' | 'pid' | 'status'>;
 
-// The task a conversation belongs to: the one running it, or one that ran it before a /clear and now runs it again.
-export const taskOf = <T extends Task>(tasks: readonly T[], conversation: string) =>
-  tasks.find((t) => t.conversation === conversation) ?? tasks.find((t) => t.history.some((h) => h.id === conversation));
+// The task a conversation belongs to: the one running it, or one that ran it before a /clear and now runs it again. A
+// task whose conversation is among the `live` ones keeps it, so one from its history open elsewhere, by
+// `claude --resume` or another task's /resume, does not take it back.
+export const taskOf = <T extends Task>(tasks: readonly T[], conversation: string, live?: ReadonlySet<string>) =>
+  tasks.find((t) => t.conversation === conversation) ??
+  tasks.find((t) => t.history.some((h) => h.id === conversation) && !live?.has(t.conversation));
 
 // The task whose Claude, process `pid`, has left its conversation for another: by /clear or /resume.
 export const leftBy = <T extends Task>(tasks: readonly T[], pid: number, live: ReadonlySet<string>) =>

@@ -34,3 +34,46 @@ test('a hand-over keeps the old conversation as history and drops only what its 
   const back = handOver({ conversation: 'a2', history: patch.history, lastMessage: null, summary: null }, 'a', 9);
   assert.deepEqual(back.history, [{ id: 'a2', lastMessage: null, until: 9 }]);
 });
+
+// What each sync does with the live conversations, as syncLive does: the task of each takes it, a Claude that left its
+// task by /clear hands it over, and any other conversation becomes a task of its own.
+function sync(tasks: ReturnType<typeof task>[], live: Map<string, number>, cleared: ReadonlySet<string> = new Set()) {
+  const ids = new Set(live.keys());
+  for (const [conversation, pid] of live) {
+    let s = taskOf(tasks, conversation, ids);
+    if (!s) {
+      const left = leftBy(tasks, pid, ids);
+      if (!left || !cleared.has(conversation)) {
+        tasks.push(task(`new-${conversation}`, { conversation, pid }));
+        continue;
+      }
+      s = left;
+    }
+    if (s.conversation !== conversation) Object.assign(s, handOver({ ...s, lastMessage: null, summary: null }, conversation, 0));
+    s.pid = pid;
+  }
+}
+
+test("a conversation from a task's history resumed elsewhere does not take the task back while it runs another, sync after sync", () => {
+  const a = task('a', { conversation: 'y', history: ['x'], pid: 7 });
+  const tasks = [a];
+  const conversations: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    sync(tasks, new Map([['y', 7], ['x', 8]]));
+    conversations.push(a.conversation);
+  }
+  assert.deepEqual(conversations, ['y', 'y', 'y']);
+  assert.deepEqual(a.history.map((h) => h.id), ['x']);
+  assert.deepEqual(tasks.map((t) => [t.id, t.conversation, t.pid]), [['a', 'y', 7], ['new-x', 'x', 8]]);
+});
+
+test("a /resume into another task's earlier conversation leaves that task alone while it runs; one into its own brings it back", () => {
+  const a = task('a', { conversation: 'y', history: ['x'], pid: 7 });
+  const b = task('b', { pid: 9 });
+  const tasks = [a, b];
+  for (let i = 0; i < 3; i++) sync(tasks, new Map([['y', 7], ['x', 9]]));
+  assert.deepEqual(tasks.map((t) => [t.id, t.conversation]), [['a', 'y'], ['b', 'b'], ['new-x', 'x']]);
+  const c = task('c', { conversation: 'z', history: ['w'], pid: 5 });
+  sync([c], new Map([['w', 5]]));
+  assert.deepEqual([c.conversation, c.history.map((h) => h.id)], ['w', ['z']]);
+});
