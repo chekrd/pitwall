@@ -105,7 +105,7 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
   const pending = new Map<number, { ok: (v: any) => void; fail: (e: Error) => void; method: string }>();
   const listeners = new Set<(e: CdpEvent) => void>();
   socket.on('message', (data) => {
-    const msg = JSON.parse(String(data));
+    const msg = JSON.parse((data as Buffer).toString());
     const call = msg.id === undefined ? undefined : pending.get(msg.id);
     if (call) {
       pending.delete(msg.id);
@@ -139,7 +139,8 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
     const start = realNow();
     const perfStart = realPerf();
     const now = () => Math.floor(start + (realNow() - start) * speed);
-    const { setTimeout: later, setInterval: every } = window;
+    const later = window.setTimeout.bind(window);
+    const every = window.setInterval.bind(window);
     window.setTimeout = ((fn: TimerHandler, ms?: number, ...args: unknown[]) => later(fn, (Number(ms) || 0) / speed, ...args)) as typeof setTimeout;
     window.setInterval = ((fn: TimerHandler, ms?: number, ...args: unknown[]) => every(fn, (Number(ms) || 0) / speed, ...args)) as typeof setInterval;
     performance.now = () => perfStart + (realPerf() - perfStart) * speed;
@@ -186,7 +187,7 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
       return r.result.value;
     };
     // `fn` runs in the page: it can use only its arguments, which must be JSON.
-    const run = <A extends unknown[], T>(fn: (...args: A) => T, ...args: A): Promise<Awaited<T>> => evaluate(`(${fn})(...${JSON.stringify(args)})`);
+    const run = <A extends unknown[], T>(fn: (...args: A) => T, ...args: A): Promise<Awaited<T>> => evaluate(`(${fn.toString()})(...${JSON.stringify(args)})`);
 
     const mouse = (type: string, x: number, y: number, count = 1) =>
       cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: type === 'mouseMoved' ? 0 : count });
@@ -304,7 +305,7 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
       scheme: (scheme: Look['scheme']) =>
         cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }, { name: 'prefers-reduced-motion', value: look.motion }] }),
       // Before the first goto: every page loaded after runs its clock `speed` times faster, timers and dates alike.
-      fastClock: (speed: number) => cdp('Page.addScriptToEvaluateOnNewDocument', { source: `(${fastClock})(${speed})` }),
+      fastClock: (speed: number) => cdp('Page.addScriptToEvaluateOnNewDocument', { source: `(${fastClock.toString()})(${speed})` }),
       // Before the first goto: every page loaded after runs `source` before its own scripts.
       initScript: (source: string) => cdp('Page.addScriptToEvaluateOnNewDocument', { source }),
       // Freezes the page, as a browser does to a tab in the background, or lets it run again.

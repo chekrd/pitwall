@@ -195,12 +195,12 @@ export async function answer(id: string, reply: Parameters<typeof answers.answer
   }
 }
 
-export function park(id: string, body: { text?: unknown; auto?: unknown }) {
+export function park(id: string, body: { text: string; auto?: boolean | undefined }) {
   sessions.update(id, { parked: addParked(must(id).parked, body) });
   notify();
 }
 
-export function editPark(id: string, body: { draft?: unknown; text?: unknown; auto?: unknown }) {
+export function editPark(id: string, body: { draft: string; text?: string | undefined; auto?: boolean | undefined }) {
   sessions.update(id, { parked: editParked(must(id).parked, body) });
   notify();
 }
@@ -258,7 +258,7 @@ async function discardFork(s: Session, fork: string) {
   await rm(file.replace(/\.jsonl$/, ''), { recursive: true, force: true });
 }
 
-export const askAside = (id: string, body: { text?: unknown; aside?: unknown }) => asides.ask(id, body);
+export const askAside = (id: string, body: { text: string; aside?: string | null | undefined }) => asides.ask(id, body);
 export const stopAside = (id: string, aside: unknown) => asides.stop(id, aside);
 export const closeAside = (id: string, aside: unknown) => asides.close(id, aside);
 export const settleAsides = () => asides.settle(sessions.all());
@@ -302,7 +302,7 @@ const pausing = pauser({
 // session is renamed with its own /rename (it runs even mid-turn); an ended one in the file.
 export async function rename(id: string, title: string) {
   const s = must(id);
-  const name = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const name = title.replace(/\s+/g, ' ').trim().slice(0, 120);
   if (!name) throw new Error('the name is empty');
   if (s.status === 'exited') {
     const file = await transcriptFile(s.cwd, s.conversation);
@@ -328,7 +328,7 @@ export async function conversationImage(id: string, conversation: string, entry:
 
 // Posted by the PreToolUse hook that `pnpm claude:connect` installs, just before the dialog opens.
 export function menuOpened(hook: { session_id?: string; tool_use_id?: string; tool_input?: unknown }) {
-  const menu = parseMenu(String(hook.tool_use_id ?? ''), hook.tool_input);
+  const menu = parseMenu(hook.tool_use_id ?? '', hook.tool_input);
   const s = hook.session_id ? sessions.byConversation(hook.session_id) : undefined;
   if (!menu || !s) return;
   sessions.update(s.id, { menu });
@@ -395,7 +395,7 @@ export function archive(id: string, archived: boolean) {
 
 export function setPriority(id: string, priority: unknown) {
   must(id);
-  if (priority !== null && priority !== 'high' && priority !== 'low') throw new Error(`unknown priority ${String(priority)}`);
+  if (priority !== null && priority !== 'high' && priority !== 'low') throw new Error(`unknown priority ${JSON.stringify(priority)}`);
   sessions.update(id, { priority });
   notify();
   scheduleRerank();

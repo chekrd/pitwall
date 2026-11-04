@@ -30,7 +30,7 @@ export function BugReportDialog() {
     taken = null;
     dialog.current?.close();
     setComment('');
-    fileBugReport({ comment, taken: at, sessions, repos, pitwall, link }).then((out) => {
+    void fileBugReport({ comment, taken: at, sessions, repos, pitwall, link }).then((out) => {
       if (out.filed) toast('info', 'Filed the bug: a task reproduces it, fixes it and delivers the fix', { session: out.session ?? undefined });
       else toast('error', `Could not file the bug (${out.error}), so the report is saved to Downloads as ${out.file}`, { lasts: 15_000 });
     });

@@ -234,7 +234,7 @@ export function primary(s: Session, frozen: Frozen | null, input: { composer?: C
   // A suggestion that came in while ⏎ had nothing to send says so, since the button the reader saw was disabled.
   const accept = f.via === 'advice' && f.late ? 'Suggestion ready · Accept' : 'Accept suggestion';
   if (f.via === 'advice' && f.label === null) {
-    return unchanged ? { label: accept, disabled: false, press: { action: 'accept-advice', body: { key, adviceAt: f.adviceAt }, label: a!.answer } } : reply;
+    return unchanged ? { label: accept, disabled: false, press: { action: 'accept-advice', body: { key, adviceAt: f.adviceAt }, label: a.answer } } : reply;
   }
   if (f.label === null) return decisionOf(s)!.options.length ? { label: 'Pick an option', disabled: true, press: null } : reply;
   const waits = uploadingIn(input.composer);

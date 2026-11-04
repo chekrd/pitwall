@@ -28,7 +28,7 @@ function Row({ schedule: s }: { schedule: Schedule }) {
     }
   };
 
-  const remove = () => act('delete', async () => {
+  const remove = () => void act('delete', async () => {
     await api('DELETE', `/api/schedules/${s.id}`);
     toast('undo', `Deleted the schedule ${s.name}`, {
       action: { label: 'Undo', kbd: UNDO_KBD, run: () => void api('POST', '/api/schedules', { name: s.name, task: s.task, when: s.when }).catch((err) => toast('error', `Could not bring ${s.name} back: ${(err as Error).message}`)) },
@@ -51,14 +51,14 @@ function Row({ schedule: s }: { schedule: Schedule }) {
         )}
       </div>
       <div className={styles.actions}>
-        <button type="button" disabled={busy} onClick={() => act('run', () => api('POST', `/api/schedules/${s.id}/run`).then((r) => {
+        <button type="button" disabled={busy} onClick={() => void act('run', () => api('POST', `/api/schedules/${s.id}/run`).then((r) => {
           if (r.error) toast('error', `${s.name} did not start: ${r.error}`);
           else if (r.sessionId) openSheet(r.sessionId);
         }))}>
           <Icon name="play" size={14} />Run now
         </button>
         {(s.next !== null || s.paused) && (
-          <button type="button" disabled={busy} onClick={() => act(s.paused ? 'resume' : 'pause', () => api('PATCH', `/api/schedules/${s.id}`, { paused: !s.paused }))}>
+          <button type="button" disabled={busy} onClick={() => void act(s.paused ? 'resume' : 'pause', () => api('PATCH', `/api/schedules/${s.id}`, { paused: !s.paused }))}>
             {s.paused ? 'Resume' : 'Pause'}
           </button>
         )}

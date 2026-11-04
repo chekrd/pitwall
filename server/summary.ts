@@ -61,7 +61,10 @@ export async function summarizeStale() {
       if (running.size >= MAX_PARALLEL) return;
       const s = sessions.get(id);
       if (!s || !due(s)) continue;
-      const meta = await conversationMeta(s.cwd, s.conversation).catch((err) => void console.warn('summary transcript unread', id, err));
+      const meta = await conversationMeta(s.cwd, s.conversation).catch((err: unknown) => {
+        console.warn('summary transcript unread', id, err);
+        return undefined;
+      });
       const latest = meta?.turns.at(-1);
       const current = sessions.get(id);
       if (!latest || latest.role !== 'claude' || !current || !due(current) || fresh(current, latest.id)) continue;

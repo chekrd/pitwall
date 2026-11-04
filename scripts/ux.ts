@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { parseArgs } from 'node:util';
 import { DB_PATH } from '../server/config.ts';
 import { KEYS } from '../web/src/keys.ts';
@@ -84,11 +84,11 @@ export function runQueries(db: DatabaseSync, since: number) {
   return readdirSync(QUERIES).filter((f) => /^\d+-.*\.sql$/.test(f)).toSorted().map((file) => {
     const sql = readFileSync(join(QUERIES, file), 'utf8');
     const title = /^--\s*(.+)/.exec(sql)?.[1] ?? file;
-    return { file, title, rows: db.prepare(sql).all() as Record<string, unknown>[] };
+    return { file, title, rows: db.prepare(sql).all() };
   });
 }
 
-function grid(title: string, rows: Record<string, unknown>[]) {
+function grid(title: string, rows: Record<string, SQLOutputValue>[]) {
   if (!rows.length) return `${title}\n  (none)\n`;
   const columns = Object.keys(rows[0]);
   const cells = [columns, ...rows.map((r) => columns.map((c) => (r[c] === null || r[c] === undefined ? '–' : String(r[c]))))];

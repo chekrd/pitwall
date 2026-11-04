@@ -75,11 +75,11 @@ export function runName(s: Pick<Schedule, 'name' | 'when'>, at: number, taken: R
   return name;
 }
 
-export function parseSchedule(body: { name?: unknown; task?: unknown; when?: unknown }, now: number): Pick<Schedule, 'name' | 'task' | 'when'> {
+export function parseSchedule(body: { name?: string; task?: unknown; when?: unknown }, now: number): Pick<Schedule, 'name' | 'task' | 'when'> {
   const task = body.task as TaskRequest;
   if (task?.kind !== 'repo' && task?.kind !== 'folder') throw new Error('unknown task');
-  if (!String(task.prompt ?? '').trim()) throw new Error('a scheduled task needs a prompt');
-  const name = String(body.name ?? '').trim() || (task.kind === 'repo' && task.existingBranch ? task.branch.trim().replaceAll('/', '-') : '');
+  if (!(task.prompt ?? '').trim()) throw new Error('a scheduled task needs a prompt');
+  const name = (body.name ?? '').trim() || (task.kind === 'repo' && task.existingBranch ? task.branch.trim().replaceAll('/', '-') : '');
   if (!NAME.test(name)) throw new Error('name the task: letters, digits, dot, hyphen and underscore');
   const w = body.when as Partial<{ at: number; time: string; days: number[] }>;
   let when: When;
@@ -88,7 +88,7 @@ export function parseSchedule(body: { name?: unknown; task?: unknown; when?: unk
     if (w.at <= now) throw new Error('that time has passed');
     when = { at: w.at };
   } else if (typeof w?.time === 'string' && TIME.test(w.time) && Array.isArray(w.days)) {
-    const days = [...new Set(w.days)].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).toSorted();
+    const days = [...new Set(w.days)].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).toSorted((a, b) => a - b);
     if (!days.length) throw new Error('pick at least one day');
     when = { time: w.time, days };
   } else throw new Error('say when the task starts');

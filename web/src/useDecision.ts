@@ -33,7 +33,7 @@ export function useDecision(session: Session, menu: Menu | null) {
   const questions = menu?.questions ?? [];
   // A menu of one single-choice question answers with the pick, as the terminal does.
   const lone = questions.length === 1 && !questions[0].multiSelect;
-  const toggle = (question: number, label: string) => setPicks(togglePick(picks, question, label, !!questions[question]?.multiSelect));
+  const toggle = (question: number, label: string) => setPicks(togglePick(picks, question, label, questions[question]?.multiSelect === true));
   // An own answer to a question replaces its picks.
   const answerOwn = (question: number, other: string) => setPicks(picks.map((p, i) => (i === question ? { labels: other ? [] : p.labels, other } : p)));
   return { key, frozen, picks, setPicks, toggle, answerOwn, questions, lone };

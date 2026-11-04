@@ -49,7 +49,7 @@ export function WorkspaceDialog({ roots, repos, sessions }: { roots: string[]; r
         <div className={styles.content}>
           <form action={addPath} className={styles.add}>
             <input value={path} onChange={(e) => setPath(e.target.value)} aria-label="Repository or folder" placeholder="A repository, or a folder to scan for repositories" spellCheck={false} required />
-            <button type="button" className={styles.secondary} onClick={pick}>Choose…</button>
+            <button type="button" className={styles.secondary} onClick={() => void pick()}>Choose…</button>
             <button type="submit" className={styles.ink} disabled={adding || !path.trim()}>{adding ? 'Scanning…' : 'Add'}</button>
           </form>
           {error && <p className={styles.error}>{error}</p>}
@@ -59,12 +59,12 @@ export function WorkspaceDialog({ roots, repos, sessions }: { roots: string[]; r
               {roots.map((root) => (
                 <span key={root} className={styles.root}>
                   <code>{tilde(root, home)}</code>
-                  <button type="button" aria-label={`Stop scanning ${tilde(root, home)}`} data-explain="Stop scanning this folder; repositories already found stay" onClick={() => api('DELETE', '/api/roots', { path: root }).catch(reportError)}>
+                  <button type="button" aria-label={`Stop scanning ${tilde(root, home)}`} data-explain="Stop scanning this folder; repositories already found stay" onClick={() => void api('DELETE', '/api/roots', { path: root }).catch(reportError)}>
                     <Icon name="close" size={12} />
                   </button>
                 </span>
               ))}
-              <button type="button" className={styles.tiny} data-explain="Search the scanned folders for repositories and worktrees again" onClick={() => api('POST', '/api/rescan').catch(reportError)}>Rescan</button>
+              <button type="button" className={styles.tiny} data-explain="Search the scanned folders for repositories and worktrees again" onClick={() => void api('POST', '/api/rescan').catch(reportError)}>Rescan</button>
             </div>
           )}
           {link === 'connecting' ? (
@@ -93,7 +93,7 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
     await run(() => api('PATCH', `/api/repos/${repo.id}`, {
       baseBranch: form.get('baseBranch') as string | null,
       setupCommand: form.get('setupCommand') as string | null,
-      worktreeRoot: untilde(String(form.get('worktreeRoot') ?? '').trim(), home),
+      worktreeRoot: untilde(((form.get('worktreeRoot') as string | null) ?? '').trim(), home),
     }));
   };
 
@@ -121,7 +121,7 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
         <h3>{repo.name}</h3>
         <code>{tilde(repo.path, home)}</code>
         <button type="button" className={styles.tiny} aria-expanded={settings} onClick={() => setSettings(!settings)}>Settings</button>
-        <button type="button" className={styles.tiny} data-danger onClick={() => run(() => api('DELETE', `/api/repos/${repo.id}`))} data-explain="Hides it and drops its tiles; running Claudes, files and worktrees are left alone">
+        <button type="button" className={styles.tiny} data-danger onClick={() => void run(() => api('DELETE', `/api/repos/${repo.id}`))} data-explain="Hides it and drops its tiles; running Claudes, files and worktrees are left alone">
           Remove
         </button>
       </div>
@@ -148,8 +148,8 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
           key={w.path}
           worktree={w}
           sessions={sessions.filter((s) => s.worktree === w.path)}
-          onStart={(continueId) => start(w.path, continueId)}
-          onShell={() => run(() => api('POST', '/api/shell', { worktree: w.path }))}
+          onStart={(continueId) => void start(w.path, continueId)}
+          onShell={() => void run(() => api('POST', '/api/shell', { worktree: w.path }))}
           onRemove={w.isMain ? undefined : () => setRemoving(w.path)}
         >
           {removing === w.path && (

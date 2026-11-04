@@ -197,7 +197,7 @@ async function connect() {
       const ws = new WebSocketStream(wsUrl('/ws/events'));
       const { readable } = await ws.opened;
       for await (const message of readable) {
-        const { uiEntry, ...next }: Snapshot = JSON.parse(String(message));
+        const { uiEntry, ...next }: Snapshot = JSON.parse(typeof message === 'string' ? message : new TextDecoder().decode(message));
         sends.reconcile(next.sessions);
         sends.confirm(next.sessions);
         sends.reconnected();

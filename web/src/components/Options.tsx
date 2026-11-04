@@ -85,13 +85,13 @@ export function Options({ options, advice, frozen, composing, accepting, onPick,
                     {covered.length > 0 && <Coverage covered={covered} />}
                   </span>
                   <span className={styles.tags}>
-                    {suggested && <span className={parts.tag} data-explain={PICK_TITLE}>Second opinion's pick · {advice!.confidence}%</span>}
+                    {suggested && <span className={parts.tag} data-explain={PICK_TITLE}>Second opinion's pick · {advice.confidence}%</span>}
                     {o.recommended && <span className={parts.tag} data-quiet data-explain="Claude marked this option as the one it would choose">Claude recommends</span>}
                   </span>
                 </button>
                 {suggested && !composing && (
                   <div className={styles.suggestion} data-suggestion>
-                    <Suggestion advice={advice!} onEdit={onEdit} />
+                    <Suggestion advice={advice} onEdit={onEdit} />
                   </div>
                 )}
               </div>

@@ -28,12 +28,12 @@ test('an artifact is saved once, and a later one with the same title replaces it
   const first = await storeArtifacts(session([]), [call('a1', 'Flow', 1), call('b1', 'States', 2)]);
   assert.deepEqual(first?.map((a) => a.id), ['a1', 'b1']);
   assert.equal(await readFile(artifactFile(id, 'a1'), 'utf8'), '<p>a1</p>');
-  assert.equal(await storeArtifacts(session(first!), [call('a1', 'Flow', 1), call('b1', 'States', 2)]), null);
+  assert.equal(await storeArtifacts(session(first), [call('a1', 'Flow', 1), call('b1', 'States', 2)]), null);
 
-  const replaced = await storeArtifacts(session(first!), [call('a1', 'Flow', 1), call('b1', 'States', 2), call('a2', 'Flow', 3)]);
+  const replaced = await storeArtifacts(session(first), [call('a1', 'Flow', 1), call('b1', 'States', 2), call('a2', 'Flow', 3)]);
   assert.deepEqual(replaced?.map((a) => a.id), ['b1', 'a2']);
   await assert.rejects(readFile(artifactFile(id, 'a1')));
-  assert.equal(await storeArtifacts(session(replaced!), [call('a1', 'Flow', 1), call('a2', 'Flow', 3)]), null);
+  assert.equal(await storeArtifacts(session(replaced), [call('a1', 'Flow', 1), call('a2', 'Flow', 3)]), null);
 });
 
 test('a call the MCP server would reject is not stored', async () => {

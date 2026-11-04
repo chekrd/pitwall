@@ -18,7 +18,7 @@ export function describe(el: EventTarget | null | undefined): string | null {
   if (!el) return null;
   if (el === window) return 'window';
   if (el === document) return 'document';
-  if (!(el instanceof Element)) return String(el);
+  if (!(el instanceof Element)) return Object.prototype.toString.call(el);
   if (!serials.has(el)) serials.set(el, ++serial);
   const h = el as HTMLElement;
   const bits = [`${el.tagName.toLowerCase()}#${serials.get(el)}`];
@@ -45,7 +45,7 @@ function message(e: unknown) {
   try {
     return JSON.stringify(e).slice(0, 2000);
   } catch {
-    return String(e);
+    return Object.prototype.toString.call(e);
   }
 }
 

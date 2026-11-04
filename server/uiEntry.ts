@@ -39,7 +39,7 @@ export function watchEntry(read: () => Promise<string | null>, onChange: (entry:
     const settles = entry !== null && entry !== reported && (polled === undefined || entry === polled);
     polled = latest = entry;
     if (settles) onChange((reported = entry));
-    timer = setTimeout(poll, everyMs);
+    timer = setTimeout(() => void poll(), everyMs);
   };
   void poll();
   return {
@@ -50,7 +50,7 @@ export function watchEntry(read: () => Promise<string | null>, onChange: (entry:
       if (entry !== reported) latest = entry;
       return entry;
     },
-    stop() {
+    stop: () => {
       stopped = true;
       clearTimeout(timer);
     },

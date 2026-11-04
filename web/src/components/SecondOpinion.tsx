@@ -32,7 +32,7 @@ function Running({ session, advice, className }: { session: Session; advice: Adv
         <span className={parts.spinner} aria-hidden />
         <strong data-explain="Another model reads the code and suggests what you would likely answer">Second opinion in progress</strong>
         <span className={styles.clock}><Clock since={advice.startedAt} /></span>
-        <button type="button" className={parts.tiny} disabled={pending} onClick={() => act('stop-advice')}>Stop</button>
+        <button type="button" className={parts.tiny} disabled={pending} onClick={() => void act('stop-advice')}>Stop</button>
       </div>
       <code className={styles.step}>{advice.activity ?? 'Working'}</code>
     </div>
@@ -44,7 +44,7 @@ function Failed({ session, advice, className }: { session: Session; advice: Advi
   return (
     <div className={className} data-advice="failed">
       <span className={styles.failed} data-explain={advice.error}>{advice.error === 'stopped' ? 'Second opinion stopped' : `Second opinion failed: ${advice.error}`}</span>
-      <button type="button" className={parts.tiny} disabled={pending} {...explain(SENDS.adviceRetry)} onClick={() => act('retry-advice')}>Retry</button>
+      <button type="button" className={parts.tiny} disabled={pending} {...explain(SENDS.adviceRetry)} onClick={() => void act('retry-advice')}>Retry</button>
     </div>
   );
 }

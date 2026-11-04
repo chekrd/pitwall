@@ -409,7 +409,7 @@ test('sendNow posts a session\'s held items at once, one after the other in pres
   box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), '');
   box.hold(group, note('Tag it too'), '');
-  box.sendNow('group');
+  void box.sendNow('group');
   assert.deepEqual(posts.map((p) => p.out.body.choice ?? p.out.body.text), ['Ship']);
   assert.deepEqual(states(), ['sending', 'held', 'sending']);
   posts[0].ok();
@@ -472,7 +472,7 @@ test('what a page that went away left unconfirmed is adopted: out of the deck an
   assert.deepEqual([...box.busy()].toSorted(), ['asks', 'cart', 'group', 'hooks', 'reviews']);
   box.flush(() => assert.fail('an adopted item was flushed'));
   box.reconnected();
-  box.sendNow('cart');
+  void box.sendNow('cart');
 
   box.reconcile([
     { ...cart, answered: { key: 'q:q1', text: 'Keep', at: 5 } },

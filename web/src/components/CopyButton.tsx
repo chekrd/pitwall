@@ -12,7 +12,7 @@ export function useCopy(value: string, what: string) {
     const t = setTimeout(() => setCopied(false), COPIED_MS);
     return () => clearTimeout(t);
   }, [copied]);
-  const copy = () => navigator.clipboard.writeText(value).then(
+  const copy = () => void navigator.clipboard.writeText(value).then(
     () => setCopied(true),
     () => toast('error', `Could not copy the ${what.toLowerCase()}`),
   );
@@ -32,7 +32,7 @@ export function CopyButton({ value, what }: { value: string; what: string }) {
       data-tip={copied ? 'Copied' : `Copy ${what.toLowerCase()}`}
       aria-label={`Copy ${what.toLowerCase()}`}
       data-explain=""
-      onClick={() => void copy()}
+      onClick={copy}
     >
       <Icon name={copied ? 'check' : 'copy'} size={14} />
       <span className={styles.status} aria-live="polite">{copied ? 'Copied' : ''}</span>

@@ -155,7 +155,7 @@ export function undo(id?: string) {
 }
 
 function takeBack(id?: string) {
-  const item = sends.items().filter((i) => i.state === 'held' && (id === undefined || i.id === id)).at(-1);
+  const item = sends.items().findLast((i) => i.state === 'held' && (id === undefined || i.id === id));
   if (!item) return;
   givenBack.add(item.id);
   track('undo', { task: item.sessionId, decision: item.body.key ?? undefined, action: item.action, afterMs: HOLD_MS - (item.dueAt - Date.now()) });

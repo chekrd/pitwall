@@ -581,7 +581,7 @@ export function signal(pid: number, sig: NodeJS.Signals = 'SIGTERM') {
 const words = (s: string) => s.trim().split(/\s+/).join(' ');
 
 // `lstart` is ps's start time of the process, read in UTC as procStart is written.
-export const sameStart = (procStart: unknown, lstart: string | undefined) => !procStart || words(String(procStart)) === lstart;
+export const sameStart = (procStart: unknown, lstart: string | undefined) => !procStart || (typeof procStart === 'string' && words(procStart) === lstart);
 
 // A crashed Claude leaves its file behind and macOS reuses pids, so the process must also
 // have started when the file says. procStart is written in UTC.

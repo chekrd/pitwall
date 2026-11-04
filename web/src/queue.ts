@@ -208,7 +208,7 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
 
   return {
     state: () => state,
-    subscribe(fn: () => void) {
+    subscribe: (fn: () => void) => {
       subscribers.add(fn);
       return () => void subscribers.delete(fn);
     },

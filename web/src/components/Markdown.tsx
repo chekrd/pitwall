@@ -14,7 +14,7 @@ async function highlight(root: HTMLElement, langs: string[], live: () => boolean
   const { codeToTokens } = await import('shiki');
   for (const { code, lang } of blocks) {
     if (!lang) continue;
-    const tokens = await codeToTokens(code.textContent!.replace(/\n$/, ''), {
+    const tokens = await codeToTokens(code.textContent.replace(/\n$/, ''), {
       lang: lang as BundledLanguage, themes: { light: 'github-light-high-contrast', dark: 'github-dark' }, defaultColor: 'light-dark()',
     }).catch(() => null);
     if (!live()) return;

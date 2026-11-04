@@ -99,7 +99,7 @@ export function DeleteWorktreeDialog() {
           {folder && folder.length > 0 && (
             <p>
               Removes the worktree{folder.length > 1 ? 's' : ''} in {folder.map((r) => r.name).join(', ')}
-              {folder.some((r) => r.deletesBranch) && <> and {folder.length > 1 ? 'their' : 'its'} local branch <code>{loss!.branch}</code></>}.
+              {folder.some((r) => r.deletesBranch) && <> and {folder.length > 1 ? 'their' : 'its'} local branch <code>{loss.branch}</code></>}.
             </p>
           )}
           {loss?.gone ? (

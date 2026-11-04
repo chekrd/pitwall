@@ -274,7 +274,7 @@ async function stopTask(gone: Session[]) {
     const pid = claudeOf(o, live);
     return pid ? [{ pid, tty: o.tty }] : [];
   });
-  const ttys = (await Promise.all(claudes.map((c) => c.tty ?? io.ttyOf(c.pid)))).filter((t) => t !== null);
+  const ttys = (await Promise.all(claudes.map(async (c) => c.tty ?? io.ttyOf(c.pid)))).filter((t) => t !== null);
   for (const { pid } of claudes) io.signal(pid, 'SIGTERM');
   await waitForExit(claudes.map((c) => c.pid), 10_000);
   if (ttys.length) await io.closeTerminalsIn(null, ttys);

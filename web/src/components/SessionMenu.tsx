@@ -179,7 +179,7 @@ export function ClearButton({ session }: { session: Session }) {
 
 export function FocusButton({ session }: { session: Session }) {
   const exited = session.status === 'exited';
-  const open = () => (exited ? sessionAction(session.id, 'focus') : openTerminal(session.id)).catch(reportError);
+  const open = () => void (exited ? sessionAction(session.id, 'focus') : openTerminal(session.id)).catch(reportError);
   return (
     <button type="button" data-variant="primary" data-explain={exited ? 'Continue this conversation' : 'Show its terminal in Ghostty'} onClick={open}>
       {exited ? 'Continue' : 'Terminal'}

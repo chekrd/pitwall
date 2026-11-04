@@ -51,8 +51,8 @@ export function watchUsage(file: string, onChange: () => void, everyMs = 2000) {
         onChange();
       }
     }
-    setTimeout(poll, everyMs).unref();
+    setTimeout(() => void poll(), everyMs).unref();
   };
-  setTimeout(poll, everyMs).unref();
+  setTimeout(() => void poll(), everyMs).unref();
   return { current: () => usage };
 }

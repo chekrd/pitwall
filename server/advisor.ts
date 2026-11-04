@@ -251,7 +251,7 @@ async function advise(s: Session, d: OpenDecision) {
       try {
         menuKeystrokes(d.menu, answers ?? []);
       } catch (err) {
-        throw new Error(`the advisor's answers do not fit the menu: ${(err as Error).message}`);
+        throw new Error(`the advisor's answers do not fit the menu: ${(err as Error).message}`, { cause: err });
       }
     }
     const done = {

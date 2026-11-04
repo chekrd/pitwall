@@ -204,13 +204,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
       };
       schedule(id, NO_ANSWER_MS, () => end(() => patch(id, { state: 'failed', error: NO_ANSWER, code: 'no-answer' })));
       posting.add(id);
-      let posted: Promise<unknown>;
-      try {
-        posted = o.post({ sessionId: item.sessionId, action: item.action, body: item.body });
-      } catch (err) {
-        posted = Promise.reject(err);
-      }
-      posted.then(() => end(() => sent(id)), (err) => end(() => refused(id, err)));
+      Promise.try(() => o.post({ sessionId: item.sessionId, action: item.action, body: item.body })).then(() => end(() => sent(id)), (err) => end(() => refused(id, err)));
     });
   }
 
@@ -396,7 +390,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     },
 
     // The sessions out of the deck while their send is held, under way or not yet confirmed. A command keeps its card.
-    busy(): ReadonlySet<string> {
+    busy: (): ReadonlySet<string> => {
       if (busyOf?.items !== items) {
         busyOf = { items, ids: new Set(items.filter((i) => !i.command && (active(i) || i.state === 'sent')).map((i) => i.sessionId)) };
       }

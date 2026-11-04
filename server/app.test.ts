@@ -165,7 +165,7 @@ test('every open socket gets the same snapshot on a change, and a closed one no 
   const open = async () => {
     const ws = new WebSocket(`ws://${HOST}:${port}/ws/events`, { headers: { host: BOARD } });
     const messages: string[] = [];
-    ws.on('message', (m) => messages.push(String(m)));
+    ws.on('message', (m) => messages.push((m as Buffer).toString()));
     await once(ws, 'open');
     return { ws, messages };
   };

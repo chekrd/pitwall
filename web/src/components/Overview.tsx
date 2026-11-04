@@ -156,7 +156,7 @@ function Interrupted({ session, name }: { session: Session; name: string }) {
     return (
       <section className={styles.blocked} data-interrupted="ended" data-ux-section="interrupted">
         <p>The Mac restarted while this task was <strong>{was}</strong>{asked && <> ({asked})</>}, and its Claude ended with it.</p>
-        <button type="button" data-variant="primary" onClick={() => sessionAction(session.id, 'focus').catch(reportError)}>Continue</button>
+        <button type="button" data-variant="primary" onClick={() => void sessionAction(session.id, 'focus').catch(reportError)}>Continue</button>
       </section>
     );
   }
@@ -191,7 +191,7 @@ function ClearFailed({ session }: { session: Session }) {
       <div className={styles.errorText}>
         <p><strong>Clear task did not finish.</strong> {session.clearError}</p>
       </div>
-      <button type="button" onClick={() => sessionAction(session.id, 'dismiss-clear-error').catch(reportError)}>Dismiss</button>
+      <button type="button" onClick={() => void sessionAction(session.id, 'dismiss-clear-error').catch(reportError)}>Dismiss</button>
       {!session.parent && <button type="button" data-variant="primary" onClick={() => askDeleteWorktree(session)}>Clear task…</button>}
     </section>
   );

@@ -71,7 +71,7 @@ function whenOf(f: Fields): When | null {
     const at = new Date(f.at).getTime();
     return Number.isFinite(at) && at > Date.now() ? { at } : null;
   }
-  if (f.start === 'repeat') return /^\d\d:\d\d$/.test(f.time) && f.days.length ? { time: f.time, days: f.days.toSorted() } : null;
+  if (f.start === 'repeat') return /^\d\d:\d\d$/.test(f.time) && f.days.length ? { time: f.time, days: f.days.toSorted((a, b) => a - b) } : null;
   return null;
 }
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -123,7 +123,7 @@ function edit(patch: Partial<Fields>) {
 function readBranches(repoId: number) {
   if (reading === repoId) return;
   reading = repoId;
-  api('GET', `/api/repos/${repoId}/branches`).catch(() => []).then((list) => {
+  void api('GET', `/api/repos/${repoId}/branches`).catch(() => []).then((list) => {
     if (reading !== repoId) return;
     reading = null;
     branches = { repoId, list: list.toSorted((a, b) => byName(a.name, b.name)) };
@@ -135,7 +135,7 @@ function readBranches(repoId: number) {
 function readModels(key: string, url: `/api/repos/${number}/models` | `/api/folders/models?path=${string}`) {
   if (readingModels === key || models?.key === key) return;
   readingModels = key;
-  api('GET', url).catch(() => ({ models: {}, efforts: {} })).then((read) => {
+  void api('GET', url).catch(() => ({ models: {}, efforts: {} })).then((read) => {
     if (readingModels !== key) return;
     readingModels = null;
     models = { key, read };

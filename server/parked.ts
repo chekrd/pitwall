@@ -8,21 +8,21 @@ const MAX_TEXT = 20_000;
 // A turn's summary says whether it ended on a question; past this it is not waited for any longer.
 export const SUMMARY_WAIT_MS = 60_000;
 
-function cleanText(text: unknown) {
-  const t = String(text ?? '').trim();
+function cleanText(text: string) {
+  const t = text.trim();
   if (!t) throw new Error('the draft is empty');
   if (t.length > MAX_TEXT) throw new Error('the draft is too long');
   return t;
 }
 
-export function addParked(list: readonly Parked[], body: { text?: unknown; auto?: unknown }, now = Date.now()): Parked[] {
+export function addParked(list: readonly Parked[], body: { text: string; auto?: boolean | undefined }, now = Date.now()): Parked[] {
   if (list.length >= MAX_PARKED) throw new Error(`a task holds at most ${MAX_PARKED} drafts`);
   const auto = body.auto === true;
   return [...list, { id: randomUUID(), text: cleanText(body.text), auto, armedAt: auto ? now : null, at: now }];
 }
 
 // Arming counts from the moment it is switched on, so a turn that had already ended does not send it.
-export function editParked(list: readonly Parked[], body: { draft?: unknown; text?: unknown; auto?: unknown }, now = Date.now()): Parked[] {
+export function editParked(list: readonly Parked[], body: { draft: string; text?: string | undefined; auto?: boolean | undefined }, now = Date.now()): Parked[] {
   const found = list.find((p) => p.id === body.draft);
   if (!found) throw new Error('this draft is gone');
   const auto = typeof body.auto === 'boolean' ? body.auto : found.auto;

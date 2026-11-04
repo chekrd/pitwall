@@ -47,7 +47,7 @@ export function ranks(order: { id: unknown; reason: unknown }[], open: string[])
   const wanted = new Set(open);
   const placed = new Map<string, string>();
   for (const { id, reason } of order) {
-    if (typeof id === 'string' && wanted.has(id) && !placed.has(id)) placed.set(id, String(reason ?? ''));
+    if (typeof id === 'string' && wanted.has(id) && !placed.has(id)) placed.set(id, typeof reason === 'string' ? reason : '');
   }
   for (const id of open) if (!placed.has(id)) placed.set(id, UNRANKED_REASON);
   return [...placed].map(([id, reason], i) => ({ id, rank: i + 1, reason }));
@@ -55,7 +55,7 @@ export function ranks(order: { id: unknown; reason: unknown }[], open: string[])
 
 export function scheduleRerank() {
   clearTimeout(timer);
-  timer = setTimeout(rerank, 1500);
+  timer = setTimeout(() => void rerank(), 1500);
 }
 
 async function rerank() {

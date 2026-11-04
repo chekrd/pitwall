@@ -61,7 +61,7 @@ function PauseBanner({ folded }: { folded: boolean }) {
     await resumePaused().catch(reportError);
     setResuming(false);
   };
-  const dismiss = () => api('POST', '/api/pause/dismiss').catch(reportError);
+  const dismiss = () => void api('POST', '/api/pause/dismiss').catch(reportError);
   if (stopping.length) {
     return (
       <section className={styles.banner} data-pause="stopping" aria-live="polite">
@@ -84,7 +84,7 @@ function PauseBanner({ folded }: { folded: boolean }) {
         <strong>Paused {tally(done)}</strong>: <TaskLinks tasks={done} />. Safe to close the laptop or restart the Mac.
         {' '}Resume all has each one start its background tasks again and carry on.
       </p>
-      <button type="button" data-variant="primary" {...explain(SENDS.resumePaused)} disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>
+      <button type="button" data-variant="primary" {...explain(SENDS.resumePaused)} disabled={resuming} onClick={() => void resume()}>{resuming ? 'Resuming…' : 'Resume all'}</button>
       <button type="button" onClick={dismiss} data-explain="Forget the pause; the tasks wait for you as any other">Dismiss</button>
     </section>
   );
@@ -155,7 +155,7 @@ function Recovery({ ended }: { ended: Session[] }) {
       setResuming(false);
     }
   };
-  const dismiss = () => api('POST', '/api/restart/dismiss', both).catch(reportError);
+  const dismiss = () => void api('POST', '/api/restart/dismiss', both).catch(reportError);
 
   return (
     <section className={styles.banner} data-restart="recover" data-paused={held.length || undefined} aria-live="polite">
@@ -175,7 +175,7 @@ function Recovery({ ended }: { ended: Session[] }) {
           {' '}Each waits for you; Continue the turn on its page picks it up.
         </p>
       )}
-      {ended.length > 0 && <button type="button" data-variant="primary" {...explain(SENDS.resumeRestart)} disabled={resuming} onClick={resume}>{resuming ? 'Resuming…' : 'Resume all'}</button>}
+      {ended.length > 0 && <button type="button" data-variant="primary" {...explain(SENDS.resumeRestart)} disabled={resuming} onClick={() => void resume()}>{resuming ? 'Resuming…' : 'Resume all'}</button>}
       <button type="button" onClick={dismiss} data-explain={held.length ? 'Forget the restart and the pause; ended tasks stay on the Wall, Continue brings one back' : 'Forget what the restart cut short; ended tasks stay on the Wall, Continue brings one back'}>Dismiss</button>
     </section>
   );

@@ -68,9 +68,9 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
   }
 
   // A question without `aside` opens a new aside; with it, a follow-up in that aside's fork. Returns the aside's id.
-  function ask(id: string, body: { text?: unknown; aside?: unknown }) {
+  function ask(id: string, body: { text: string; aside?: string | null | undefined }) {
     const s = must(id);
-    const question = String(body.text ?? '').trim();
+    const question = body.text.trim();
     if (!question) throw new Error('the question is empty');
     if (question.length > MAX_QUESTION) throw new Error('the question is too long');
     const turn: AsideTurn = { question, answer: null, error: null, at: now() };

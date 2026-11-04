@@ -43,7 +43,7 @@ const mark = (kind: 'reject' | 'solve' | 'reopen', reason: string) => ({
 export const subtaskTitle = (n: number, f: Finding, kind: SubtaskKind) => clip(`#${n} ${LABELS[kind]} · ${f.title}`, 120);
 
 // Reject, Solve and Reopen only mark the finding; every other response starts a subtask on it.
-export async function respond(id: string, body: { basis?: unknown; finding?: unknown; kind?: unknown; text?: unknown }) {
+export async function respond(id: string, body: { basis?: unknown; finding?: unknown; kind?: unknown; text?: string | undefined }) {
   const s = sessions.get(id);
   if (!s) throw new Error(`unknown session ${id}`);
   const kind = body.kind as Response;
@@ -51,7 +51,7 @@ export async function respond(id: string, body: { basis?: unknown; finding?: unk
   const index = Number(body.finding);
   const f = s.findings?.items[index];
   if (!s.findings || s.findings.basis !== body.basis || !f) throw new Refusal('these findings were replaced; read them again', 'stale');
-  const text = String(body.text ?? '').trim().slice(0, 4000);
+  const text = (body.text ?? '').trim().slice(0, 4000);
   if (kind === 'reject' || kind === 'solve' || kind === 'reopen') {
     const items = s.findings.items.map((x, i) => (i === index ? { ...x, ...mark(kind, text) } : x));
     sessions.update(id, { findings: { ...s.findings, items } });
