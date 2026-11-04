@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { open, readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -10,13 +10,10 @@ import { ARTIFACT_TOOL, ARTIFACT_TOOL_NAME, ASK_TOOL, ASK_TOOL_NAME, OLD_MCP_SER
 import type { PrFlow } from './db.ts';
 import { tildeIn } from './home.ts';
 import { linksIn, type Found } from './links.ts';
+import { readEntries, readEntriesWhole } from './transcriptRead.ts';
 
 const run = promisify(execFile);
 const CLAUDE_DIR = join(homedir(), '.claude');
-const HEAD_BYTES = 128 << 10;
-const TAIL_BYTES = 512 << 10;
-const MAX_TAIL_BYTES = 8 << 20;
-const MAX_LINE = 256 << 10;
 const MAX_MESSAGE = 12_000;
 const MAX_EXCHANGE_TEXT = 40_000;
 const MAX_PROMPT = 4000;
@@ -125,39 +122,6 @@ async function projectDir(cwd: string) {
   const match = (await readdir(projects).catch(() => [])).find((d) => d.startsWith(prefix));
   return join(projects, match ?? name);
 }
-
-async function readSlice(file: string, from: 'head' | 'tail', bytes: number) {
-  const fh = await open(file, 'r');
-  try {
-    const { size } = await fh.stat();
-    const length = Math.min(bytes, size);
-    const buf = Buffer.alloc(length);
-    await fh.read(buf, 0, length, from === 'head' ? 0 : size - length);
-    return { text: buf.toString('utf8'), whole: length === size };
-  } finally {
-    await fh.close();
-  }
-}
-
-// Screenshots and other tool output are stored inline and can fill any fixed window, so the tail
-// grows until it reaches the developer's last prompt, where the current turn starts.
-async function readTail(file: string) {
-  for (let bytes = TAIL_BYTES; ; bytes *= 4) {
-    const { text, whole } = await readSlice(file, 'tail', bytes);
-    const entries = jsonLines(text);
-    if (whole || bytes >= MAX_TAIL_BYTES || entries.some((e) => promptText(e))) return entries;
-  }
-}
-
-const jsonLines = (text: string) =>
-  text.split('\n').flatMap((line) => {
-    if (line.length > MAX_LINE) return [];
-    try {
-      return [JSON.parse(line) as Record<string, any>];
-    } catch {
-      return [];
-    }
-  });
 
 // A message sent while Claude works is logged as a queued_command attachment, not as a user entry.
 function promptContent(entry: Record<string, any>): unknown {
@@ -313,14 +277,18 @@ function lastReply(entries: Record<string, any>[]) {
 
 // The whole conversation, read only when asked for, as it can run to many megabytes.
 export async function exchanges(file: string): Promise<Exchange[]> {
-  if (!(await stat(file).catch(() => null))) return [];
   const entries: Record<string, any>[] = [];
-  for await (const line of transcriptLines(file)) {
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // a partly written last line
+  try {
+    for await (const line of transcriptLines(file)) {
+      try {
+        entries.push(JSON.parse(line));
+      } catch {
+        // a partly written last line
+      }
     }
+  } catch (err) {
+    if (vanished(err)) return [];
+    throw err;
   }
   return replies(entries, MAX_EXCHANGE_TEXT).flatMap(({ entry, prompt, reply, artifacts }) => entry && prompt !== null ? [{
     id: String(entry.uuid),
@@ -334,17 +302,20 @@ export async function exchanges(file: string): Promise<Exchange[]> {
 
 // Picture `n` of the prompt `entry`, found by its id without parsing the lines around it.
 export async function promptImage(file: string, entry: string, n: number) {
-  if (!(await stat(file).catch(() => null))) return null;
-  for await (const line of transcriptLines(file)) {
-    if (!line.includes(`"uuid":"${entry}"`)) continue;
-    try {
-      const e = JSON.parse(line);
-      if (e.uuid !== entry) continue;
-      const image = promptImages(e)[n];
-      return image ? { type: image.media_type, data: Buffer.from(image.data, 'base64') } : null;
-    } catch {
-      return null;
+  try {
+    for await (const line of transcriptLines(file)) {
+      if (!line.includes(`"uuid":"${entry}"`)) continue;
+      try {
+        const e = JSON.parse(line);
+        if (e.uuid !== entry) continue;
+        const image = promptImages(e)[n];
+        return image ? { type: image.media_type, data: Buffer.from(image.data, 'base64') } : null;
+      } catch {
+        return null;
+      }
     }
+  } catch (err) {
+    if (!vanished(err)) throw err;
   }
   return null;
 }
@@ -520,22 +491,57 @@ async function prMeta(tail: Record<string, any>[], cached: Meta | undefined) {
   return { prs: flows, greenWatches: flows.length ? greenWatches : cached?.greenWatches ?? [] };
 }
 
-async function readMeta(file: string, mtime: number): Promise<Meta> {
-  const cached = metaCache.get(file);
-  if (cached?.mtime === mtime) {
-    metaCache.delete(file);
-    metaCache.set(file, cached);
-    return cached;
-  }
-  const head = jsonLines((await readSlice(file, 'head', HEAD_BYTES)).text);
-  const tail = await readTail(file);
+const vanished = (err: unknown) => (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+
+// A transcript deleted between its stat and its read reads as none.
+const unlessVanished = <T>(read: Promise<T>) => read.catch((err) => {
+  if (vanished(err)) return null;
+  throw err;
+});
+
+const isPrompt = (e: Record<string, any>) => promptText(e);
+
+function listed(head: Record<string, any>[], tail: Record<string, any>[], mtime: number) {
   const entries = [...head, ...tail];
   report(transcriptProblems(entries), versionOf(entries));
-  const meta = {
+  return {
     mtime,
     title: entries.findLast((e) => e.type === 'custom-title')?.customTitle ?? entries.findLast((e) => e.type === 'ai-title')?.aiTitle ?? null,
     firstPrompt: head.map((e) => promptText(e)).find(Boolean) ?? null,
     interactive: (head.find((e) => e.entrypoint)?.entrypoint ?? 'cli') === 'cli',
+  };
+}
+
+function remember<T>(cache: Map<string, T>, max: number, file: string, value: T) {
+  cache.delete(file);
+  cache.set(file, value);
+  if (cache.size > max) cache.delete(cache.keys().next().value!);
+  return value;
+}
+
+// Listing a worktree's conversations reads only what the list shows, and keeps it apart from the transcripts the
+// board follows, so many worktrees do not push those out.
+type Listed = ReturnType<typeof listed>;
+const listCache = new Map<string, Listed>();
+const MAX_LISTED = 5000;
+
+async function readListed(file: string, mtime: number): Promise<Listed | null> {
+  const meta = metaCache.get(file);
+  if (meta?.mtime === mtime) return meta;
+  const hit = listCache.get(file);
+  if (hit?.mtime === mtime) return remember(listCache, MAX_LISTED, file, hit);
+  const read = await unlessVanished(readEntriesWhole(file, isPrompt));
+  return read && remember(listCache, MAX_LISTED, file, listed(read.head, read.tail, mtime));
+}
+
+async function readMeta(file: string, mtime: number): Promise<Meta | null> {
+  const cached = metaCache.get(file);
+  if (cached?.mtime === mtime) return remember(metaCache, MAX_CACHED, file, cached);
+  const read = await unlessVanished(readEntries(file, isPrompt));
+  if (!read) return null;
+  const { head, tail } = read;
+  const meta = {
+    ...listed(head, tail, mtime),
     cleared: startedByClear(head),
     ...lastReply(tail),
     activity: activity(tail),
@@ -549,10 +555,7 @@ async function readMeta(file: string, mtime: number): Promise<Meta> {
     turnError: turnError(tail),
     ...settings(tail),
   };
-  metaCache.delete(file);
-  metaCache.set(file, meta);
-  if (metaCache.size > MAX_CACHED) metaCache.delete(metaCache.keys().next().value!);
-  return meta;
+  return remember(metaCache, MAX_CACHED, file, meta);
 }
 
 export function alive(pid: number) {
@@ -666,8 +669,8 @@ export async function listConversations(cwd: string, live: Map<string, LiveProce
   const conversations: Conversation[] = [];
   for (const s of newest) {
     if (conversations.length >= limit) break;
-    const meta = await readMeta(s.file, s.mtime);
-    if (!meta.interactive || !(meta.firstPrompt || meta.title)) continue;
+    const meta = await readListed(s.file, s.mtime);
+    if (!meta?.interactive || !(meta.firstPrompt || meta.title)) continue;
     conversations.push({ id: s.id, title: meta.title, firstPrompt: meta.firstPrompt, updatedAt: Math.round(s.mtime), livePid: live.get(s.id)?.pid ?? null });
   }
   return conversations;
