@@ -6,7 +6,7 @@ import { openSheet } from '../router.ts';
 import type { FolderView, RepoView } from '../types.ts';
 import { useStore } from '../store.ts';
 import { DAYS, describeWhen } from '../schedules.ts';
-import type { Schedule, When } from '../types.ts';
+import type { When } from '../types.ts';
 import { toast } from './Toasts.tsx';
 import { EFFORTS, effortName, modelName, tilde, untilde } from '../util.ts';
 import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
@@ -123,7 +123,7 @@ function edit(patch: Partial<Fields>) {
 function readBranches(repoId: number) {
   if (reading === repoId) return;
   reading = repoId;
-  api<Branch[]>('GET', `/api/repos/${repoId}/branches`).catch(() => []).then((list) => {
+  api('GET', `/api/repos/${repoId}/branches`).catch(() => []).then((list) => {
     if (reading !== repoId) return;
     reading = null;
     branches = { repoId, list: list.toSorted((a, b) => byName(a.name, b.name)) };
@@ -132,10 +132,10 @@ function readBranches(repoId: number) {
 }
 
 // `key` is the target's: what a model resolves to depends on the settings of the folder Claude starts in.
-function readModels(key: string, url: string) {
+function readModels(key: string, url: `/api/repos/${number}/models` | `/api/folders/models?path=${string}`) {
   if (readingModels === key || models?.key === key) return;
   readingModels = key;
-  api<Models>('GET', url).catch(() => ({ models: {}, efforts: {} })).then((read) => {
+  api('GET', url).catch(() => ({ models: {}, efforts: {} })).then((read) => {
     if (readingModels !== key) return;
     readingModels = null;
     models = { key, read };
@@ -433,9 +433,9 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
     try {
       if (now.start !== 'now') {
         const task = pickedFolder
-          ? { kind: 'folder', folder: pickedFolder.path, prompt: now.prompt, files, model: now.model, effort: now.effort }
-          : { kind: 'repo', repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model: now.model, effort: now.effort };
-        const schedule = await api<Schedule>('POST', '/api/schedules', { name: now.existing && !pickedFolder ? '' : now.name.trim(), task, when: whenOf(now) });
+          ? { kind: 'folder' as const, folder: pickedFolder.path, prompt: now.prompt, files, model: now.model, effort: now.effort }
+          : { kind: 'repo' as const, repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model: now.model, effort: now.effort };
+        const schedule = await api('POST', '/api/schedules', { name: now.existing && !pickedFolder ? '' : now.name.trim(), task, when: whenOf(now)! });
         edit({ ...EMPTY, ...choicesOf(now), repoId: pickedFolder ? now.repoId : repo.id, branch: now.existing && !pickedFolder ? defaultBranch(repo) : '' });
         clearAttached();
         track('new-task', { ...chose, schedule: now.start, ok: true });
@@ -444,7 +444,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         return null;
       }
       if (pickedFolder) {
-        const result = await api<{ path: string; sessionId: string }>('POST', '/api/folder-tasks', {
+        const result = await api('POST', '/api/folder-tasks', {
           folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, files, model: now.model, effort: now.effort,
         });
         edit({ ...EMPTY, ...choicesOf(now) });
@@ -454,7 +454,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         openSheet(result.sessionId);
         return null;
       }
-      const result = await api<{ path: string; sessionId: string | null }>('POST', '/api/worktrees', {
+      const result = await api('POST', '/api/worktrees', {
         repoId: repo.id,
         name: now.existing ? '' : now.name.trim(),
         branch: now.branch.trim(),

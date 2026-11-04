@@ -8,9 +8,12 @@ import { homedir } from 'node:os';
 import { extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { z } from 'zod';
 import { answering, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
 import { clearings } from '../../server/clearing.ts';
-import type { ConversationLog } from '../../server/conversations.ts';
+import {
+  actionBodies, bodies, isAction, onDecision, type ActionHandlers, type ActionInput, type Responses, type Route, type RouteInput, type Snapshot, type State,
+} from '../../server/contract.ts';
 import type { FullDiff, Upstream } from '../../server/git.ts';
 import type { Session, SubtaskKind } from '../../server/db.ts';
 import { checkDecision, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
@@ -135,12 +138,6 @@ const pausing = pauser({
 const clients = new Set<WebSocket>();
 let pushing = false;
 
-function shown(s: Session) {
-  if (!args.legacy) return { ...s, ...clearing.of(s.id) };
-  const { answered: _, ...old } = s;
-  return old;
-}
-
 const parentOf = (path: string) => path.slice(0, path.lastIndexOf('/'));
 
 // As the server's folders(): a folder holding two or more of the repositories.
@@ -151,10 +148,22 @@ const folders = (): FolderView[] => [...Map.groupBy(state.repos, (r) => parentOf
 const taskWorktrees = (taskFolder: string) =>
   state.repos.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && parentOf(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
 
-const snapshot = () => ({
-  home: HOME, roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders(), schedules }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
-  ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: `${HOME}/git/github/pitwall` }),
-});
+// --legacy answers as a server from before folders, schedules, usage, Pause, drift and the sessions' newer fields,
+// which the contract no longer describes.
+function snapshot(): State {
+  const sessions = state.sessions.toSorted((a, b) => a.createdAt - b.createdAt);
+  if (args.legacy) {
+    const old = sessions.map((s) => {
+      const { answered: _, ...rest } = s;
+      return rest;
+    });
+    return { home: HOME, roots: state.roots, repos: state.repos, sessions: old } as unknown as State;
+  }
+  return {
+    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id) })),
+    usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: `${HOME}/git/github/pitwall`,
+  };
+}
 
 // As in server/app.ts: every snapshot names the entry the polls have taken, and a socket that opens first reads
 // index.html, which can only cast doubt on it. On --legacy only a socket that opens is told an entry, what that read
@@ -170,7 +179,7 @@ function push() {
     pushing = false;
     pausing.step(state.sessions);
     sendDueDrafts();
-    const message = JSON.stringify({ ...snapshot(), ...(!args.legacy && { uiEntry: announced ?? ui.settled() }) });
+    const message = JSON.stringify(args.legacy ? snapshot() : { ...snapshot(), uiEntry: announced ?? ui.settled() } satisfies Snapshot);
     for (const ws of clients) ws.send(message);
   });
 }
@@ -334,10 +343,10 @@ const asides = asking({
   discard: async () => {},
 });
 
-async function answerWithDrafts(s: Session, body: any) {
+async function answerWithDrafts(s: Session, body: ActionInput<'answer'>) {
   await answers.answer(s.id, body);
   const now = find(s.id);
-  if (now && Array.isArray(body.drafts) && body.drafts.length) update(now.id, { parked: removeParked(now.parked, body.drafts) });
+  if (now && body.drafts?.length) update(now.id, { parked: removeParked(now.parked, body.drafts) });
 }
 
 function legacyAnswer(s: Session, reply: Reply, commands = true) {
@@ -417,12 +426,10 @@ function removeWorktree(repo: RepoView, path: string) {
   push();
 }
 
-const onDecision = new Set(['dismiss', 'accept-advice', 'retry-advice', 'stop-advice', 'elaborate']);
-
 const SUBTASK_LABELS: Record<SubtaskKind, string> = { accept: 'Fix', elaborate: 'Explain', 'second-look': 'Second look', reply: 'Reply' };
 
 // As the server's respond(): Reject, Solve and Reopen mark the finding, any other answer starts a subtask in its worktree.
-function respond(s: Session, body: any) {
+function respond(s: Session, body: ActionInput<'finding'>) {
   const index = Number(body.finding);
   const f = s.findings?.items[index];
   if (!s.findings || s.findings.basis !== body.basis || !f) throw new Refusal('these findings were replaced; read them again', 'stale');
@@ -442,7 +449,7 @@ function respond(s: Session, body: any) {
   return { id };
 }
 
-const actions: Record<string, (s: Session, body: any) => unknown> = {
+const actions: ActionHandlers<Session> = {
   finding: respond,
   answer: (s, body) => (args.legacy ? legacyAnswer(s, body) : answerWithDrafts(s, body)),
   park: (s, body) => update(s.id, { parked: addParked(s.parked, body) }),
@@ -451,7 +458,7 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
   'ask-aside': (s, body) => ({ id: asides.ask(s.id, body) }),
   'stop-aside': (s, body) => asides.stop(s.id, body.aside),
   'close-aside': (s, body) => asides.close(s.id, body.aside),
-  dismiss: (s, body) => closeQuestion({ get: find, update }, s.id, body.key),
+  dismiss: (s, body) => closeQuestion({ get: find, update }, s.id, body.key ?? null),
   rename: (s, body) => rename(s, body.title),
   'answer-menu': (s, body) => (args.legacy ? legacyAnswerMenu(s, body) : answers.answerMenu(s.id, body)),
   'accept-advice': (s, body) =>
@@ -514,18 +521,18 @@ function clearTask(s: Session, removesPlace: boolean) {
   push();
 }
 
-async function sessionAction(id: string, action: string, body: any) {
+async function sessionAction(id: string, action: string, raw: Buffer) {
   if (delayMs) await pause(delayMs);
   if (failNext) {
     const { error, code } = failNext;
     failNext = null;
     throw new HttpError(400, error, code);
   }
-  const act = actions[action];
-  if (!act) throw new HttpError(404, 'unknown action');
+  if (!isAction(action)) throw new HttpError(404, 'unknown action');
+  const body = input(raw, actionBodies[action]);
   const s = must(id);
-  if (onDecision.has(action)) checkDecision(s, body.key);
-  return act(s, body);
+  if (onDecision.has(action)) checkDecision(s, (body as { key?: string | null }).key);
+  return (actions[action] as (s: Session, body: unknown) => unknown)(s, body);
 }
 
 const longLived = (repo: RepoView, branch: string) =>
@@ -692,13 +699,38 @@ const routes: [string, RegExp, Handler][] = [];
 const route = (method: string, path: string, handler: Handler) =>
   routes.push([method, new RegExp(`^${path.replace(/:[a-z]+/g, '([^/]+)')}$`), handler]);
 
-route('GET', '/api/state', () => snapshot());
-route('POST', '/api/pick-folder', () => ({ path: `${HOME}/code/payments` }));
+// As the server's input(): a body that is not JSON, or not what the route takes, is refused with a 400.
+function input<T extends z.ZodType>(raw: Buffer, schema: T): z.output<T> {
+  let data: unknown = {};
+  if (raw.length) {
+    try {
+      data = JSON.parse(raw.toString('utf8'));
+    } catch {
+      throw new HttpError(400, 'the body is not JSON');
+    }
+  }
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) throw new HttpError(400, z.prettifyError(parsed.error));
+  return parsed.data;
+}
+
+type Answer<R> = [R] extends [void] ? typeof NONE : R;
+type Read<K extends Route> = Omit<Request, 'body'> & { body: K extends keyof typeof bodies ? RouteInput<K> : unknown };
+
+// A route of server/contract.ts, which reads its body with the server's schema and answers what the server answers.
+function api<K extends Route>(key: K, handler: (req: Read<K>) => Answer<Responses[K]> | Promise<Answer<Responses[K]>>) {
+  const [method, path] = key.split(' ');
+  const schema: z.ZodType | undefined = Object.hasOwn(bodies, key) ? bodies[key as keyof typeof bodies] : undefined;
+  route(method, path, (req) => handler({ ...req, body: schema ? input(req.raw, schema) : req.body } as Read<K>));
+}
+
+api('GET /api/state', () => snapshot());
+api('POST /api/pick-folder', () => ({ path: `${HOME}/code/payments` }));
 // Logged only: a check must never open a real browser.
-route('POST', '/api/open', () => NONE);
+api('POST /api/open', () => NONE);
 // As the server's: a folder in a repository adds the repository, any other folder is scanned for repositories. Here a
 // folder that holds known repositories is one to scan, and any other one a new repository.
-route('POST', '/api/repos', ({ body }) => {
+api('POST /api/repos', ({ body }) => {
   const path = String(body.path ?? '').trim().replace(/(.)\/$/, '$1');
   if (!isAbsolute(path)) throw new Error(`not a folder: ${path}`);
   if (state.repos.some((r) => path === r.path || path.startsWith(`${r.path}/`))) return { scanned: false };
@@ -715,13 +747,13 @@ route('POST', '/api/repos', ({ body }) => {
   push();
   return { scanned: false };
 });
-route('DELETE', '/api/roots', ({ body }) => {
+api('DELETE /api/roots', ({ body }) => {
   state.roots = state.roots.filter((r) => r !== body.path);
   push();
   return NONE;
 });
-route('POST', '/api/rescan', () => NONE);
-route('PATCH', '/api/repos/:id', ({ params, body }) => {
+api('POST /api/rescan', () => NONE);
+api('PATCH /api/repos/:id', ({ params, body }) => {
   const repo = repoOf(Number(params[0]));
   if (!repo) return NONE;
   for (const key of ['baseBranch', 'setupCommand', 'worktreeRoot'] as const) if (key in body) repo[key] = body[key] || null;
@@ -730,15 +762,15 @@ route('PATCH', '/api/repos/:id', ({ params, body }) => {
   push();
   return NONE;
 });
-route('DELETE', '/api/repos/:id', ({ params }) => {
+api('DELETE /api/repos/:id', ({ params }) => {
   const id = Number(params[0]);
   state.sessions = state.sessions.filter((s) => s.repoId !== id);
   state.repos = state.repos.filter((r) => r.id !== id);
   push();
   return NONE;
 });
-route('GET', '/api/repos/:id/branches', ({ params }) => branches(mustRepo(Number(params[0]))));
-route('GET', '/api/repos/:id/models', ({ params }) => {
+api('GET /api/repos/:id/branches', ({ params }) => branches(mustRepo(Number(params[0]))));
+api('GET /api/repos/:id/models', ({ params }) => {
   mustRepo(Number(params[0]));
   return MODELS;
 });
@@ -762,12 +794,12 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   return { path, sessionId: startSession(repo.id, path, { title: req.scheduled || !req.existingBranch ? name : '', prompt, model, effort, scheduled: req.scheduled }) };
 }
 
-route('POST', '/api/worktrees', ({ body }) => startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
-route('GET', '/api/folders/models', ({ url }) => {
+api('POST /api/worktrees', ({ body }) => startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
+api('GET /api/folders/models', ({ url }) => {
   if (!folders().some((f) => f.path === url.searchParams.get('path'))) throw new Error('unknown folder');
   return MODELS;
 });
-route('POST', '/api/folder-tasks', ({ body }) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
+api('POST /api/folder-tasks', ({ body }) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
 
 // The server's scheduler over the mock's tasks; /mock/schedules/step runs a step as if the clock read `at`.
 let clockAt: number | null = null;
@@ -784,7 +816,7 @@ const plan = scheduler({
   ]),
   now: () => clockAt ?? Date.now(),
 });
-route('POST', '/api/schedules', ({ body }) => {
+api('POST /api/schedules', ({ body }) => {
   const now = Date.now();
   const { name, task, when } = parseSchedule(body, now);
   task.files = checkUploads(task.files);
@@ -793,7 +825,7 @@ route('POST', '/api/schedules', ({ body }) => {
   push();
   return schedule;
 });
-route('PATCH', '/api/schedules/:id', ({ params, body }) => {
+api('PATCH /api/schedules/:id', ({ params, body }) => {
   const s = schedules.find((x) => x.id === params[0]);
   if (!s) throw new Error('unknown schedule');
   s.paused = !!body.paused;
@@ -801,12 +833,12 @@ route('PATCH', '/api/schedules/:id', ({ params, body }) => {
   push();
   return NONE;
 });
-route('DELETE', '/api/schedules/:id', ({ params }) => {
+api('DELETE /api/schedules/:id', ({ params }) => {
   schedules = schedules.filter((x) => x.id !== params[0]);
   push();
   return NONE;
 });
-route('POST', '/api/schedules/:id/run', ({ params }) => plan.runNow(params[0]));
+api('POST /api/schedules/:id/run', ({ params }) => plan.runNow(params[0]));
 route('POST', '/mock/schedules/step', async ({ body }) => {
   clockAt = Number(body.at);
   try {
@@ -816,13 +848,13 @@ route('POST', '/mock/schedules/step', async ({ body }) => {
   }
   return schedules;
 });
-route('DELETE', '/api/worktrees', ({ body }) => {
+api('DELETE /api/worktrees', ({ body }) => {
   removeWorktree(mustRepo(body.repoId), body.path);
   return NONE;
 });
-route('POST', '/api/sessions', ({ body }) => {
+api('POST /api/sessions', ({ body }) => {
   const repo = mustRepo(body.repoId);
-  if (!body.continueId) return { id: startSession(repo.id, body.worktree, { prompt: body.prompt }) };
+  if (!body.continueId) return { id: startSession(repo.id, body.worktree, {}) };
   const existing = taskOf(state.sessions, body.continueId);
   if (existing && existing.status !== 'exited') return { id: existing.id };
   const conversation = repo.worktrees.find((w) => w.path === body.worktree)?.conversations.find((c) => c.id === body.continueId);
@@ -831,7 +863,7 @@ route('POST', '/api/sessions', ({ body }) => {
   update(existing.id, { ...(existing.conversation !== body.continueId && handOver(existing, body.continueId, Date.now())), status: 'idle', pid: 41_500, tty: '/dev/ttys042', archived: false });
   return { id: existing.id };
 });
-route('POST', '/api/shell', () => NONE);
+api('POST /api/shell', () => NONE);
 route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => {
   const artifact = find(params[0])?.artifacts.find((a) => a.id === params[1]);
   if (!artifact) throw new HttpError(404, 'artifact not found');
@@ -839,7 +871,7 @@ route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => {
 });
 // Each earlier conversation ends on the reply it was cleared after; the current one has the first prompt, a reply that
 // asked for more, a prompt left without a reply, and the latest reply.
-route('GET', '/api/sessions/:id/conversation', ({ params }): ConversationLog[] => {
+api('GET /api/sessions/:id/conversation', ({ params }) => {
   const s = must(params[0]);
   const start = s.history.at(-1)?.until ?? s.createdAt;
   return [
@@ -862,10 +894,8 @@ route('GET', '/api/uploads/:dir/:name', ({ params: [dir, name] }) => {
   if (!UPLOAD_DIR_NAME.test(dir) || !UPLOAD_IMAGE_NAME.test(name)) throw new HttpError(404, 'picture not found');
   return new Page(PICTURE, { 'content-type': 'image/svg+xml' });
 });
-route('GET', '/api/sessions/:id/delete-worktree', ({ params }) => deleteLoss(must(params[0])));
-route('POST', '/api/sessions/:id/:action', async ({ params, body }) => {
-  return (await sessionAction(params[0], params[1], body)) ?? NONE;
-});
+api('GET /api/sessions/:id/delete-worktree', ({ params }) => deleteLoss(must(params[0])));
+route('POST', '/api/sessions/:id/:action', async ({ params, raw }) => (await sessionAction(params[0], params[1], raw)) ?? NONE);
 route('POST', '/api/uploads', ({ raw, headers }) => {
   if (!raw.length) throw new Error('empty file');
   if (raw.length > 30 * 1024 * 1024) throw new Error('files over 30 MB are not accepted');
@@ -873,13 +903,13 @@ route('POST', '/api/uploads', ({ raw, headers }) => {
   uploads.add(path);
   return { path };
 });
-route('POST', '/api/ux', ({ body }) => {
+api('POST /api/ux', ({ body }) => {
   const batch = cleanBatch(body);
   if (!batch) throw new HttpError(400, 'bad batch');
   uxEvents.push(...batch.events.map((e) => ({ ...e, page: batch.page })));
   return NONE;
 });
-route('GET', '/api/commands', ({ url }) => commandsIn(url.searchParams.get('worktree') ?? ''));
+api('GET /api/commands', ({ url }) => commandsIn(url.searchParams.get('worktree') ?? ''));
 // As the server's folderDiff(): the fixture's change in every worktree of the task, each under its repository's folder.
 async function folderDiff(taskFolder: string, paths: string[] = []): Promise<FullDiff> {
   const parts = await Promise.all(taskWorktrees(taskFolder).map(async ({ repo }) => {
@@ -900,7 +930,7 @@ async function folderDiff(taskFolder: string, paths: string[] = []): Promise<Ful
 
 const isTaskFolder = (worktree: string) => state.sessions.some((s) => s.repoId === null && s.worktree === worktree);
 
-route('GET', '/api/diff/file', async ({ url }) => {
+api('GET /api/diff/file', async ({ url }) => {
   const worktree = url.searchParams.get('worktree') ?? '';
   const paths = url.searchParams.getAll('path');
   if (!paths.length || paths.some((p) => p.startsWith('/') || p.split('/').includes('..'))) throw new Error('bad path');
@@ -908,8 +938,8 @@ route('GET', '/api/diff/file', async ({ url }) => {
   const repo = repoOfWorktree(worktree);
   return { base: repo.base, ...(await fixtureDiff(paths)) };
 });
-route('GET', '/api/upstream', ({ url }) => upstreams.get(url.searchParams.get('worktree') ?? '') ?? null);
-route('GET', '/api/diff', async ({ url }) => {
+api('GET /api/upstream', ({ url }) => upstreams.get(url.searchParams.get('worktree') ?? '') ?? null);
+api('GET /api/diff', async ({ url }) => {
   const worktree = url.searchParams.get('worktree') ?? '';
   const diff = isTaskFolder(worktree) ? await folderDiff(worktree) : { base: repoOfWorktree(worktree).base, ...(await fixtureDiff()) };
   for (const s of state.sessions.filter((s) => s.worktree === worktree)) s.diffstat = diff.stat;
@@ -930,7 +960,7 @@ function resumePaused(only?: string) {
   return { resumed: tasks.length - failed.length, failed };
 }
 
-route('POST', '/api/restart/resume', ({ body }) => {
+api('POST /api/restart/resume', ({ body }) => {
   const tasks = state.sessions.filter((s) => s.status === 'exited' && s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
   const failed = tasks.filter((s) => flagged(s.id, 'resumeFails')).map(notFound);
   for (const s of tasks) if (!flagged(s.id, 'resumeFails')) resume(s);
@@ -938,24 +968,24 @@ route('POST', '/api/restart/resume', ({ body }) => {
   const more = resumePaused();
   return { resumed: tasks.length - failed.length + more.resumed, failed: [...failed, ...more.failed] };
 });
-route('POST', '/api/restart/dismiss', ({ body }) => {
+api('POST /api/restart/dismiss', ({ body }) => {
   if (body.paused === true) pausing.cancel();
   for (const s of state.sessions) if (body.paused === true || s.interrupted?.cause !== 'pause') s.interrupted = null;
   push();
   return NONE;
 });
-route('POST', '/api/pause', () => {
+api('POST /api/pause', () => {
   const result = pausing.start(state.sessions);
   push();
   return result;
 });
-route('POST', '/api/pause/now', async () => {
+api('POST /api/pause/now', async () => {
   const result = await pausing.hurry(state.sessions);
   push();
   return result;
 });
-route('POST', '/api/pause/resume', ({ body }) => resumePaused(body.id));
-route('POST', '/api/pause/dismiss', () => {
+api('POST /api/pause/resume', ({ body }) => resumePaused(body.id));
+api('POST /api/pause/dismiss', () => {
   pausing.cancel();
   for (const s of state.sessions) if (s.interrupted?.cause === 'pause') s.interrupted = null;
   push();
@@ -1061,7 +1091,7 @@ route('POST', '/mock/drop', ({ body, afterReply }) => {
 // to every socket that opens and in every push (on --legacy pushes name no entry).
 route('POST', '/mock/ui-entry', ({ body }) => {
   announced = body.src == null ? null : String(body.src);
-  const message = JSON.stringify({ ...snapshot(), uiEntry: announced ?? ui.settled() });
+  const message = JSON.stringify({ ...snapshot(), uiEntry: announced ?? ui.settled() } satisfies Snapshot);
   for (const ws of clients) ws.send(message);
   return { sockets: clients.size };
 });
@@ -1217,7 +1247,7 @@ server.on('upgrade', (req, socket, head) => {
     if (ws.readyState !== ws.OPEN) return;
     clients.add(ws);
     ws.on('close', () => clients.delete(ws));
-    ws.send(JSON.stringify({ ...snapshot(), uiEntry: announced ?? (args.legacy ? read : ui.settled()) }));
+    ws.send(JSON.stringify({ ...snapshot(), uiEntry: announced ?? (args.legacy ? read : ui.settled()) } satisfies Snapshot));
   });
 });
 

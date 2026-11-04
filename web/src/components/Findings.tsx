@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { api, type ApiError } from '../api.ts';
+import { sessionAction, type ApiError } from '../api.ts';
 import { openSheet } from '../router.ts';
 import { useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
@@ -83,7 +83,7 @@ type Settled = ReturnType<typeof settledAs>;
 const MARKED = { reject: 'Rejected', solve: 'Solved' } as const;
 
 const reopen = (session: Session, basis: string, index: number) =>
-  api('POST', `/api/sessions/${session.id}/finding`, { basis, finding: index, kind: 'reopen', text: '' }).catch((err: ApiError) => toast('error', `#${index + 1}: ${err.message}`));
+  sessionAction(session.id, 'finding', { basis, finding: index, kind: 'reopen', text: '' }).catch((err: ApiError) => toast('error', `#${index + 1}: ${err.message}`));
 
 function Item({ session, basis, index, finding, subtasks, settled, compact }: ItemProps) {
   const [expanded, setExpanded] = useState(!compact && index === 0);
@@ -98,7 +98,7 @@ function Item({ session, basis, index, finding, subtasks, settled, compact }: It
     if (sending) return;
     setSending(true);
     try {
-      const { id } = await api<{ id: string | null }>('POST', `/api/sessions/${session.id}/finding`, { basis, finding: index, kind, text: note });
+      const { id } = await sessionAction(session.id, 'finding', { basis, finding: index, kind, text: note });
       setNote('');
       if (kind === 'reject' || kind === 'solve') {
         toast('undo', `${MARKED[kind]} #${n} ${finding.title}`, { session: session.id, action: { label: 'Undo', kbd: UNDO_KBD, run: () => void reopen(session, basis, index) } });

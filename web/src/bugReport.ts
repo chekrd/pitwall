@@ -55,7 +55,7 @@ export async function fileBugReport({ comment, taken, sessions, repos, pitwall, 
     const repo = repos.find((r) => r.path === pitwall || r.worktrees.some((w) => w.path === pitwall));
     if (!repo) throw new Error('the Pitwall repository is not on the board');
     const path = await upload(new File([JSON.stringify(report, null, 1)], `${name}.json`, { type: 'application/json' }));
-    const created = await api<{ path: string; sessionId: string | null }>('POST', '/api/worktrees', { repoId: repo.id, name, prompt: bugPrompt(comment, path) });
+    const created = await api('POST', '/api/worktrees', { repoId: repo.id, name, prompt: bugPrompt(comment, path) });
     return { filed: true as const, session: created.sessionId };
   } catch (err) {
     const file = `${name}.json`;

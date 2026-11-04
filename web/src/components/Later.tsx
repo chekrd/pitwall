@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { sessionAction } from '../api.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
-import type { Parked, Session } from '../types.ts';
+import type { ActionBody, Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES } from './Asides.tsx';
 import { explain, TIPS } from './explain.ts';
 import styles from './Later.module.css';
@@ -10,7 +10,7 @@ import { toast } from './Toasts.tsx';
 
 const reportError = (err: unknown) => toast('error', err instanceof Error ? err.message : String(err));
 
-const park = (s: Session, action: 'park' | 'edit-park' | 'unpark', body: Record<string, unknown>) =>
+const park = <A extends 'park' | 'edit-park' | 'unpark'>(s: Session, action: A, body: ActionBody<A>) =>
   sessionAction(s.id, action, body).then(() => true, (err: unknown) => {
     reportError(err);
     return false;

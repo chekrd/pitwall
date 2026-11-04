@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { isAbsolute } from 'node:path';
-import { z } from 'zod';
+import type { RouteInput } from './contract.ts';
 import { schedules, sessions } from './db.ts';
 import { makeTaskFolder } from './folderTasks.ts';
 import { addWorktree } from './git.ts';
@@ -29,30 +29,12 @@ const chosenModel = (body: { model?: string; effort?: string }) => {
   return { model, effort };
 };
 
-const files = z.array(z.string()).optional();
-
-// What New task posts to start a task now; a schedule keeps the same with every field filled in.
-export const repoTask = z.strictObject({
-  repoId: z.number().int(), name: z.string(), branch: z.string().optional(), path: z.string().optional(), prompt: z.string().optional(),
-  files, existingBranch: z.boolean().optional(), model: z.string().optional(), effort: z.string().optional(),
-});
-export const folderTask = z.strictObject({
-  folder: z.string(), name: z.string(), prompt: z.string().optional(), files, model: z.string().optional(), effort: z.string().optional(),
-});
-export const scheduledTask = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('repo'), repoId: z.number().int(), existingBranch: z.boolean(), branch: z.string(), path: z.string(), prompt: z.string(), files,
-    model: z.string(), effort: z.string(),
-  }),
-  z.strictObject({ kind: z.literal('folder'), folder: z.string(), prompt: z.string(), files, model: z.string(), effort: z.string() }),
-]) satisfies z.ZodType<TaskRequest>;
-
 type NewTask = TaskRequest & { name: string; scheduled?: Scheduled };
 
-export const startRepoTask = (body: z.infer<typeof repoTask>) =>
+export const startRepoTask = (body: RouteInput<'POST /api/worktrees'>) =>
   startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch });
 
-export const startFolderTask = (body: z.infer<typeof folderTask>) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body });
+export const startFolderTask = (body: RouteInput<'POST /api/folder-tasks'>) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body });
 
 // A task across a folder of repos starts in an empty task folder; Claude opens a worktree in each repo it changes.
 async function startTask(req: NewTask) {

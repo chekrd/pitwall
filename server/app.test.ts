@@ -12,6 +12,7 @@ import { serve } from '@hono/node-server';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createApp, type Snapshot } from './app.ts';
 import { HOST, PORT, SESSIONS_DIR } from './config.ts';
+import type { Route } from './contract.ts';
 import { repos, sessions } from './db.ts';
 import { notify, refreshWorkspace, repoView } from './workspace.ts';
 
@@ -126,6 +127,23 @@ test('an unknown action is a 404, whatever its body', async () => {
   const id = addSession();
   assert.equal((await post(`/api/sessions/${id}/explode`, {})).status, 404);
   assert.equal((await post(`/api/sessions/${id}/toString`, {})).status, 404);
+});
+
+test('the server serves every route of the contract, under its method and path', () => {
+  // Written out, so a route the contract gains or loses fails to compile here until the list follows.
+  const contract = {
+    'GET /api/state': true, 'POST /api/pick-folder': true, 'POST /api/open': true, 'POST /api/repos': true, 'DELETE /api/roots': true,
+    'POST /api/rescan': true, 'PATCH /api/repos/:id': true, 'DELETE /api/repos/:id': true, 'GET /api/repos/:id/branches': true,
+    'GET /api/repos/:id/models': true, 'GET /api/folders/models': true, 'POST /api/folder-tasks': true, 'POST /api/worktrees': true,
+    'DELETE /api/worktrees': true, 'POST /api/schedules': true, 'PATCH /api/schedules/:id': true, 'DELETE /api/schedules/:id': true,
+    'POST /api/schedules/:id/run': true, 'POST /api/sessions': true, 'POST /api/shell': true, 'GET /api/sessions/:id/conversation': true,
+    'GET /api/sessions/:id/delete-worktree': true, 'POST /api/restart/resume': true, 'POST /api/restart/dismiss': true,
+    'POST /api/pause': true, 'POST /api/pause/now': true, 'POST /api/pause/resume': true, 'POST /api/pause/dismiss': true,
+    'POST /api/ux': true, 'POST /api/hooks/ask-user-question': true, 'POST /api/hooks/event': true, 'GET /api/commands': true,
+    'GET /api/diff/file': true, 'GET /api/upstream': true, 'GET /api/diff': true,
+  } satisfies Record<Route, true>;
+  const served = new Set(app.routes.map((r) => `${r.method} ${r.path}`));
+  for (const route of Object.keys(contract)) assert.ok(served.has(route), route);
 });
 
 test('removing a repo drops its tasks with their folders and leaves other tasks alone', async () => {

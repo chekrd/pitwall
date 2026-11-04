@@ -28,7 +28,7 @@ const notResumed = ({ failed }: Resumed) => {
 
 export async function pauseAll() {
   try {
-    const { stopping } = await api<{ stopping: number }>('POST', '/api/pause');
+    const { stopping } = await api('POST', '/api/pause');
     if (!stopping) toast('info', 'No Claude is at work, so it is safe to close the laptop or restart.');
   } catch (err) {
     reportError(err);
@@ -37,14 +37,14 @@ export async function pauseAll() {
 
 async function stopNow() {
   try {
-    const { failed } = await api<{ failed: { id: string; error: string }[] }>('POST', '/api/pause/now');
+    const { failed } = await api('POST', '/api/pause/now');
     for (const f of failed) toast('error', `Not stopped: ${f.error}`, { session: f.id });
   } catch (err) {
     reportError(err);
   }
 }
 
-export const resumePaused = (id?: string) => api<Resumed>('POST', '/api/pause/resume', id ? { id } : {}).then(notResumed);
+export const resumePaused = (id?: string) => api('POST', '/api/pause/resume', id ? { id } : {}).then(notResumed);
 
 // After a restart that ended tasks, the paused ones show in the restart's banner instead.
 function PauseBanner({ folded }: { folded: boolean }) {
@@ -148,7 +148,7 @@ function Recovery({ ended }: { ended: Session[] }) {
   const resume = async () => {
     setResuming(true);
     try {
-      notResumed(await api<Resumed>('POST', '/api/restart/resume', both));
+      notResumed(await api('POST', '/api/restart/resume', both));
     } catch (err) {
       reportError(err);
     } finally {

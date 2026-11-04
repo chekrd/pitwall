@@ -14,6 +14,7 @@ import { handleAdvisorMcp, retryAdvice, stopAdvice } from './advisor.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
 import { drift } from './claudeFormat.ts';
 import { listCommands } from './commands.ts';
+import { actionBodies, bodies, isAction, onDecision, type ActionHandlers, type ActionName, type Responses, type RouteInput } from './contract.ts';
 import { HOST, PORT, ROOT, UPLOADS_DIR, WEB_DIST } from './config.ts';
 import { repos, roots, schedules, sessions, uxEvents } from './db.ts';
 import { openDecision, Refusal } from './decision.ts';
@@ -25,7 +26,7 @@ import { handleMcp } from './mcp.ts';
 import { clearing, deleteWorktree, deleteWorktreeLoss, hideRepo, removeWorktreeAndSessions } from './removal.ts';
 import { nextRun, parseSchedule, repeats } from './schedule.ts';
 import * as S from './sessions.ts';
-import { folderTask, modelChoices, plan, repoTask, scheduledTask, startFolderTask, startRepoTask } from './tasks.ts';
+import { modelChoices, plan, startFolderTask, startRepoTask } from './tasks.ts';
 import { UPLOAD_DIR_NAME, UPLOAD_IMAGE_NAME, UPLOAD_IMAGE_TYPES } from './uploadPaths.ts';
 import { checkUploads, MAX_BYTES, saveUpload } from './uploads.ts';
 import type { Usage } from './usage.ts';
@@ -80,56 +81,41 @@ const withClearing = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: 
 const stateWith = (usage: Usage | null) =>
   ({ ...withClearing(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), pitwall: ROOT });
 
-// What /ws/events sends on every change.
-export type Snapshot = ReturnType<typeof stateWith> & { uiEntry: string | null };
+// What /api/state answers, and /ws/events sends on every change.
+export type State = ReturnType<typeof stateWith>;
+export type Snapshot = State & { uiEntry: string | null };
 
-const key = z.string().nullable().optional();
-const none = z.strictObject({});
-
-interface Action {
-  body: z.ZodType;
-  run(id: string, body: never): unknown;
-}
-
-const action = <T extends z.ZodType>(body: T, run: (id: string, body: z.output<T>) => unknown): Action => ({ body, run });
-
-// Each returns nothing, for a 204, or what the page reads back.
-const actions: Record<string, Action> = {
-  answer: action(z.strictObject({ key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: z.array(z.string()).optional() }),
-    async (id, b) => { await S.answer(id, b); }),
-  dismiss: action(z.strictObject({ key }), (id, b) => { S.dismiss(id, b.key ?? null); }),
-  rename: action(z.strictObject({ title: z.string() }), async (id, b) => { await S.rename(id, b.title); }),
-  'answer-menu': action(z.strictObject({ toolUseId: z.string(), answers: z.array(z.strictObject({ labels: z.array(z.string()), other: z.string() })) }),
-    async (id, b) => { await S.answerMenu(id, b); }),
-  'accept-advice': action(z.strictObject({ key, adviceAt: z.number().optional() }), async (id, b) => { await S.acceptAdvice(id, b.adviceAt); }),
-  'retry-advice': action(z.strictObject({ key }), (id) => { retryAdvice(id); }),
-  'stop-advice': action(z.strictObject({ key }), (id) => { stopAdvice(id); }),
-  elaborate: action(z.strictObject({ key }), (id) => { elaborate(id); }),
-  focus: action(none, async (id) => { await S.focus(id); }),
-  finder: action(none, async (id) => { await S.openIn(id, 'finder'); }),
-  vscode: action(none, async (id) => { await S.openIn(id, 'vscode'); }),
-  quit: action(none, async (id) => { await S.quit(id); }),
-  forget: action(none, async (id) => { await S.forget(id); }),
-  archive: action(z.strictObject({ archived: z.boolean().optional() }), (id, b) => { S.archive(id, b.archived ?? true); }),
-  priority: action(z.strictObject({ priority: z.enum(['high', 'low']).nullable() }), (id, b) => { S.setPriority(id, b.priority); }),
-  resolve: action(z.strictObject({ state: z.enum(['solved', 'dropped']).nullable() }), (id, b) => { S.resolve(id, b.state); }),
-  'delete-worktree': action(z.strictObject({ discard: z.boolean().optional() }), async (id, b) => { await deleteWorktree(id, { discard: b.discard === true }); }),
-  'dismiss-clear-error': action(none, (id) => { clearing.dismiss(id); }),
-  finding: action(z.strictObject({ basis: z.string(), finding: z.number().int(), kind: z.string(), text: z.string().optional() }),
-    async (id, b) => ({ id: await respond(id, b) })),
-  park: action(z.strictObject({ text: z.string(), auto: z.boolean().optional() }), (id, b) => { S.park(id, b); }),
-  'edit-park': action(z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }), (id, b) => { S.editPark(id, b); }),
-  unpark: action(z.strictObject({ draft: z.string() }), (id, b) => { S.unpark(id, b.draft); }),
-  'ask-aside': action(z.strictObject({ text: z.string(), aside: z.string().nullable().optional() }), (id, b) => ({ id: S.askAside(id, b) })),
-  'stop-aside': action(z.strictObject({ aside: z.string() }), (id, b) => { S.stopAside(id, b.aside); }),
-  'close-aside': action(z.strictObject({ aside: z.string() }), async (id, b) => { await S.closeAside(id, b.aside); }),
+const actions: ActionHandlers<string> = {
+  answer: async (id, b) => { await S.answer(id, b); },
+  dismiss: (id, b) => { S.dismiss(id, b.key ?? null); },
+  rename: async (id, b) => { await S.rename(id, b.title); },
+  'answer-menu': async (id, b) => { await S.answerMenu(id, b); },
+  'accept-advice': async (id, b) => { await S.acceptAdvice(id, b.adviceAt); },
+  'retry-advice': (id) => { retryAdvice(id); },
+  'stop-advice': (id) => { stopAdvice(id); },
+  elaborate: (id) => { elaborate(id); },
+  focus: async (id) => { await S.focus(id); },
+  finder: async (id) => { await S.openIn(id, 'finder'); },
+  vscode: async (id) => { await S.openIn(id, 'vscode'); },
+  quit: async (id) => { await S.quit(id); },
+  forget: async (id) => { await S.forget(id); },
+  archive: (id, b) => { S.archive(id, b.archived ?? true); },
+  priority: (id, b) => { S.setPriority(id, b.priority); },
+  resolve: (id, b) => { S.resolve(id, b.state); },
+  'delete-worktree': async (id, b) => { await deleteWorktree(id, { discard: b.discard === true }); },
+  'dismiss-clear-error': (id) => { clearing.dismiss(id); },
+  finding: async (id, b) => ({ id: await respond(id, b) }),
+  park: (id, b) => { S.park(id, b); },
+  'edit-park': (id, b) => { S.editPark(id, b); },
+  unpark: (id, b) => { S.unpark(id, b.draft); },
+  'ask-aside': (id, b) => ({ id: S.askAside(id, b) }),
+  'stop-aside': (id, b) => { S.stopAside(id, b.aside); },
+  'close-aside': async (id, b) => { await S.closeAside(id, b.aside); },
 };
 
-// These act on the decision the page showed and name it in `key`; answer and answer-menu check their own.
-const onDecision = new Set(['dismiss', 'accept-advice', 'retry-advice', 'stop-advice', 'elaborate']);
-const answering = new Set(['answer', 'answer-menu', 'accept-advice', 'dismiss']);
+const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'accept-advice', 'dismiss']);
 
-const optionalPaused = z.strictObject({ paused: z.boolean().optional() });
+const read = <K extends keyof typeof bodies>(c: Context, route: K) => input(c, bodies[route]) as Promise<RouteInput<K>>;
 
 export interface AppDeps {
   usage: { current(): Usage | null };
@@ -169,7 +155,7 @@ export function createApp({ usage, ui }: AppDeps) {
     return c.json({ error: err instanceof Error ? err.message : String(err), ...(refused && { code: err.code }) }, invalid ? 400 : 500);
   });
 
-  app.get('/api/state', (c) => c.json(state()));
+  app.get('/api/state', (c) => c.json(state() satisfies Responses['GET /api/state']));
 
   app.all('/mcp', (c) => handleMcp(c.req.raw));
   app.all('/mcp/advisor/:token', (c) => handleAdvisorMcp(c.req.raw, c.req.param('token')));
@@ -178,18 +164,18 @@ export function createApp({ usage, ui }: AppDeps) {
 
   app.post('/api/pick-folder', async (c) => {
     const { stdout } = await run('/usr/bin/osascript', ['-e', 'POSIX path of (choose folder with prompt "Choose a repository, or a folder to scan for repositories")']);
-    return c.json({ path: stdout.trim().replace(/\/$/, '') });
+    return c.json({ path: stdout.trim().replace(/\/$/, '') } satisfies Responses['POST /api/pick-folder']);
   });
 
   app.post('/api/open', async (c) => {
-    const url = URL.parse((await input(c, z.strictObject({ url: z.string() }))).url);
+    const url = URL.parse((await read(c, 'POST /api/open')).url);
     if (!url || !['http:', 'https:'].includes(url.protocol)) return c.text('not a web link', 400);
     await run('/usr/bin/open', [url.href]);
     return c.body(null, 204);
   });
 
   app.post('/api/repos', async (c) => {
-    const path = (await input(c, z.strictObject({ path: z.string() }))).path.trim().replace(/(.)\/$/, '$1');
+    const path = (await read(c, 'POST /api/repos')).path.trim().replace(/(.)\/$/, '$1');
     // A dotfiles repo in ~ would otherwise swallow every folder picked under it.
     const found = await repoRoot(path).catch(() => null);
     const root = found === homedir() && path !== found ? null : found;
@@ -197,11 +183,11 @@ export function createApp({ usage, ui }: AppDeps) {
     else if ((await stat(path).catch(() => null))?.isDirectory()) roots.add(path);
     else throw new Invalid(`not a folder: ${path}`);
     await refreshWorkspace({ scan: !root });
-    return c.json({ scanned: !root });
+    return c.json({ scanned: !root } satisfies Responses['POST /api/repos']);
   });
 
   app.delete('/api/roots', async (c) => {
-    roots.remove((await input(c, z.strictObject({ path: z.string() }))).path);
+    roots.remove((await read(c, 'DELETE /api/roots')).path);
     await refreshWorkspace();
     return c.body(null, 204);
   });
@@ -211,10 +197,8 @@ export function createApp({ usage, ui }: AppDeps) {
     return c.body(null, 204);
   });
 
-  const repoSettings = z.strictObject({ baseBranch: z.string().nullable(), setupCommand: z.string().nullable(), worktreeRoot: z.string().nullable() }).partial();
-
   app.patch('/api/repos/:id', async (c) => {
-    repos.update(Number(c.req.param('id')), await input(c, repoSettings));
+    repos.update(Number(c.req.param('id')), await read(c, 'PATCH /api/repos/:id'));
     await refreshWorkspace();
     return c.body(null, 204);
   });
@@ -228,45 +212,43 @@ export function createApp({ usage, ui }: AppDeps) {
   app.get('/api/repos/:id/branches', async (c) => {
     const repo = knownRepo(Number(c.req.param('id')));
     const checkedOut = new Map(repo.worktrees.flatMap((w) => (w.branch ? [[w.branch, w.path]] : [])));
-    return c.json((await listBranches(repo.path)).map((b) => ({ ...b, worktree: checkedOut.get(b.name) ?? null })));
+    return c.json((await listBranches(repo.path)).map((b) => ({ ...b, worktree: checkedOut.get(b.name) ?? null })) satisfies Responses['GET /api/repos/:id/branches']);
   });
 
-  app.get('/api/repos/:id/models', async (c) => c.json(await modelChoices(knownRepo(Number(c.req.param('id'))).path)));
+  app.get('/api/repos/:id/models', async (c) => c.json((await modelChoices(knownRepo(Number(c.req.param('id'))).path)) satisfies Responses['GET /api/repos/:id/models']));
 
   app.get('/api/folders/models', async (c) => {
     const folder = folders().find((f) => f.path === c.req.query('path'));
     if (!folder) throw new Invalid('unknown folder');
-    return c.json(await modelChoices(folder.path));
+    return c.json((await modelChoices(folder.path)) satisfies Responses['GET /api/folders/models']);
   });
 
   // Tasks: starting them, now or on a schedule, and removing their worktrees.
 
-  app.post('/api/folder-tasks', async (c) => c.json(await startFolderTask(await input(c, folderTask))));
+  app.post('/api/folder-tasks', async (c) => c.json((await startFolderTask(await read(c, 'POST /api/folder-tasks'))) satisfies Responses['POST /api/folder-tasks']));
 
-  app.post('/api/worktrees', async (c) => c.json(await startRepoTask(await input(c, repoTask))));
+  app.post('/api/worktrees', async (c) => c.json((await startRepoTask(await read(c, 'POST /api/worktrees'))) satisfies Responses['POST /api/worktrees']));
 
   app.delete('/api/worktrees', async (c) => {
-    const body = await input(c, z.strictObject({ repoId: z.number().int(), path: z.string(), force: z.boolean().optional(), deleteBranch: z.boolean().optional() }));
+    const body = await read(c, 'DELETE /api/worktrees');
     await removeWorktreeAndSessions(knownRepo(body.repoId), body.path, { force: !!body.force, deleteBranch: !!body.deleteBranch });
     return c.body(null, 204);
   });
 
-  const when = z.union([z.strictObject({ at: z.number() }), z.strictObject({ time: z.string(), days: z.array(z.number()) })]);
-
   app.post('/api/schedules', async (c) => {
     const now = Date.now();
-    const { name, task, when: at } = parseSchedule(await input(c, z.strictObject({ name: z.string(), task: scheduledTask, when })), now);
+    const { name, task, when: at } = parseSchedule(await read(c, 'POST /api/schedules'), now);
     task.files = await checkUploads(task.files);
     const schedule = { id: randomUUID(), name, task, when: at, next: nextRun(at, now), paused: false, last: null, createdAt: now };
     schedules.save(schedule);
     notify();
-    return c.json(schedule);
+    return c.json(schedule satisfies Responses['POST /api/schedules']);
   });
 
   app.patch('/api/schedules/:id', async (c) => {
     const s = schedules.all().find((x) => x.id === c.req.param('id'));
     if (!s) throw new Invalid('unknown schedule');
-    const { paused } = await input(c, z.strictObject({ paused: z.boolean() }));
+    const { paused } = await read(c, 'PATCH /api/schedules/:id');
     // A repeating schedule picks up again at its next time after now, not at the runs it missed while paused.
     const next = !paused && repeats(s.when) ? nextRun(s.when, Date.now()) : s.next;
     schedules.save({ ...s, paused, next });
@@ -280,22 +262,22 @@ export function createApp({ usage, ui }: AppDeps) {
     return c.body(null, 204);
   });
 
-  app.post('/api/schedules/:id/run', async (c) => c.json(await plan.runNow(c.req.param('id'))));
+  app.post('/api/schedules/:id/run', async (c) => c.json((await plan.runNow(c.req.param('id'))) satisfies Responses['POST /api/schedules/:id/run']));
 
   // Sessions: starting one in a worktree, and what the page does to one.
 
   app.post('/api/sessions', async (c) => {
-    const body = await input(c, z.strictObject({ repoId: z.number().int(), worktree: z.string(), continueId: z.string().optional() }));
+    const body = await read(c, 'POST /api/sessions');
     const repo = knownRepo(body.repoId);
     if (!repo.worktrees.some((w) => w.path === body.worktree)) throw new Invalid('unknown worktree');
     const start = { repoId: repo.id, worktree: body.worktree };
     const id = body.continueId ? await S.continueConversation({ ...start, continueId: body.continueId }) : await S.startClaude(start);
     await refreshWorkspace();
-    return c.json({ id });
+    return c.json({ id } satisfies Responses['POST /api/sessions']);
   });
 
   app.post('/api/shell', async (c) => {
-    await S.openShell((await input(c, z.strictObject({ worktree: z.string() }))).worktree);
+    await S.openShell((await read(c, 'POST /api/shell')).worktree);
     return c.body(null, 204);
   });
 
@@ -306,13 +288,13 @@ export function createApp({ usage, ui }: AppDeps) {
     return c.html(html);
   });
 
-  app.get('/api/sessions/:id/conversation', async (c) => c.json(await S.conversation(c.req.param('id'))));
+  app.get('/api/sessions/:id/conversation', async (c) => c.json((await S.conversation(c.req.param('id'))) satisfies Responses['GET /api/sessions/:id/conversation']));
   app.get('/api/sessions/:id/conversation/:conversation/:entry/:n', async (c) => {
     const image = await S.conversationImage(c.req.param('id'), c.req.param('conversation'), c.req.param('entry'), Number(c.req.param('n')));
     if (!image) return c.text('image not found', 404);
     return c.body(new Uint8Array(image.data), 200, { 'content-type': image.type, 'cache-control': 'private, max-age=31536000, immutable' });
   });
-  app.get('/api/sessions/:id/delete-worktree', async (c) => c.json(await deleteWorktreeLoss(c.req.param('id'))));
+  app.get('/api/sessions/:id/delete-worktree', async (c) => c.json((await deleteWorktreeLoss(c.req.param('id'))) satisfies Responses['GET /api/sessions/:id/delete-worktree']));
 
   function recordServer(name: string, data: Data) {
     const event = cleanEvent(name, data, Date.now());
@@ -334,15 +316,14 @@ export function createApp({ usage, ui }: AppDeps) {
   app.post('/api/sessions/:id/:action', async (c) => {
     const id = c.req.param('id');
     const name = c.req.param('action');
-    const act = Object.hasOwn(actions, name) ? actions[name] : undefined;
-    if (!act) return c.text('unknown action', 404);
-    const body = (await input(c, act.body)) as Data;
+    if (!isAction(name)) return c.text('unknown action', 404);
+    const body: Data = await input(c, actionBodies[name]);
     if (onDecision.has(name)) S.expectDecision(id, body.key as string | null | undefined);
     const before = sessions.get(id);
     const answered = before && answering.has(name) ? boardAnswer(before, name, body) : null;
     if (answered) tracker.answeredOnBoard(answered.decision as string);
     try {
-      const out = await act.run(id, body as never);
+      const out: unknown = await actions[name](id, body as never);
       return out === undefined ? c.body(null, 204) : c.json(out);
     } finally {
       if (answered) settleAnswer(id, answered);
@@ -351,18 +332,18 @@ export function createApp({ usage, ui }: AppDeps) {
 
   // Restarts and Pause.
 
-  app.post('/api/restart/resume', async (c) => c.json(await S.resumeInterrupted((await input(c, optionalPaused)).paused === true)));
+  app.post('/api/restart/resume', async (c) => c.json((await S.resumeInterrupted((await read(c, 'POST /api/restart/resume')).paused === true)) satisfies Responses['POST /api/restart/resume']));
 
   app.post('/api/restart/dismiss', async (c) => {
-    S.dismissInterrupted((await input(c, optionalPaused)).paused === true ? 'both' : 'restart');
+    S.dismissInterrupted((await read(c, 'POST /api/restart/dismiss')).paused === true ? 'both' : 'restart');
     return c.body(null, 204);
   });
 
-  app.post('/api/pause', (c) => c.json(S.pause()));
+  app.post('/api/pause', (c) => c.json(S.pause() satisfies Responses['POST /api/pause']));
 
-  app.post('/api/pause/now', async (c) => c.json(await S.hurryPause()));
+  app.post('/api/pause/now', async (c) => c.json((await S.hurryPause()) satisfies Responses['POST /api/pause/now']));
 
-  app.post('/api/pause/resume', async (c) => c.json(await S.resumePaused((await input(c, z.strictObject({ id: z.string().optional() }))).id)));
+  app.post('/api/pause/resume', async (c) => c.json((await S.resumePaused((await read(c, 'POST /api/pause/resume')).id)) satisfies Responses['POST /api/pause/resume']));
 
   app.post('/api/pause/dismiss', (c) => {
     S.dismissInterrupted('pause');
@@ -389,7 +370,7 @@ export function createApp({ usage, ui }: AppDeps) {
   // What the page and Claude's hooks report.
 
   app.post('/api/ux', async (c) => {
-    const batch = cleanBatch(await input(c, z.unknown()));
+    const batch = cleanBatch(await read(c, 'POST /api/ux'));
     if (!batch) return c.text('bad batch', 400);
     if (batch.events.length) uxEvents.add('page', batch.page, batch.events);
     return c.body(null, 204);
@@ -397,29 +378,29 @@ export function createApp({ usage, ui }: AppDeps) {
 
   // Claude Code's hook input, which grows fields of its own over time.
   app.post('/api/hooks/ask-user-question', async (c) => {
-    S.menuOpened(await input(c, z.looseObject({ session_id: z.string().optional(), tool_use_id: z.string().optional(), tool_input: z.unknown() })));
+    S.menuOpened(await read(c, 'POST /api/hooks/ask-user-question'));
     return c.body(null, 204);
   });
 
   app.post('/api/hooks/event', async (c) => {
-    await S.hookEvent(await input(c, z.looseObject({})));
+    await S.hookEvent(await read(c, 'POST /api/hooks/event'));
     return c.body(null, 204);
   });
 
   // Worktrees' commands and changes.
 
-  app.get('/api/commands', async (c) => c.json(await listCommands(c.req.query('worktree') ?? '')));
+  app.get('/api/commands', async (c) => c.json((await listCommands(c.req.query('worktree') ?? '')) satisfies Responses['GET /api/commands']));
 
   app.get('/api/diff/file', async (c) => {
     const worktree = c.req.query('worktree') ?? '';
     const paths = c.req.queries('path') ?? [];
     if (!paths.length || paths.some((p) => isAbsolute(p) || p.split('/').includes('..'))) throw new Invalid('bad path');
-    return c.json(await diffOf(worktree, { paths }));
+    return c.json((await diffOf(worktree, { paths })) satisfies Responses['GET /api/diff/file']);
   });
 
   app.get('/api/upstream', async (c) => {
     const worktree = c.req.query('worktree') ?? '';
-    return c.json(taskFolderOf(worktree) ? null : await upstreamOf(worktree, repoOfWorktree(worktree).base));
+    return c.json((taskFolderOf(worktree) ? null : await upstreamOf(worktree, repoOfWorktree(worktree).base)) satisfies Responses['GET /api/upstream']);
   });
 
   app.get('/api/diff', async (c) => {
@@ -427,7 +408,7 @@ export function createApp({ usage, ui }: AppDeps) {
     const diff = await diffOf(worktree);
     for (const s of sessions.all().filter((s) => s.worktree === worktree)) sessions.update(s.id, { diffstat: diff.stat });
     notify();
-    return c.json(diff);
+    return c.json(diff satisfies Responses['GET /api/diff']);
   });
 
   // Every snapshot names the UI build, so a page from an older one reloads, also after a `pnpm build` alone.

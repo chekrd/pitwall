@@ -110,7 +110,7 @@ export function useCommands(worktree: string, wanted: boolean) {
     if (!wanted) return;
     const cached = commandCache.get(worktree);
     if (!cached || Date.now() - cached.at > COMMANDS_FRESH_MS) {
-      const list = api<Command[]>('GET', `/api/commands?worktree=${encodeURIComponent(worktree)}`);
+      const list = api('GET', `/api/commands?worktree=${encodeURIComponent(worktree)}`);
       list.catch(() => commandCache.delete(worktree));
       commandCache.set(worktree, { at: Date.now(), list });
     }

@@ -31,7 +31,7 @@ export function WorkspaceDialog({ roots, repos, sessions }: { roots: string[]; r
   }, null);
 
   const pick = async () => {
-    const result = await api<{ path: string }>('POST', '/api/pick-folder').catch(() => null);
+    const result = await api('POST', '/api/pick-folder').catch(() => null);
     if (result?.path) setPath(tilde(result.path, home));
   };
 
@@ -91,15 +91,15 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
 
   const save = async (form: FormData) => {
     await run(() => api('PATCH', `/api/repos/${repo.id}`, {
-      baseBranch: form.get('baseBranch'),
-      setupCommand: form.get('setupCommand'),
+      baseBranch: form.get('baseBranch') as string | null,
+      setupCommand: form.get('setupCommand') as string | null,
       worktreeRoot: untilde(String(form.get('worktreeRoot') ?? '').trim(), home),
     }));
   };
 
   const start = (worktree: string, continueId?: string) =>
     run(async () => {
-      const { id } = await api<{ id: string }>('POST', '/api/sessions', { repoId: repo.id, worktree, continueId });
+      const { id } = await api('POST', '/api/sessions', { repoId: repo.id, worktree, continueId });
       closeDialog();
       openSheet(id);
     });
@@ -108,7 +108,7 @@ function RepoSection({ repo, sessions }: { repo: RepoView; sessions: Session[] }
     run(async () => {
       await api('DELETE', '/api/worktrees', {
         repoId: repo.id,
-        path: removing,
+        path: removing!,
         deleteBranch: form.get('deleteBranch') === 'on',
         force: form.get('force') === 'on',
       });

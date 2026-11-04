@@ -51,7 +51,7 @@ function Row({ schedule: s }: { schedule: Schedule }) {
         )}
       </div>
       <div className={styles.actions}>
-        <button type="button" disabled={busy} onClick={() => act('run', () => api<{ sessionId: string | null; error: string | null }>('POST', `/api/schedules/${s.id}/run`).then((r) => {
+        <button type="button" disabled={busy} onClick={() => act('run', () => api('POST', `/api/schedules/${s.id}/run`).then((r) => {
           if (r.error) toast('error', `${s.name} did not start: ${r.error}`);
           else if (r.sessionId) openSheet(r.sessionId);
         }))}>

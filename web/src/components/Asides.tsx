@@ -1,12 +1,12 @@
 import { useState, type KeyboardEvent } from 'react';
 import { sessionAction } from '../api.ts';
-import type { Aside, Session } from '../types.ts';
+import type { ActionBody, Aside, Session } from '../types.ts';
 import styles from './Asides.module.css';
 import { explain, TIPS } from './explain.ts';
 import { Markdown } from './Markdown.tsx';
 import { toast } from './Toasts.tsx';
 
-const act = (s: Session, action: 'ask-aside' | 'stop-aside' | 'close-aside' | 'park', body: Record<string, unknown>) =>
+const act = <A extends 'ask-aside' | 'stop-aside' | 'close-aside' | 'park'>(s: Session, action: A, body: ActionBody<A>) =>
   sessionAction(s.id, action, body).then(() => true, (err: unknown) => {
     toast('error', err instanceof Error ? err.message : String(err), { session: s.id });
     return false;

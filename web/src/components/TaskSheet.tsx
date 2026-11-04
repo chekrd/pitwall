@@ -156,7 +156,7 @@ function UpstreamMark({ session, diffOpen }: { session: Session; diffOpen: boole
   useEffect(() => {
     if (!diffOpen && up) return;
     let live = true;
-    api<Upstream | null>('GET', `/api/upstream?worktree=${encodeURIComponent(session.worktree)}`)
+    api('GET', `/api/upstream?worktree=${encodeURIComponent(session.worktree)}`)
       .then((next) => live && setUp(next), () => {});
     return () => {
       live = false;

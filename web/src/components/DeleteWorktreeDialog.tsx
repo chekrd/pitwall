@@ -31,7 +31,7 @@ export function DeleteWorktreeDialog() {
       setTarget({ session, check: { state: 'checking' } });
       setApproved(false);
       const settle = (check: Check) => setTarget((t) => (t?.session === session ? { session, check } : t));
-      api<Loss>('GET', `/api/sessions/${session.id}/delete-worktree`).then(
+      api('GET', `/api/sessions/${session.id}/delete-worktree`).then(
         (loss) => settle({ state: 'done', loss }),
         (err: Error) => settle({ state: 'failed', error: err.message }),
       );

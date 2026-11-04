@@ -28,7 +28,7 @@ export function Conversation({ session }: { session: Session }) {
 
   useEffect(() => {
     let live = true;
-    api<ConversationLog[]>('GET', `/api/sessions/${session.id}/conversation`).then(
+    api('GET', `/api/sessions/${session.id}/conversation`).then(
       (l) => live && (setLog((was) => share(was, l)), setError(null)),
       (err: Error) => live && setError(err.message),
     );

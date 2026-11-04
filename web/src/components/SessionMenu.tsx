@@ -4,7 +4,7 @@ import { queue } from '../queue.ts';
 import { closeSheetOf, moveSheetOf } from '../router.ts';
 import { sends } from '../sends.ts';
 import { patchSession, unpatch, useStore } from '../store.ts';
-import type { Priority, Resolution, Session, WorktreeView } from '../types.ts';
+import type { ActionBody, ActionName, Priority, Resolution, Session, WorktreeView } from '../types.ts';
 import { tilde } from '../util.ts';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { Icon } from './Icon.tsx';
@@ -78,7 +78,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
     document.getElementById(id)?.hidePopover();
     run();
   };
-  const act = (action: string, body?: unknown) => pick(() => sessionAction(session.id, action, body).catch(reportError));
+  const act = <A extends ActionName>(action: A, body: ActionBody<A>) => pick(() => sessionAction(session.id, action, body).catch(reportError));
 
   return (
     <>
@@ -87,12 +87,12 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
       </button>
       <div id={id} popover="auto" className={styles.menu}>
         {clearing ? null : exited ? (
-          <Item label="Continue" note="Resume the conversation in a hidden terminal" onClick={act('focus')} />
+          <Item label="Continue" note="Resume the conversation in a hidden terminal" onClick={act('focus', {})} />
         ) : (
           <Item label="Terminal" note="Show its terminal in Ghostty" onClick={pick(() => openTerminal(session.id).catch(reportError))} />
         )}
-        <Item label="Open in Finder" note={path} onClick={act('finder')} />
-        <Item label="Open in VS Code" note={path} onClick={act('vscode')} />
+        <Item label="Open in Finder" note={path} onClick={act('finder', {})} />
+        <Item label="Open in VS Code" note={path} onClick={act('vscode', {})} />
         {!exited && !clearing && (
           <Item
             label="Quit Claude"

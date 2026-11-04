@@ -118,7 +118,7 @@ function Diffs({ worktree }: { worktree: string }) {
 
   const loadWhole = async (file: FileDiffMetadata) => {
     const paths = [file.name, ...(file.prevName ? [file.prevName] : [])].map((p) => `&path=${encodeURIComponent(p)}`).join('');
-    const next = await api<FullDiff>('GET', `/api/diff/file?worktree=${encodeURIComponent(worktree)}${paths}`);
+    const next = await api('GET', `/api/diff/file?worktree=${encodeURIComponent(worktree)}${paths}`);
     // Highlighted before it swaps in, so it never shows plain first; a fresh cache key keeps a refresh from showing the file as it was.
     const whole = parsePatchFiles(next.patch, crypto.randomUUID()).flatMap((p) => p.files).find((f) => f.name === file.name) ?? null;
     if (whole) await pool?.primeDiffHighlightCache(whole).catch(() => {});
@@ -128,7 +128,7 @@ function Diffs({ worktree }: { worktree: string }) {
   const load = () =>
     startLoading(async () => {
       try {
-        const next = await api<FullDiff>('GET', `/api/diff?worktree=${encodeURIComponent(worktree)}`);
+        const next = await api('GET', `/api/diff?worktree=${encodeURIComponent(worktree)}`);
         const files = treeOrder(parsePatchFiles(next.patch).flatMap((p) => p.files));
         const file = focused ? files.find((f) => f.name === focused) : undefined;
         const nextWhole = file ? await loadWhole(file) : null;
