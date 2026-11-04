@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
 import { answering, Called } from './answering.ts';
 import { listCommands } from './commands.ts';
-import { alive, conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, transcriptFile, type ConversationLog } from './conversations.ts';
+import { conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, signal, transcriptFile, type ConversationLog, type LiveProcess } from './conversations.ts';
 import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { checkDecision } from './decision.ts';
@@ -228,6 +228,7 @@ const asides = asking({
         cwd: s.cwd,
         timeoutMs: ASIDE_MS,
         signal,
+        urgent: true,
         persist: true,
         onEvent: (e) => {
           if (e.type === 'system' && typeof e.session_id === 'string') started = e.session_id;
@@ -356,9 +357,24 @@ export async function openIn(id: string, app: 'finder' | 'vscode') {
   await run('/usr/bin/open', [...(app === 'vscode' ? ['-b', 'com.microsoft.VSCode'] : []), s.worktree]);
 }
 
+// The task's Claude, while it runs: macOS reuses pids, so the stored one counts only while a live Claude, checked by
+// its start time, has it in the task's conversation or in one no other task has, as after a /clear not yet seen.
+export function claudeOf(s: Session, live: Map<string, LiveProcess>) {
+  if (!s.pid) return null;
+  for (const [conversation, p] of live) {
+    if (p.pid === s.pid && (conversation === s.conversation || !sessions.byConversation(conversation))) return s.pid;
+  }
+  return null;
+}
+
+// Settles without failing once the task is known.
 export function quit(id: string) {
   const s = must(id);
-  if (s.pid && alive(s.pid)) process.kill(s.pid, 'SIGTERM');
+  if (!s.pid) return Promise.resolve();
+  return liveConversations().then((live) => {
+    const pid = claudeOf(s, live);
+    if (pid) signal(pid);
+  }).catch((err) => console.warn('quit failed', id, err));
 }
 
 export async function forget(id: string) {

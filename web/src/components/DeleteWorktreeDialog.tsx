@@ -14,7 +14,7 @@ let ask: ((session: Session) => void) | null = null;
 export const askDeleteWorktree = (session: Session) => ask?.(session);
 
 const counts = (l: { files: number; commits: number }) => l.files + l.commits;
-const isSafe = (loss: Loss) => !!loss.gone || !!loss.checkout || (loss.repos ? loss.repos.every((r) => !counts(r)) : !counts(loss));
+const isSafe = (loss: Loss) => !!loss.gone || !!loss.checkout || (loss.repos ? loss.repos.every((r) => !counts(r)) && !loss.loose : !counts(loss));
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -77,7 +77,10 @@ export function DeleteWorktreeDialog() {
     l.commits && `${plural(l.commits, 'unpushed commit', 'unpushed commits')}${l.branch && !l.deletesBranch ? `, which stay on ${l.branch}` : ''}`,
   ].filter((x) => !!x);
   const lost = folder
-    ? folder.flatMap((r) => (lostIn(r).length ? [`${r.name}: ${lostIn(r).join(' and ')}`] : []))
+    ? [
+      ...folder.flatMap((r) => (lostIn(r).length ? [`${r.name}: ${lostIn(r).join(' and ')}`] : [])),
+      ...(loss?.loose ? [`${plural(loss.loose, 'file', 'files')} in the task folder outside its worktrees`] : []),
+    ]
     : loss
     ? lostIn(loss)
     : [];
@@ -101,6 +104,10 @@ export function DeleteWorktreeDialog() {
           )}
           {loss?.gone ? (
             <p>{folder ? 'Its task folder is already gone.' : 'Its worktree is already gone.'}</p>
+          ) : loss?.shared ? (
+            <p data-shared>
+              Another task on the board, archived or not, works in this {target.session.repoId === null ? 'task folder' : 'worktree'} too, so it stays as it is{loss.branch ? `, on ${loss.branch}` : ''}. Clearing that task as well removes it.
+            </p>
           ) : loss?.checkout ? (
             <p>The task runs in the repository's main checkout, which stays as it is{loss.branch ? `, on ${loss.branch}` : ''}.</p>
           ) : loss && (lost.length ? (

@@ -564,6 +564,17 @@ export function alive(pid: number) {
   }
 }
 
+// The process may end between the check that it is Claude and the signal; false when it was gone.
+export function signal(pid: number, sig: NodeJS.Signals = 'SIGTERM') {
+  try {
+    process.kill(pid, sig);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    throw err;
+  }
+}
+
 const words = (s: string) => s.trim().split(/\s+/).join(' ');
 
 // `lstart` is ps's start time of the process, read in UTC as procStart is written.
