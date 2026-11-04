@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { menu, options, question, session, turn } from './testing.ts';
 import type { RepoView } from './types.ts';
-import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, locate, menuStuck, modelName, openSubtasks, settledAs, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
+import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, settledAs, share, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
 
 test('a decision is the open question or end-of-turn choice, and one the board answered is closed at once', () => {
   const asked = session('s', { question: question('q1') });
@@ -91,6 +91,9 @@ test('a task counts its subtasks still open: a solved or dropped one and everyth
   const { open, total } = openSubtasks(all, 'review');
   assert.deepEqual([open.map((s) => s.id), total], [['b', 'b2'], 5]);
   assert.deepEqual(openSubtasks(all, 'b').open.map((s) => s.id), ['b2']);
+  const ofAll = openSubtasksOfAll(all);
+  for (const s of all) assert.deepEqual(ofAll(s.id), openSubtasks(all, s.id).open, `the open subtasks of ${s.id} in one pass`);
+  assert.equal(ofAll('a1'), ofAll('b2'), 'one empty list for every task without any');
 });
 
 test('a finding settles once rejected or marked solved, or once all its subtasks are solved or dropped, solved if any one was', () => {
@@ -133,4 +136,27 @@ test('a folder task is placed in the repositories it opened worktrees in, on the
   assert.deepEqual([fix.place, fix.branch], ['client, api', 'fix, fix-api']);
   const fresh = locate([client, api], session('s', { repoId: null, worktree: '/k/worktrees/new' }));
   assert.deepEqual([fresh.place, fresh.branch], ['k', 'new']);
+});
+
+test('share keeps each part equal to the one before as that very object: a session, a list, a field; a changed session is new, and its unchanged parts stay', () => {
+  const cart = session('cart', { question: question('q1') });
+  const hooks = session('hooks', { status: 'waiting', menu: menu('m1') });
+  const before = { sessions: [cart, hooks], repos: [{ id: 1, name: 'shop', worktrees: [{ path: '/w', branch: 'main' }] }], usage: null };
+  assert.equal(share(before, structuredClone(before)), before);
+
+  const moved = structuredClone(before);
+  moved.sessions = [moved.sessions[1], { ...moved.sessions[0], status: 'working' }];
+  const next = share(before, moved);
+  assert.notEqual(next, before);
+  assert.equal(next.repos, before.repos);
+  assert.equal(next.sessions[0], hooks, 'matched by id, though it moved');
+  assert.notEqual(next.sessions[1], cart);
+  assert.equal(next.sessions[1].status, 'working');
+  assert.equal(next.sessions[1].question, cart.question);
+  assert.equal(next.sessions[1].history, cart.history);
+
+  const fewer = share(before.sessions, [structuredClone(cart)]);
+  assert.notEqual(fewer, before.sessions);
+  assert.equal(fewer[0], cart);
+  assert.deepEqual(Object.keys(share({ a: 1 }, { a: 1, b: undefined })), ['a', 'b'], 'a key that came is kept');
 });

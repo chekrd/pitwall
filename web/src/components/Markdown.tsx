@@ -1,7 +1,7 @@
 import { marked } from 'marked';
 import type { BundledLanguage } from 'shiki';
 import { useLayoutEffect, useRef } from 'react';
-import { useStore } from '../store.ts';
+import { useStoreOf } from '../store.ts';
 import { tildeIn } from '../util.ts';
 import styles from './Markdown.module.css';
 
@@ -35,7 +35,7 @@ async function highlight(root: HTMLElement, langs: string[], live: () => boolean
 
 export function Markdown({ source }: { source: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { home } = useStore();
+  const home = useStoreOf((s) => s.home);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;

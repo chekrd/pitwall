@@ -86,6 +86,32 @@ export function openSubtasks(sessions: readonly Session[], id: string) {
   return { open, total: descendantsOf(sessions, id).length };
 }
 
+const NO_SUBTASKS: readonly Session[] = [];
+
+// The open subtasks of every task at once, in openSubtasks' order, from one pass over the sessions; a task without
+// any has the same empty list each time.
+export function openSubtasksOfAll(sessions: readonly Session[]) {
+  const children = new Map<string, Session[]>();
+  for (const o of sessions) {
+    if (!o.parent || o.resolution) continue;
+    const list = children.get(o.parent.id);
+    if (list) list.push(o);
+    else children.set(o.parent.id, [o]);
+  }
+  const open = new Map<string, readonly Session[]>();
+  const of = (id: string): readonly Session[] => {
+    const known = open.get(id);
+    if (known) return known;
+    const direct = children.get(id);
+    if (!direct) return NO_SUBTASKS;
+    const list: Session[] = [];
+    open.set(id, list);
+    for (const c of direct) list.push(c, ...of(c.id));
+    return list;
+  };
+  return (id: string) => of(id);
+}
+
 // A finding is done with once rejected or marked solved, or once every subtask started from it is solved or dropped:
 // solved if any one was. One without subtasks, or with one still open, is not.
 export function settledAs(finding: Finding, subtasks: readonly Session[]) {
@@ -192,3 +218,36 @@ export function attentionChangesAt(s: Session) {
 // Every time the board shows is on the 24-hour clock, whatever the locale's habit: 14:05, with the weekday when asked.
 export const clock = (at: number, weekday = false) =>
   new Date(at).toLocaleString([], { ...(weekday && { weekday: 'short' as const }), hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+const idOf = (v: unknown) => {
+  const id = (v as { id?: unknown } | null)?.id;
+  return typeof id === 'string' || typeof id === 'number' ? id : undefined;
+};
+
+// `next` with every part that equals the one in `prev` kept as that very object, so a view memoized on it does not
+// draw again. Items of a list that carry an id are matched by it, others by place.
+export function share<T>(prev: unknown, next: T): T {
+  if (Object.is(prev, next) || typeof prev !== 'object' || typeof next !== 'object' || !prev || !next) return next;
+  if (Array.isArray(next)) {
+    if (!Array.isArray(prev)) return next;
+    const byId = new Map(prev.flatMap((p) => (idOf(p) === undefined ? [] : [[idOf(p), p]])));
+    let same = prev.length === next.length;
+    const out = next.map((v, i) => {
+      const id = idOf(v);
+      const kept = share(id === undefined ? prev[i] : byId.get(id), v);
+      if (kept !== prev[i]) same = false;
+      return kept;
+    });
+    return (same ? prev : out) as T;
+  }
+  if (Array.isArray(prev)) return next;
+  const before = prev as Record<string, unknown>;
+  const keys = Object.keys(next);
+  let same = keys.length === Object.keys(before).length;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    out[k] = share(before[k], (next as Record<string, unknown>)[k]);
+    if (out[k] !== before[k] || !(k in before)) same = false;
+  }
+  return (same ? prev : out) as T;
+}

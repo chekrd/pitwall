@@ -4,8 +4,7 @@ import { promptOf } from '../deck.ts';
 import { openSheet, sessionPath } from '../router.ts';
 import type { RepoView, Session } from '../types.ts';
 import { useBusy } from '../sends.ts';
-import { useStore } from '../store.ts';
-import { adviceFor, ago, attentionOf, decisionOf, openSubtasks, locate, sessionLabel, shownOf, type Attention, type Shown } from '../util.ts';
+import { adviceFor, ago, attentionOf, decisionOf, locate, sessionLabel, shownOf, type Attention, type Shown } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { ParentCrumb } from './Findings.tsx';
 import { ClearButton, SessionMenu } from './SessionMenu.tsx';
@@ -35,14 +34,12 @@ function adviceTag(s: Session) {
 
 // The whole tile opens the task's page, also for one waiting in the queue, whose page leads to its card; through a
 // click on the article rather than a link stretched over it, which would sit above every label and hide its tooltip.
-export function WallTile({ session, repos }: { session: Session; repos: RepoView[] }) {
+export function WallTile({ session, repos, unsettled }: { session: Session; repos: RepoView[]; unsettled: readonly Session[] }) {
   const { place, worktree, branch } = locate(repos, session);
   const name = sessionLabel(session, branch);
   const attention = attentionOf(session);
   const archived = session.archived;
-  const { sessions } = useStore();
   const busy = useBusy();
-  const { open: unsettled } = openSubtasks(sessions, session.id);
   const own = shownOf(session, busy);
   // A task that waits on its subtasks is in progress while any of them works.
   const shown = !archived && (own === 'idle' || own === 'exited') && unsettled.some((o) => !o.archived && shownOf(o, busy) === 'working') ? 'working' : own;

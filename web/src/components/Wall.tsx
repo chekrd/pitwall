@@ -1,8 +1,9 @@
 import { meter } from '../deck.ts';
 import { orderTiles } from '../order.ts';
+import { useState } from 'react';
 import { useStore } from '../store.ts';
 import type { Session } from '../types.ts';
-import { attentionOf } from '../util.ts';
+import { attentionOf, openSubtasksOfAll } from '../util.ts';
 import { Icon } from './Icon.tsx';
 import styles from './Wall.module.css';
 import { WallTile } from './WallTile.tsx';
@@ -10,6 +11,7 @@ import { ScheduledLink, Schedules } from './Schedules.tsx';
 
 export function Wall({ deck }: { deck: readonly Session[] }) {
   const { repos, sessions, schedules, link } = useStore();
+  const [archivedOpen, setArchivedOpen] = useState(false);
   if (link === 'connecting') {
     return (
       <main className={styles.wall}>
@@ -18,6 +20,7 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
     );
   }
   const { active, archived } = orderTiles(sessions);
+  const subtasksOf = openSubtasksOfAll(sessions);
   const working = sessions.filter((s) => !s.archived && attentionOf(s) === 'working').length;
   const title = !sessions.length ? (repos.length ? 'Ready when you are.' : 'Welcome to Pitwall.') : deck.length ? 'Every agent, in priority order' : 'All caught up.';
   const sub = !sessions.length ? null
@@ -46,14 +49,14 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
         </div>
       )}
       <div className={styles.tiles}>
-        {active.map((s) => <WallTile key={s.id} session={s} repos={repos} />)}
+        {active.map((s) => <WallTile key={s.id} session={s} repos={repos} unsettled={subtasksOf(s.id)} />)}
       </div>
       <Schedules />
       {archived.length > 0 && (
-        <details className={styles.archived}>
+        <details className={styles.archived} open={archivedOpen} onToggle={(e) => setArchivedOpen(e.currentTarget.open)}>
           <summary><Icon name="chevron-right" size={14} />Archived ({archived.length})</summary>
           <div className={styles.tiles}>
-            {archived.map((s) => <WallTile key={s.id} session={s} repos={repos} />)}
+            {archivedOpen && archived.map((s) => <WallTile key={s.id} session={s} repos={repos} unsettled={subtasksOf(s.id)} />)}
           </div>
         </details>
       )}

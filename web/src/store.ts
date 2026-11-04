@@ -8,7 +8,7 @@ import type { Drift, FolderView, RepoView, Schedule, Session, Snapshot, Usage } 
 import { menuOpen } from './layers.ts';
 import { isEditable } from './useKeys.ts';
 import { record } from './recorder.ts';
-import { attentionChangesAt } from './util.ts';
+import { attentionChangesAt, share } from './util.ts';
 import { track } from './ux.ts';
 
 export type Link = 'connecting' | 'live' | 'reconnecting';
@@ -202,7 +202,8 @@ async function connect() {
         sends.confirm(next.sessions);
         sends.reconnected();
         sent = new Map(next.sessions.map((s: Session) => [s.id, s]));
-        set({ ...state, ...next, sessions: patched(next.sessions), link: 'live' });
+        // The server sends the whole state on every change; what did not change stays the object the views have.
+        set({ ...state, ...share(state, { ...next, sessions: patched(next.sessions) }), link: 'live' });
         wakeAtNextChange();
         announced(uiEntry);
       }
@@ -222,3 +223,6 @@ const subscribe = (fn: () => void) => {
 };
 
 export const useStore = () => useSyncExternalStore(subscribe, () => state);
+
+// One part of the state, for a view that would otherwise draw again on every snapshot; `select` returns a part as it is.
+export const useStoreOf = <T>(select: (s: State) => T) => useSyncExternalStore(subscribe, () => select(state));
