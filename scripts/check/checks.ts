@@ -1689,6 +1689,46 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P4.5d Diff: a large diff, 120 files, draws only the files near the part in view and the rest as it scrolls to them; a file opened from far down goes back to all files drawn where it was',
+    async run({ page, mock }) {
+      // The page's own fetch gives ten copies of the fixture's diff, each under a folder of its own.
+      await page.initScript(`(${() => {
+        const real = window.fetch.bind(window);
+        window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+          const res = await real(input, init);
+          const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+          if (url.pathname !== '/api/diff') return res;
+          const d = await res.json();
+          const copy = (n: number) => d.patch.replace(/^(diff --git a\/)(.*) b\/(.*)$/gm, `$1copy${n}/$2 b/copy${n}/$3`).replace(/^(---|\+\+\+) ([ab])\//gm, `$1 $2/copy${n}/`);
+          const patch = Array.from({ length: 10 }, (_, n) => copy(n)).join('');
+          return new Response(JSON.stringify({ ...d, patch, stat: { ...d.stat, files: d.stat.files * 10 } }), { headers: { 'content-type': 'application/json' } });
+        };
+      }})()`);
+      await openFromWall(page, mock, 's-invoice');
+      await page.key('3');
+      await page.until('every file listed', () => document.querySelectorAll('section[data-file]').length === 120);
+      const drawn = () => [...document.querySelectorAll<HTMLElement>('section[data-file]')].filter((s) => s.querySelector('diffs-container')).map((s) => s.dataset.file!);
+      await sleep(300);
+      const first = await page.eval(drawn);
+      assert.ok(first.length >= 12 && first.length < 60, `${first.length} files drawn at once`);
+      assert.ok(first.includes((await page.eval(() => document.querySelector<HTMLElement>('section[data-file]')!.dataset.file))!), 'the first file is not drawn');
+
+      const last = await page.eval(() => [...document.querySelectorAll<HTMLElement>('section[data-file]')].at(-1)!.dataset.file!);
+      assert.ok(!first.includes(last), 'the last file was drawn at once');
+      await page.eval(() => {
+        const list = document.querySelector('section[data-file]')!.parentElement!;
+        list.scrollTop = list.scrollHeight;
+      });
+      await page.until('the last file drawn', (last: string) => !!document.querySelector(`section[data-file="${last}"] diffs-container`)?.shadowRoot?.querySelector('pre'), last);
+
+      await page.click(`nav[aria-label="Changed files"] a[data-explain="${last}"]`);
+      await page.until('the last file whole', wholeFile, last);
+      await page.key('Escape');
+      await page.until('all files again', () => document.querySelectorAll('section[data-file]').length === 120);
+      assert.equal(await page.eval((last: string) => !!document.querySelector(`section[data-file="${last}"] diffs-container`), last), true, 'the file gone back to was not drawn');
+    },
+  },
+  {
     name: 'P4.6 browser Back closes the sheet; a sheet whose task goes away closes with "That task is gone."',
     async run({ page, mock }) {
       await openFromWall(page, mock, 's-invoice');

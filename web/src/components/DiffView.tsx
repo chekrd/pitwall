@@ -1,7 +1,7 @@
 import { parsePatchFiles, registerCustomTheme, type FileDiffMetadata } from '@pierre/diffs';
 import type { ThemeRegistration } from 'shiki';
 import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent, type RefObject } from 'react';
 import { api } from '../api.ts';
 import type { FullDiff } from '../types.ts';
 import styles from './DiffView.module.css';
@@ -54,11 +54,39 @@ function storeTreeWidth(w: number) {
   }
 }
 
+const NO_FILES: FileDiffMetadata[] = [];
+
+// A file's height before it is drawn: its header, its lines side by side and the gaps between its hunks.
+const estimate = (f: FileDiffMetadata) => 44 + f.splitLineCount * 18 + f.hunks.length * 32;
+
+// A file is drawn once it comes this near the part of the diff in view, and then stays; the files from `around` on are
+// drawn at once. Until then its section only takes its height, so a large diff does not build and highlight every
+// file when it opens.
+const NEAR_PX = 1500;
+const AT_ONCE = 12;
+
 // Typing in the filter or dragging the file list's edge renders the toolbar and the tree, not every file's diff again.
-const FileDiffs = memo(function FileDiffs({ files }: { files: FileDiffMetadata[] }) {
+const FileDiffs = memo(function FileDiffs({ files, root, around }: { files: FileDiffMetadata[]; root: RefObject<HTMLDivElement | null>; around: string | null }) {
+  const [drawn, setDrawn] = useState<ReadonlySet<string>>(() => new Set());
+  const draw = (names: string[]) => setDrawn((was) => (names.every((n) => was.has(n)) ? was : new Set([...was, ...names])));
+
+  // Before the paint, so a file scrolled to on the way back from it is there at once.
+  useLayoutEffect(() => {
+    const at = Math.max(0, files.findIndex((f) => f.name === around));
+    draw(files.slice(Math.max(0, at - 2), at + AT_ONCE).map((f) => f.name));
+  }, [files, around]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      draw(entries.filter((e) => e.isIntersecting).map((e) => (e.target as HTMLElement).dataset.file!));
+    }, { root: root.current, rootMargin: `${NEAR_PX}px 0px` });
+    for (const section of root.current?.querySelectorAll('section[data-file]') ?? []) observer.observe(section);
+    return () => observer.disconnect();
+  }, [files]);
+
   return files.map((f) => (
-    <section key={f.name} id={fileAnchor(f.name)} data-file={f.name} className={styles.file}>
-      <FileDiff fileDiff={f} options={FILE_OPTIONS} />
+    <section key={f.name} id={fileAnchor(f.name)} data-file={f.name} className={styles.file} style={{ containIntrinsicSize: `auto ${estimate(f)}px` }}>
+      {files.length === 1 || drawn.has(f.name) ? <FileDiff fileDiff={f} options={FILE_OPTIONS} /> : <div style={{ height: estimate(f) }} />}
     </section>
   ));
 });
@@ -73,7 +101,7 @@ export function DiffView({ worktree }: { worktree: string }) {
 
 function Diffs({ worktree }: { worktree: string }) {
   const pool = useWorkerPool();
-  const [diff, setDiff] = useState<FullDiff | null>(null);
+  const [diff, setDiff] = useState<(FullDiff & { files: FileDiffMetadata[] }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [treeWidth, setTreeWidth] = useState(storedTreeWidth);
   const [loading, startLoading] = useTransition();
@@ -101,10 +129,11 @@ function Diffs({ worktree }: { worktree: string }) {
     startLoading(async () => {
       try {
         const next = await api<FullDiff>('GET', `/api/diff?worktree=${encodeURIComponent(worktree)}`);
-        const file = focused ? parsePatchFiles(next.patch).flatMap((p) => p.files).find((f) => f.name === focused) : undefined;
+        const files = treeOrder(parsePatchFiles(next.patch).flatMap((p) => p.files));
+        const file = focused ? files.find((f) => f.name === focused) : undefined;
         const nextWhole = file ? await loadWhole(file) : null;
         startLoading(() => {
-          setDiff(next);
+          setDiff({ ...next, files });
           setWhole(nextWhole);
           if (!file) setFocused(null);
           setError(null);
@@ -225,7 +254,7 @@ function Diffs({ worktree }: { worktree: string }) {
     e.preventDefault();
   };
 
-  const files = useMemo(() => (diff ? treeOrder(parsePatchFiles(diff.patch).flatMap((p) => p.files)) : []), [diff]);
+  const files = diff?.files ?? NO_FILES;
   const listed = useMemo(() => files.filter(inDir(dir)).filter(matching(shownQuery)), [files, dir, shownQuery]);
   const shown = useMemo(
     () => (focused ? [whole?.name === focused ? whole : files.find((f) => f.name === focused)].filter((f) => !!f) : listed),
@@ -343,7 +372,7 @@ function Diffs({ worktree }: { worktree: string }) {
             {files.length > 0 && !listed.length && (
               <p className={styles.empty}>{shownQuery ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${shownQuery.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
             )}
-            <FileDiffs files={shown} />
+            <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} />
           </div>
         </div>
       </div>
