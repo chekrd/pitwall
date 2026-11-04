@@ -337,9 +337,23 @@ export const repos = {
   // Hidden rather than deleted so a rescan of its root does not bring it back.
   hide: (id: number) => {
     db.prepare('DELETE FROM sessions WHERE repo_id = ?').run(id);
+    parsed.clear();
     db.prepare('UPDATE repos SET hidden = 1 WHERE id = ?').run(id);
   },
 };
+
+// Each row parsed once until it changes: the board reads every session many times a second. Only this module writes
+// the table, and every write drops what it touched, as updated_at alone misses two writes in one millisecond. Callers
+// get a copy of the session, sharing its parsed fields, which no caller changes in place.
+const parsed = new Map<string, { updatedAt: number; session: Session }>();
+
+function sessionOf(r: Row): Session {
+  const hit = parsed.get(r.id);
+  if (hit && hit.updatedAt === r.updated_at) return { ...hit.session };
+  const session = toSession(r);
+  parsed.set(r.id, { updatedAt: r.updated_at, session });
+  return { ...session };
+}
 
 const columns: Record<string, string> = {
   title: 'title',
@@ -382,14 +396,14 @@ const columns: Record<string, string> = {
 };
 
 export const sessions = {
-  all: () => db.prepare('SELECT * FROM sessions ORDER BY created_at').all().map(toSession),
+  all: () => db.prepare('SELECT * FROM sessions ORDER BY created_at').all().map(sessionOf),
   get: (id: string) => {
     const r = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id);
-    return r ? toSession(r) : undefined;
+    return r ? sessionOf(r) : undefined;
   },
   byConversation: (conversation: string) => {
     const r = db.prepare('SELECT * FROM sessions WHERE conversation = ?').get(conversation);
-    return r ? toSession(r) : undefined;
+    return r ? sessionOf(r) : undefined;
   },
   insert: (s: Pick<Session, 'id' | 'repoId' | 'worktree' | 'cwd' | 'pid' | 'tty' | 'title' | 'firstPrompt' | 'status'> & { conversation?: string }) => {
     const now = Date.now();
@@ -397,6 +411,7 @@ export const sessions = {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET pid = excluded.pid, tty = excluded.tty, status = excluded.status, archived = 0, updated_at = excluded.updated_at`)
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
+    parsed.delete(s.id);
   },
   update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
@@ -405,11 +420,21 @@ export const sessions = {
     const values = entries.map(([, v]) =>
       v === null || v === undefined ? null : typeof v === 'object' ? JSON.stringify(v) : typeof v === 'boolean' ? Number(v) : v);
     db.prepare(`UPDATE sessions SET ${sets}, updated_at = ? WHERE id = ?`).run(...values, Date.now(), id);
+    parsed.delete(id);
+  },
+  remove: (id: string) => {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+    parsed.delete(id);
+  },
+  removeByWorktree: (worktree: string) => {
+    db.prepare('DELETE FROM sessions WHERE worktree = ?').run(worktree);
+    parsed.clear();
   },
   // Leaves updated_at, which tells how long a task has waited.
-  alive: (id: string, at: number) => db.prepare('UPDATE sessions SET alive_at = ? WHERE id = ?').run(at, id),
-  remove: (id: string) => db.prepare('DELETE FROM sessions WHERE id = ?').run(id),
-  removeByWorktree: (worktree: string) => db.prepare('DELETE FROM sessions WHERE worktree = ?').run(worktree),
+  alive: (id: string, at: number) => {
+    db.prepare('UPDATE sessions SET alive_at = ? WHERE id = ?').run(at, id);
+    parsed.delete(id);
+  },
 };
 
 export const schedules = {
