@@ -31,10 +31,10 @@ const chosenModel = (body: { model?: string; effort?: string }) => {
 
 type NewTask = TaskRequest & { name: string; scheduled?: Scheduled };
 
-export const startRepoTask = (body: RouteInput<'POST /api/worktrees'>) =>
-  startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch });
+export const startRepoTask = ({ branch = '', path = '', prompt = '', model = '', effort = '', existingBranch = false, ...body }: RouteInput<'POST /api/worktrees'>) =>
+  startTask({ kind: 'repo', ...body, branch, path, prompt, model, effort, existingBranch });
 
-export const startFolderTask = (body: RouteInput<'POST /api/folder-tasks'>) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body });
+export const startFolderTask = ({ prompt = '', model = '', effort = '', ...body }: RouteInput<'POST /api/folder-tasks'>) => startTask({ kind: 'folder', ...body, prompt, model, effort });
 
 // A task across a folder of repos starts in an empty task folder; Claude opens a worktree in each repo it changes.
 async function startTask(req: NewTask) {

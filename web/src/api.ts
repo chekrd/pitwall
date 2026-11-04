@@ -6,7 +6,7 @@ export const wsUrl = (path: string) => `${location.protocol === 'https:' ? 'wss'
 
 // A refusal keeps the server's code ('stale', 'answered', …), so callers can tell refusals apart.
 export interface ApiError extends Error {
-  code?: string;
+  code?: string | undefined;
   status: number;
 }
 
@@ -24,7 +24,7 @@ async function request(method: string, path: string, body?: unknown, { keepalive
   const res = await fetch(path, {
     method,
     headers: json === undefined ? {} : { 'content-type': 'application/json' },
-    body: json === undefined ? undefined : JSON.stringify(json),
+    body: json === undefined ? null : JSON.stringify(json),
     keepalive,
   }).catch((err: unknown) => {
     record('api-failed', { method, path, error: String(err) });

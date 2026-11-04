@@ -21,10 +21,10 @@ interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
-  session?: string;
-  action?: ToastAction;
+  session?: string | undefined;
+  action?: ToastAction | undefined;
   // When what it announces happens, counted down in seconds from `at`, when the toast came.
-  until?: number;
+  until?: number | undefined;
   at: number;
 }
 
@@ -46,7 +46,7 @@ export function dismissToast(id: number) {
   if (toasts.some((t) => t.id === id)) change(toasts.filter((t) => t.id !== id));
 }
 
-export function toast(kind: ToastKind, message: string, o: { session?: string; action?: ToastAction; lasts?: number; until?: number } = {}) {
+export function toast(kind: ToastKind, message: string, o: { session?: string | undefined; action?: ToastAction; lasts?: number; until?: number } = {}) {
   const t: Toast = { id: ++nextId, kind, message, session: o.session, action: o.action, until: o.until, at: Date.now() };
   change([...toasts, t].slice(-SHOWN));
   if (kind === 'error') track('error', { error: scrubName(message).slice(0, 160), task: o.session });

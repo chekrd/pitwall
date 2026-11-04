@@ -179,7 +179,7 @@ interface RowProps {
   sessions: Session[];
   onStart: Start;
   onShell: () => void;
-  onRemove?: () => void;
+  onRemove?: (() => void) | undefined;
   children: ReactNode;
 }
 

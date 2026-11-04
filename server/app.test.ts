@@ -9,8 +9,8 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { promisify } from 'node:util';
 import { serve } from '@hono/node-server';
-import { WebSocket, WebSocketServer } from 'ws';
-import { createApp, type Snapshot } from './app.ts';
+import { WebSocket } from 'ws';
+import { createApp, socketServer, type Snapshot } from './app.ts';
 import { HOST, PORT, SESSIONS_DIR } from './config.ts';
 import type { Route } from './contract.ts';
 import { repos, sessions } from './db.ts';
@@ -23,7 +23,7 @@ const app = createApp({ usage: { current: () => null }, ui: { settled: () => nul
 const BOARD = `${HOST}:${PORT}`;
 
 function call(method: string, path: string, { body, headers = {} }: { body?: BodyInit; headers?: Record<string, string> } = {}) {
-  return app.fetch(new Request(`http://${BOARD}${path}`, { method, body, headers: { host: BOARD, ...headers } }));
+  return app.fetch(new Request(`http://${BOARD}${path}`, { method, body: body ?? null, headers: { host: BOARD, ...headers } }));
 }
 
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -159,7 +159,7 @@ test('removing a repo drops its tasks with their folders and leaves other tasks 
 });
 
 test('every open socket gets the same snapshot on a change, and a closed one no more', async () => {
-  const server = serve({ fetch: app.fetch, hostname: HOST, port: 0, websocket: { server: new WebSocketServer({ noServer: true }) } });
+  const server = serve({ fetch: app.fetch, hostname: HOST, port: 0, websocket: { server: socketServer() } });
   await once(server, 'listening');
   const { port } = server.address() as AddressInfo;
   const open = async () => {

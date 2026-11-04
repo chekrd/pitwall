@@ -41,7 +41,7 @@ async function launch(id: string, cwd: string, args: string[], setup?: string | 
 }
 
 // With a prompt, Claude starts on it at once; until it registers, idle would show a finished turn that never was.
-export async function startClaude(opts: { repoId: number | null; worktree: string; prompt?: string; title?: string; setup?: string | null; parent?: Parent; model?: string; effort?: string; running?: { model: string | null; effort: string | null }; scheduled?: Scheduled }) {
+export async function startClaude(opts: { repoId: number | null; worktree: string; prompt?: string | undefined; title?: string; setup?: string | null; parent?: Parent; model?: string | undefined; effort?: string | undefined; running?: { model: string | null; effort: string | null }; scheduled?: Scheduled | undefined }) {
   const id = randomUUID();
   sessions.insert({
     id, repoId: opts.repoId, worktree: opts.worktree, cwd: opts.worktree, pid: null, tty: null,
@@ -327,7 +327,7 @@ export async function conversationImage(id: string, conversation: string, entry:
 }
 
 // Posted by the PreToolUse hook that `pnpm claude:connect` installs, just before the dialog opens.
-export function menuOpened(hook: { session_id?: string; tool_use_id?: string; tool_input?: unknown }) {
+export function menuOpened(hook: { session_id?: string | undefined; tool_use_id?: string | undefined; tool_input?: unknown }) {
   const menu = parseMenu(hook.tool_use_id ?? '', hook.tool_input);
   const s = hook.session_id ? sessions.byConversation(hook.session_id) : undefined;
   if (!menu || !s) return;

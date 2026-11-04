@@ -214,7 +214,7 @@ function TurnError({ session, name }: { session: Session; name: string }) {
   );
 }
 
-export function Overview({ session, name, branch, repo }: { session: Session; name: string; branch?: string; repo?: RepoView }) {
+export function Overview({ session, name, branch, repo }: { session: Session; name: string; branch?: string | undefined; repo?: RepoView | undefined }) {
   const { home, repos } = useStore();
   const task = folderTaskOf(repos, session);
   const busy = useBusy();

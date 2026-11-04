@@ -1,7 +1,7 @@
 // What New task posts, kept to start the same task later.
 export type TaskRequest =
-  | { kind: 'repo'; repoId: number; existingBranch: boolean; branch: string; path: string; prompt: string; files?: string[]; model: string; effort: string }
-  | { kind: 'folder'; folder: string; prompt: string; files?: string[]; model: string; effort: string };
+  | { kind: 'repo'; repoId: number; existingBranch: boolean; branch: string; path: string; prompt: string; files?: string[] | undefined; model: string; effort: string }
+  | { kind: 'folder'; folder: string; prompt: string; files?: string[] | undefined; model: string; effort: string };
 
 // Claude starts on the prompt with the attached files' paths under it, and reads them from there.
 export const taskPrompt = (prompt: string, files: readonly string[]) => [prompt.trim(), files.join('\n')].filter(Boolean).join('\n\n');

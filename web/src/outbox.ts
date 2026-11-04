@@ -45,7 +45,7 @@ export interface Item<R = unknown> extends Request {
   state: State;
   sentAt?: number;
   error?: string;
-  code?: string;
+  code?: string | undefined;
   // Left by a page that went away before it knew whether the post landed; `dueAt` is when it counts as not sent.
   adopted?: true;
 }

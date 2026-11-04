@@ -20,10 +20,10 @@ export interface AnsweringDeps {
 export class Called extends Error {}
 
 export interface Reply {
-  key?: string | null;
-  choice?: string;
-  text?: string;
-  files?: string[];
+  key?: string | null | undefined;
+  choice?: string | undefined;
+  text?: string | undefined;
+  files?: string[] | undefined;
 }
 
 interface Typing {

@@ -88,7 +88,7 @@ function server() {
 }
 
 export async function handleMcp(request: Request) {
-  const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
   await server().connect(transport);
   return transport.handleRequest(request);
 }

@@ -137,7 +137,7 @@ export async function handleAdvisorMcp(request: Request, token: string) {
     const dir = await scratchCopy(run);
     return { content: [{ type: 'text', text: `Scratch copy ready: ${dir}\nWork only there from now on; keep temporary files inside it too.` }] };
   });
-  const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
   await mcp.connect(transport);
   return transport.handleRequest(request);
 }

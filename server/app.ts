@@ -4,11 +4,12 @@ import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
-import { upgradeWebSocket } from '@hono/node-server';
+import { upgradeWebSocket, type WebSocketServerLike } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { WSContext } from 'hono/ws';
+import { WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { handleAdvisorMcp, retryAdvice, stopAdvice } from './advisor.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
@@ -36,6 +37,10 @@ import { folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFo
 const run = promisify(execFile);
 
 export const UI_INDEX = join(WEB_DIST, 'index.html');
+
+// What serve() upgrades sockets with. ws types `options.noServer` as `boolean | undefined`, which hono's own type refuses
+// under exactOptionalPropertyTypes.
+export const socketServer = () => new WebSocketServer({ noServer: true }) as WebSocketServerLike;
 
 // A request the page or a hook got wrong, as opposed to a fault here.
 export class Invalid extends Error {}
@@ -134,7 +139,7 @@ export function createApp({ usage, ui }: AppDeps) {
     const origin = c.req.header('origin');
     if (!allowedHosts.has(host)) return c.text('forbidden host', 403);
     if (origin && !allowedOrigins.has(origin)) return c.text('forbidden origin', 403);
-    await next();
+    return next();
   });
 
   // A body a cross-site form or a no-cors fetch could send without a preflight is refused, should an origin get past.

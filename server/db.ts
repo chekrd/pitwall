@@ -29,8 +29,8 @@ export type SessionStatus = 'working' | 'idle' | 'waiting' | 'exited';
 
 export interface QuestionOption {
   label: string;
-  description?: string;
-  recommended?: boolean;
+  description?: string | undefined;
+  recommended?: boolean | undefined;
   // Indices of the findings read from the same message that this option acts on.
   covers?: number[];
 }
@@ -107,7 +107,7 @@ export interface Link {
   url: string;
   text: string | null;
   context: string;
-  message?: string;
+  message?: string | undefined;
   about: string | null;
   at: number;
 }
@@ -327,7 +327,7 @@ export const repos = {
   add: (path: string) =>
     Number(db.prepare('INSERT INTO repos (path) VALUES (?) ON CONFLICT(path) DO UPDATE SET hidden = 0 RETURNING id').get(path)!.id),
   addFound: (path: string) => db.prepare('INSERT OR IGNORE INTO repos (path) VALUES (?)').run(path).changes > 0,
-  update: (id: number, patch: Partial<Pick<Repo, 'baseBranch' | 'setupCommand' | 'worktreeRoot'>>) => {
+  update: (id: number, patch: { [K in 'baseBranch' | 'setupCommand' | 'worktreeRoot']?: Repo[K] | undefined }) => {
     const cur = repos.get(id);
     if (!cur) return;
     const next = { ...cur, ...patch };

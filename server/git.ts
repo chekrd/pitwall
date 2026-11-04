@@ -65,7 +65,7 @@ async function gitWt(repo: string, args: string[]) {
   return stdout.trim();
 }
 
-export async function addWorktree(repo: string, opts: { branch: string; task: string; base: string; root: string; path?: string }) {
+export async function addWorktree(repo: string, opts: { branch: string; task: string; base: string; root: string; path?: string | undefined }) {
   return gitWt(repo, ['add', opts.branch, '--task', opts.task, '--base', opts.base, '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]);
 }
 
@@ -135,7 +135,7 @@ async function remoteBase(worktree: string, base: string) {
 // Everything on disk (committed, staged, unstaged, untracked minus ignored) against
 // the merge-base with origin's base, staged into a throwaway index so the real one is never touched.
 // With `paths`, every unchanged line is context, so those files read in full. `prefix` puts every path under that folder.
-export async function fullDiff(worktree: string, localBase: string, opts: { statOnly?: boolean; paths?: string[]; prefix?: string } = {}): Promise<FullDiff> {
+export async function fullDiff(worktree: string, localBase: string, opts: { statOnly?: boolean; paths?: string[] | undefined; prefix?: string } = {}): Promise<FullDiff> {
   const base = await remoteBase(worktree, localBase);
   const mergeBase = (await git(worktree, ['merge-base', base, 'HEAD'])).trim();
   const dir = await mkdtemp(join(tmpdir(), 'pitwall-index-'));

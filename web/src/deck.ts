@@ -220,7 +220,7 @@ function menuPrimary(s: Session, picks: readonly MenuAnswer[]): Primary {
 
 // The footer's primary button, which ⏎ presses: the frozen choice (with the open composer's note), the picks of a
 // menu, Terminal, or Reply. It never sends the composer's text by itself; Enter in the composer does that.
-export function primary(s: Session, frozen: Frozen | null, input: { composer?: Composer; picks?: readonly MenuAnswer[] } = {}, now = Date.now()): Primary {
+export function primary(s: Session, frozen: Frozen | null, input: { composer?: Composer; picks?: readonly MenuAnswer[] | undefined } = {}, now = Date.now()): Primary {
   const kind = kindOf(s, now);
   if (kind === 'prompt') return { label: 'Terminal', disabled: false, press: { intent: 'terminal' } };
   if (kind !== 'menu' && kind !== 'ask' && kind !== 'turn') return { ...reply, disabled: kind !== 'idle' };

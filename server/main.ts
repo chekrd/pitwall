@@ -1,6 +1,5 @@
 import { serve } from '@hono/node-server';
-import { WebSocketServer } from 'ws';
-import { createApp, UI_INDEX } from './app.ts';
+import { createApp, socketServer, UI_INDEX } from './app.ts';
 import { onDrift } from './claudeFormat.ts';
 import { settleExplanations } from './explain.ts';
 import { HOST, PORT, USAGE_FILE } from './config.ts';
@@ -39,7 +38,7 @@ setInterval(() => void sync().then(() => {
 }).catch((err) => console.warn('session sync failed', err)), 1500);
 setInterval(() => void refreshWorkspace({ scan: true }).catch((err) => console.warn('workspace refresh failed', err)), 30_000);
 
-serve({ fetch: app.fetch, hostname: HOST, port: PORT, websocket: { server: new WebSocketServer({ noServer: true }) } }, () => {
+serve({ fetch: app.fetch, hostname: HOST, port: PORT, websocket: { server: socketServer() } }, () => {
   console.log(`pitwall listening on http://${HOST}:${PORT}`);
   // Only now, as the Claude a schedule starts connects to the MCP server here. A timer does not run while the Mac
   // sleeps; the first look after it wakes starts what came due meanwhile.

@@ -62,7 +62,7 @@ function client(url: string, stop: () => Promise<void>, alive = () => true) {
   };
 }
 
-export async function startMock(o: { port?: number; dist: string }) {
+export async function startMock(o: { port?: number | undefined; dist: string }) {
   if (o.port) return client(`http://127.0.0.1:${o.port}`, async () => {});
   const child = spawn(process.execPath, [SERVER, '--port', '0', '--dist', o.dist], { stdio: ['ignore', 'pipe', 'inherit'] });
   children.add(child);
