@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { createPortal } from 'react-dom';
 import { SHEET_DIALOG } from '../keys.ts';
 import { useNow } from '../now.ts';
+import { watchMutations } from '../mutations.ts';
 import { isEditable } from '../useKeys.ts';
 import { scrubName, track } from '../ux.ts';
 import { Icon } from './Icon.tsx';
@@ -91,10 +92,9 @@ function useTopDialog() {
       opened = [...opened.filter((d) => modal.includes(d)), ...modal.filter((d) => !opened.includes(d))];
       setTop(opened.at(-1) ?? document.body);
     };
-    const observer = new MutationObserver(update);
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] });
+    const stop = watchMutations(update);
     update();
-    return () => observer.disconnect();
+    return stop;
   }, []);
   return top;
 }

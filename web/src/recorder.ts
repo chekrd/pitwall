@@ -1,3 +1,5 @@
+import { watchMutations } from './mutations.ts';
+
 // What happened on the page in the last minutes, kept in memory for a bug report (B): focus, keys (a text key reads
 // `char`), paste, input, reply boxes coming and going, routes, the board's own events, state changes, failed requests
 // and errors. Nothing leaves the page until a bug report is filed.
@@ -92,14 +94,14 @@ if (typeof window !== 'undefined') {
 
   let active: Element | null = null;
   const watch = () => {
-    new MutationObserver((records) => {
+    watchMutations((records) => {
       for (const r of records) {
         for (const n of r.removedNodes) for (const b of boxesIn(n)) record('box-removed', describe(b));
         for (const n of r.addedNodes) for (const b of boxesIn(n)) record('box-added', describe(b));
       }
       if (active && !active.isConnected) record('focused-element-removed', describe(active));
       active = document.activeElement;
-    }).observe(document.body, { childList: true, subtree: true });
+    });
     on(window, 'focusin', () => {
       active = document.activeElement;
     });

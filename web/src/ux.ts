@@ -1,3 +1,4 @@
+import { watchMutations } from './mutations.ts';
 import { record } from './recorder.ts';
 
 // How the board is used, to tell what to improve: which screens, keys and controls, what a key press that did nothing
@@ -166,7 +167,9 @@ function watchSections() {
       if (![...observed].some((o) => (o as HTMLElement).dataset.uxSection === (el as HTMLElement).dataset.uxSection)) inView.delete((el as HTMLElement).dataset.uxSection!);
     }
   };
-  new MutationObserver(scan).observe(document.body, { subtree: true, childList: true });
+  watchMutations((records) => {
+    if (records.some((r) => r.type === 'childList')) scan();
+  });
   scan();
 }
 
