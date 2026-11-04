@@ -10,7 +10,8 @@ import { migrateUx, uxStore } from './uxlog.ts';
 
 mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new DatabaseSync(DB_PATH);
+// Test files open the same database at once, and their migrations would otherwise fail on its lock.
+const db = new DatabaseSync(DB_PATH, { timeout: 10_000 });
 
 db.exec('PRAGMA journal_mode = WAL');
 migrate(db);
