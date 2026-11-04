@@ -9,7 +9,7 @@ import { decisionKey } from '../../server/decision.ts';
 import { uploadsDir } from '../../server/uploadPaths.ts';
 import { KEYS } from '../../web/src/keys.ts';
 import { sleep, until, type Look, type Page } from './cdp.ts';
-import { startMock, type Entry, type Mock } from './mock.ts';
+import { startMock, type Entry, type Mock, type UxRow } from './mock.ts';
 
 // The build under test, which the runner names with --dist.
 const underTest = () => process.env.PITWALL_E2E_DIST ?? join(import.meta.dirname, '..', '..', 'web', 'dist');
@@ -1411,7 +1411,7 @@ export const checks: Check[] = [
       }
       await page.until('all three marked Copied', () => [...document.querySelectorAll('#task-sheet dd button[data-copied]')].map((b) => b.textContent?.endsWith('Copied')).join() === 'true,true,true');
       const copied = await page.eval(() => (window as unknown as { copied: string[] }).copied);
-      assert.deepEqual(copied, ['/Users/me/code/worktrees/invoice-rounding/billing-api', 'invoice-rounding', 's-invoice']);
+      assert.deepEqual(copied, [`${await mock.home()}/code/worktrees/invoice-rounding/billing-api`, 'invoice-rounding', 's-invoice']);
       await shot('sheet-facts-copied');
 
       await page.eval(() => {
@@ -1583,7 +1583,7 @@ export const checks: Check[] = [
   {
     name: 'P4.5u the task page marks commits only origin has: no mark with no upstream, the same commits or only commits not pushed; a small mark explains the commits and files origin has, and after a rewrite of origin the files the PR has against this checkout, linking to the PR\'s files; the Diff tab reads it again',
     async run({ page, mock, shot }) {
-      const worktree = '~/code/worktrees/guest-cart-merge/storefront';
+      const worktree = `${await mock.home()}/code/worktrees/guest-cart-merge/storefront`;
       const up = (state: string, more: Record<string, unknown> = {}) => mock.post('/mock/upstream', {
         worktree, upstream: { upstream: 'origin/guest-cart-merge', state, ahead: 0, behind: 0, behindFiles: 0, branchFiles: null, fetchFailed: false, ...more },
       });
@@ -1839,14 +1839,15 @@ export const checks: Check[] = [
       const [cleared] = await logged(mock, 'the clearing', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual([cleared.sessionId, cleared.status], ['s-edge', 204]);
       const after = await mock.get('/api/state');
+      const home = await mock.home();
       assert.equal(after.sessions.some((x: { id: string }) => x.id === 's-edge'), false);
-      assert.ok(after.repos.find((r: { id: number }) => r.id === 1).worktrees.some((w: { path: string; isMain: boolean }) => w.isMain && w.path === '~/code/storefront'), 'the checkout went');
+      assert.ok(after.repos.find((r: { id: number }) => r.id === 1).worktrees.some((w: { path: string; isMain: boolean }) => w.isMain && w.path === `${home}/code/storefront`), 'the checkout went');
     },
   },
   {
     name: 'P4.9.gone a task whose worktree was removed outside the board can still be cleared: the dialog says the worktree is already gone, and the task leaves',
     async run({ page, mock }) {
-      await mock.post('/mock/patch', { id: 's-edge', patch: { worktree: '~/code/worktrees/removed/storefront' } });
+      await mock.post('/mock/patch', { id: 's-edge', patch: { worktree: `${await mock.home()}/code/worktrees/removed/storefront` } });
       await page.goto(`${mock.url}/s/s-edge/overview`);
       await page.until('the task page', sheetOpen);
       await page.click('#task-sheet button[aria-label="Session actions"]');
@@ -1868,7 +1869,7 @@ export const checks: Check[] = [
     name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task, its subtask and another task in its worktree show Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
     expectedErrors: [/status of 400/, /Claude did not quit/],
     async run({ page, mock, shot }) {
-      const worktree = '~/code/worktrees/search-typos/storefront';
+      const worktree = `${await mock.home()}/code/worktrees/search-typos/storefront`;
       const ids = ['s-search', 's-sub', 's-twin'];
       await mock.post('/mock/add', { template: 'idle', id: 's-twin', worktree, title: 'Another task in search-typos' });
       await mock.post('/mock/add', { template: 'idle', id: 's-sub', worktree, title: 'Fix: typo ranking', parent: { id: 's-search', basis: 'b', finding: 0, title: 'Typo ranking', kind: 'accept', text: '' } });
@@ -1961,7 +1962,7 @@ export const checks: Check[] = [
       };
       await mock.post('/mock/clear', { id: 's-invoice', conversation: 'c-fresh' });
       const long = Array.from({ length: 30 }, (_, i) => `Checked the rounding of line ${i + 1}.`).join('\n\n');
-      await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: long, lastPrompt: `Go on, and tell me when it is done.\n${uploadsDir('/Users/me')}/m2/shot.png` } });
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: long, lastPrompt: `Go on, and tell me when it is done.\n${uploadsDir(await mock.home())}/m2/shot.png` } });
       await openFromWall(page, mock, 's-invoice');
       const quoted = await page.until('the latest reply quoting the prompt with its picture', () => {
         const q = document.querySelector<HTMLElement>('#task-sheet [data-ux-section="latest reply"] [data-prompt]');
@@ -2189,6 +2190,7 @@ export const checks: Check[] = [
       await page.click('[data-repos]');
       await page.until('Repos', () => !!document.querySelector('dialog#workspace:modal'));
       assert.equal(await page.eval(() => document.activeElement?.id), 'workspace');
+      const home = await mock.home();
       await page.until('the sheet to settle', settled);
       await shot('repos');
       const request = async (what: string, method: string, path: string) => (await logged(mock, what, (e) => e.method === method && e.path === path)).at(-1)!;
@@ -2196,11 +2198,11 @@ export const checks: Check[] = [
       await page.click('#workspace input[aria-label="Repository or folder"]');
       await page.type('~/code/payments');
       await page.click('#workspace button[type="submit"]', 'Add');
-      assert.deepEqual((await request('Add', 'POST', '/api/repos')).body, { path: '/Users/me/code/payments' });
-      assert.equal(await page.eval(() => document.querySelector('#workspace [data-worktree="/Users/me/code/worktrees/invoice-rounding/billing-api"] code')?.textContent),
+      assert.deepEqual((await request('Add', 'POST', '/api/repos')).body, { path: `${home}/code/payments` });
+      assert.equal(await page.eval((path) => document.querySelector(`#workspace [data-worktree="${path}"] code`)?.textContent, `${home}/code/worktrees/invoice-rounding/billing-api`),
         '~/code/worktrees/invoice-rounding/billing-api', 'a path in the home folder shows from ~');
       await page.click('#workspace button[aria-label="Stop scanning ~/code"]');
-      assert.deepEqual((await request('the folder\'s ×', 'DELETE', '/api/roots')).body, { path: '~/code' });
+      assert.deepEqual((await request('the folder\'s ×', 'DELETE', '/api/roots')).body, { path: `${home}/code` });
       await page.click('#workspace button', 'Rescan');
       await request('Rescan', 'POST', '/api/rescan');
       await page.click('#workspace button', 'Settings');
@@ -2208,16 +2210,33 @@ export const checks: Check[] = [
       await page.type('origin/develop');
       await page.click('#workspace button[type="submit"]', 'Save');
       assert.equal((await request('Save', 'PATCH', '/api/repos/1')).body.baseBranch, 'origin/develop');
-      const row = '#workspace [data-worktree="~/code/worktrees/lazy-reviews/storefront"]';
+      const row = `#workspace [data-worktree="${home}/code/worktrees/lazy-reviews/storefront"]`;
       await page.click(`${row} button`, 'Remove');
       await page.click(`${row} button[type="submit"]`, 'Remove worktree');
       assert.deepEqual((await request('Remove worktree', 'DELETE', '/api/worktrees')).body, {
-        repoId: 1, path: '~/code/worktrees/lazy-reviews/storefront', deleteBranch: false, force: false,
+        repoId: 1, path: `${home}/code/worktrees/lazy-reviews/storefront`, deleteBranch: false, force: false,
       });
-      await page.click('#workspace [data-worktree="~/code/storefront"] button', 'Continue');
-      assert.deepEqual((await request('Continue', 'POST', '/api/sessions')).body, { repoId: 1, worktree: '~/code/storefront', continueId: 'c-sf-1' });
+      await page.click(`#workspace [data-worktree="${home}/code/storefront"] button`, 'Continue');
+      assert.deepEqual((await request('Continue', 'POST', '/api/sessions')).body, { repoId: 1, worktree: `${home}/code/storefront`, continueId: 'c-sf-1' });
       await page.until('the continued conversation\'s sheet', () =>
         location.pathname === '/s/c-sf-1/overview' && !!document.querySelector('#task-sheet') && !document.querySelector('dialog#workspace[open]'));
+    },
+  },
+  {
+    name: 'P4.11s Repos: Add on a folder that holds repositories scans it, which then shows under Scanned folders, and adds no repository',
+    async run({ page, mock }) {
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await page.click('[data-repos]');
+      await page.until('Repos', () => !!document.querySelector('dialog#workspace:modal'));
+      const before = (await mock.get('/api/state')).repos.length;
+      await page.click('#workspace input[aria-label="Repository or folder"]');
+      await page.type('~/git');
+      await page.click('#workspace button[type="submit"]', 'Add');
+      const [added] = await logged(mock, 'Add', (e) => e.method === 'POST' && e.path === '/api/repos');
+      assert.deepEqual(added.body, { path: `${await mock.home()}/git` });
+      await page.until('the folder among the scanned ones', () => !!document.querySelector('#workspace button[aria-label="Stop scanning ~/git"]'));
+      assert.equal((await mock.get('/api/state')).repos.length, before);
     },
   },
   {
@@ -2968,6 +2987,27 @@ export const checks: Check[] = [
       assert.deepEqual(await page.until('the completion', () => document.querySelector<HTMLTextAreaElement>('[data-card] textarea')?.value === '/rename ' && !document.querySelector('[data-card] [role="listbox"]') && true), true);
       await page.key('Escape');
       await page.until('the box to close and the card to take focus', () => !document.querySelector('[data-card] textarea') && document.activeElement?.hasAttribute('data-card'));
+    },
+  },
+  {
+    name: 'P5.1.8p a repository\'s own skill is suggested in its own worktrees only: /pr-to lists /pr-to-green on a storefront task and nothing on a billing-api one, each asking for its worktree\'s commands',
+    async run({ page, mock }) {
+      const home = await mock.home();
+      const listed = () => [...document.querySelectorAll('#task-sheet [role="listbox"] [role="option"] code')].map((c) => c.textContent);
+      const ask = async (id: string, worktree: string) => {
+        await page.goto(`${mock.url}/s/${id}/overview`);
+        await page.click('#task-sheet textarea');
+        await page.type('/pr-to');
+        await logged(mock, `${id}'s commands`, (e) => e.path === '/api/commands' && new URLSearchParams(e.query).get('worktree') === worktree);
+      };
+      await ask('s-search', `${home}/code/worktrees/search-typos/storefront`);
+      assert.deepEqual(await page.until('the storefront skill', () => {
+        const list = [...document.querySelectorAll('#task-sheet [role="listbox"] [role="option"] code')].map((c) => c.textContent);
+        return list.length ? list : null;
+      }), ['/pr-to-green']);
+      await ask('s-invoice', `${home}/code/worktrees/invoice-rounding/billing-api`);
+      await sleep(500);
+      assert.deepEqual(await page.eval(listed), []);
     },
   },
   {
@@ -6246,8 +6286,9 @@ export const checks: Check[] = [
       await shot('new-task-folder');
       await page.eval(submit);
       const [created] = await logged(mock, 'the folder task', (e) => e.method === 'POST' && e.path === '/api/folder-tasks');
-      assert.deepEqual({ ...created.body, status: created.status }, { folder: '~/code', name: 'cart-api', prompt: 'Rename the cart API on both sides', files: [], model: '', effort: '', status: 200 });
-      const id: string = (await mock.get('/api/state')).sessions.find((x: { worktree: string }) => x.worktree === '~/code/worktrees/cart-api').id;
+      const home = await mock.home();
+      assert.deepEqual({ ...created.body, status: created.status }, { folder: `${home}/code`, name: 'cart-api', prompt: 'Rename the cart API on both sides', files: [], model: '', effort: '', status: 200 });
+      const id: string = (await mock.get('/api/state')).sessions.find((x: { worktree: string }) => x.worktree === `${home}/code/worktrees/cart-api`).id;
       const before = await page.until('its facts', () => {
         const dl = document.querySelector('#task-sheet dl');
         return document.querySelector('#task-sheet h2')?.textContent === 'cart-api' && dl &&
@@ -6308,7 +6349,7 @@ export const checks: Check[] = [
       assert.deepEqual([deleted.sessionId, deleted.status], [id, 204]);
       await page.until('the tile to go', (task: string) => !document.querySelector(`[data-tile][data-session="${task}"]`), id);
       const state = await mock.get('/api/state');
-      assert.ok(!state.repos.some((r: { worktrees: { path: string }[] }) => r.worktrees.some((w) => w.path.startsWith('~/code/worktrees/cart-api/'))), 'the worktrees went');
+      assert.ok(!state.repos.some((r: { worktrees: { path: string }[] }) => r.worktrees.some((w) => w.path.startsWith(`${home}/code/worktrees/cart-api/`))), 'the worktrees went');
     },
   },
   {
@@ -6321,7 +6362,7 @@ export const checks: Check[] = [
       await page.click('[data-card] [data-option]');
       await page.goto(`${mock.url}/wall`);
       const events = await until('the recorded events', async () => {
-        const all: { name: string; data?: Record<string, any> }[] = await mock.get('/mock/ux');
+        const all: UxRow[] = await mock.get('/mock/ux');
         return all.some((e) => e.name === 'screen') ? all : null;
       });
       assert.ok(events.some((e) => e.name === 'load'), 'the page load');
@@ -6329,7 +6370,7 @@ export const checks: Check[] = [
       assert.ok(events.some((e) => e.name === 'key' && e.data?.action === 'skip' && e.data.keys === '→'), 'the skip key');
       assert.ok(events.some((e) => e.name === 'key-miss' && e.data?.key === 'q'), 'the unused key');
       assert.ok(events.some((e) => e.name === 'click' && e.data?.control === 'option' && e.data.area === 'queue/menu'), 'the option clicked');
-      assert.ok(events.some((e) => e.name === 'card-shown' && e.data?.task === 's-cart' && e.data.decision && e.data.deck > 0), 'the card shown, with its decision and the deck size');
+      assert.ok(events.some((e) => e.name === 'card-shown' && e.task === 's-cart' && e.decision && e.data?.deck > 0), 'the card shown, with its decision and the deck size');
       assert.ok(label && !JSON.stringify(events).includes(label), `the option's text "${label}" is not recorded`);
     },
   },
@@ -6393,7 +6434,7 @@ export const checks: Check[] = [
       clicked += await page.eval(clickAll, '#new-task [data-branch-picker] button');
       // The page sends what it recorded every 15 s.
       const events = await until('the recorded clicks', async () => {
-        const all: { name: string; data?: Record<string, any> }[] = await mock.get('/mock/ux');
+        const all: UxRow[] = await mock.get('/mock/ux');
         const clicks = all.filter((e) => e.name === 'click');
         return clicks.length >= clicked ? clicks : null;
       }, 20_000);
@@ -6413,7 +6454,7 @@ export const checks: Check[] = [
       await wait(3000);
       await page.click('#task-sheet [role="tab"]', 'Diff');
       const read = await until('the reading before the click', async () => {
-        const all: { name: string; data?: Record<string, any> }[] = await mock.get('/mock/ux');
+        const all: UxRow[] = await mock.get('/mock/ux');
         return all.find((e) => e.name === 'read' && e.data?.control === 'Diff') ?? null;
       });
       assert.equal(read.data!.screen, 'task/overview');

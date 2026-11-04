@@ -4,6 +4,7 @@ import { menuAnswerText } from '../../server/decision.ts';
 import { pauseMark } from '../../server/pause.ts';
 import type { RepoView } from '../../server/workspace.ts';
 import { addFromTemplate, queue, repos, ROOTS, session, titleOf, type Template } from './fixtures.ts';
+import { HOME } from './home.ts';
 
 export type Flag = 'explainFails' | 'lossFails' | 'resumeFails';
 
@@ -82,7 +83,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   })),
 
   freetext: (now) => base(now, [...queue(now), session({
-    id: 's-flag', repoId: 1, worktree: '~/code/worktrees/guest-cart-merge/storefront', tty: '/dev/ttys015', pid: 81240,
+    id: 's-flag', repoId: 1, worktree: `${HOME}/code/worktrees/guest-cart-merge/storefront`, tty: '/dev/ttys015', pid: 81240,
     title: 'Name the cart-merge feature flag', firstPrompt: 'Put the guest cart merge behind a feature flag.',
     status: 'idle', createdAt: now - 20 * MIN, updatedAt: now - 2 * MIN, rank: 4, rankReason: 'A name only; nothing else waits on it',
     question: {
@@ -104,7 +105,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   'lone-menu': (now) => base(now, [
     ...queue(now).filter((s) => s.status === 'working' || (s.status === 'exited' && !s.archived)),
     session({
-      id: 's-lone', repoId: 2, worktree: '~/code/worktrees/webhook-retries/billing-api', tty: '/dev/ttys009', pid: 78120,
+      id: 's-lone', repoId: 2, worktree: `${HOME}/code/worktrees/webhook-retries/billing-api`, tty: '/dev/ttys009', pid: 78120,
       title: 'Retry failed webhooks', firstPrompt: 'Webhook deliveries that fail are never retried (BILL-88). Add retries with backoff.',
       status: 'waiting', createdAt: now - 2 * 60 * MIN, updatedAt: now - 3 * MIN, rank: 1, rankReason: 'One quick question',
       menu: {
@@ -159,7 +160,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   }))),
 
   'turn-long': (now) => base(now, [...queue(now), session({
-    id: 's-push', repoId: 1, worktree: '~/code/worktrees/asset-uploads/storefront', tty: '/dev/ttys017', pid: 81311,
+    id: 's-push', repoId: 1, worktree: `${HOME}/code/worktrees/asset-uploads/storefront`, tty: '/dev/ttys017', pid: 81311,
     title: 'Keep the upload warning across folders', firstPrompt: 'Leaving the page mid-upload sometimes gives no warning. Find out why.',
     status: 'idle', createdAt: now - 90 * MIN, updatedAt: now - MIN, rank: 5, rankReason: 'Only a push waits on it',
     summary: {
@@ -185,7 +186,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   })]),
 
   'ended-question': (now) => base(now, [...queue(now), session({
-    id: 's-gone', repoId: 4, worktree: '~/code/worktrees/fix-anchors/docs-site',
+    id: 's-gone', repoId: 4, worktree: `${HOME}/code/worktrees/fix-anchors/docs-site`,
     title: 'Rotate the docs signing key', firstPrompt: 'Rotate the key that signs the docs deploys.',
     status: 'exited', createdAt: now - 4 * 60 * MIN, updatedAt: now - 60 * MIN,
     question: {
@@ -199,7 +200,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   // A finished review whose findings are answered one by one: the second is rejected, the first has a subtask at work.
   findings: (now) => {
     const basis = 't-review-4';
-    const worktree = '~/code/worktrees/lazy-reviews/storefront';
+    const worktree = `${HOME}/code/worktrees/lazy-reviews/storefront`;
     return base(now, [...queue(now).filter((s) => s.id !== 's-reviews'), session({
       id: 's-review', repoId: 1, worktree, tty: '/dev/ttys030', pid: 80500,
       title: 'Review the lazy reviews branch', firstPrompt: 'Review this branch against main.',

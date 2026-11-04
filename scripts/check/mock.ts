@@ -24,6 +24,16 @@ export interface Entry {
   code: string | null;
 }
 
+// A usage event as the server stores it, its data parsed.
+export interface UxRow {
+  at: number;
+  page: string;
+  name: string;
+  task: string | null;
+  decision: string | null;
+  data: Record<string, any> | null;
+}
+
 export type Mock = ReturnType<typeof client>;
 
 function client(url: string, stop: () => Promise<void>, alive = () => true) {
@@ -43,6 +53,8 @@ function client(url: string, stop: () => Promise<void>, alive = () => true) {
     post: (path: string, body: unknown = {}) => call('POST', path, body),
     get: (path: string) => call('GET', path),
     log: (): Promise<Entry[]> => call('GET', '/mock/log'),
+    // The mock's own HOME, where every path it shows lies.
+    home: async (): Promise<string> => (await call('GET', '/api/state')).home,
     async reset(scenario: string) {
       await call('POST', `/mock/scenario/${scenario}`);
       await call('GET', '/mock/log?clear=1');

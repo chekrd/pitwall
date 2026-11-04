@@ -3,13 +3,14 @@ import type { Command } from '../../server/commands.ts';
 import type { Conversation } from '../../server/conversations.ts';
 import type { Session } from '../../server/db.ts';
 import type { RepoView, WorktreeView } from '../../server/workspace.ts';
+import { HOME } from './home.ts';
 
 const SEC = 1000;
 const MIN = 60 * SEC;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-export const ROOTS = ['~/code', '~/git/github'];
+export const ROOTS = [`${HOME}/code`, `${HOME}/git/github`];
 
 const head = (path: string) => createHash('sha1').update(path).digest('hex');
 
@@ -30,30 +31,30 @@ function repo(id: number, path: string, opts: { baseBranch?: string; setupComman
 
 export function repos(now: number): RepoView[] {
   return [
-    repo(1, '~/code/storefront', { setupCommand: 'pnpm install' }, [
-      worktree('~/code/storefront', 'main', [
+    repo(1, `${HOME}/code/storefront`, { setupCommand: 'pnpm install' }, [
+      worktree(`${HOME}/code/storefront`, 'main', [
         conversation('c-sf-1', 'Spike: edge caching for PLP', 'Spike: can the product listing page be cached at the edge per region?', now - 5 * DAY),
         conversation('c-sf-2', 'Bump Next.js to 16.2', 'Bump Next.js to 16.2 and fix the deprecations.', now - 9 * DAY),
       ], true),
-      worktree('~/code/worktrees/guest-cart-merge/storefront', 'guest-cart-merge', [conversation('s-cart', 'Merge guest cart on login', null, now - 3 * MIN, 81234)]),
-      worktree('~/code/worktrees/lazy-reviews/storefront', 'lazy-reviews', [conversation('s-reviews', 'Lazy-load product reviews', null, now - 17 * MIN, 80411)]),
-      worktree('~/code/worktrees/search-typos/storefront', 'search-typos', [conversation('s-search', 'Typo-tolerant search', null, now - MIN, 79902)]),
+      worktree(`${HOME}/code/worktrees/guest-cart-merge/storefront`, 'guest-cart-merge', [conversation('s-cart', 'Merge guest cart on login', null, now - 3 * MIN, 81234)]),
+      worktree(`${HOME}/code/worktrees/lazy-reviews/storefront`, 'lazy-reviews', [conversation('s-reviews', 'Lazy-load product reviews', null, now - 17 * MIN, 80411)]),
+      worktree(`${HOME}/code/worktrees/search-typos/storefront`, 'search-typos', [conversation('s-search', 'Typo-tolerant search', null, now - MIN, 79902)]),
     ]),
-    repo(2, '~/code/billing-api', { baseBranch: 'develop', setupCommand: 'pnpm install && pnpm db:migrate' }, [
-      worktree('~/code/billing-api', 'develop', [], true),
-      worktree('~/code/worktrees/webhook-retries/billing-api', 'webhook-retries', [conversation('s-hooks', 'Retry failed webhooks', null, now - 9 * MIN, 78120)]),
-      worktree('/Users/me/code/worktrees/invoice-rounding/billing-api', 'invoice-rounding', [conversation('s-invoice', 'Fix invoice PDF rounding', null, now - MIN, 77031)]),
-      worktree('~/code/worktrees/stripe-18/billing-api', 'stripe-18', [conversation('s-stripe', 'Upgrade Stripe SDK to v18', null, now - 3 * HOUR)]),
+    repo(2, `${HOME}/code/billing-api`, { baseBranch: 'develop', setupCommand: 'pnpm install && pnpm db:migrate' }, [
+      worktree(`${HOME}/code/billing-api`, 'develop', [], true),
+      worktree(`${HOME}/code/worktrees/webhook-retries/billing-api`, 'webhook-retries', [conversation('s-hooks', 'Retry failed webhooks', null, now - 9 * MIN, 78120)]),
+      worktree(`${HOME}/code/worktrees/invoice-rounding/billing-api`, 'invoice-rounding', [conversation('s-invoice', 'Fix invoice PDF rounding', null, now - MIN, 77031)]),
+      worktree(`${HOME}/code/worktrees/stripe-18/billing-api`, 'stripe-18', [conversation('s-stripe', 'Upgrade Stripe SDK to v18', null, now - 3 * HOUR)]),
     ]),
-    repo(3, '~/git/github/pitwall', {}, [
-      worktree('~/git/github/pitwall', 'main', [conversation('s-split', 'Split-only diff view', null, now - 2 * DAY)], true),
-      worktree('~/git/github/worktrees/board-grouping/pitwall', 'board-grouping', [conversation('s-group', 'Group board tiles by repo', null, now - 6 * MIN, 76555)]),
-      worktree('~/git/github/worktrees/artifact-thumbs/pitwall', 'artifact-thumbs', [conversation('s-thumbs', 'Artifact thumbnails in Overview', null, now - MIN, 76002)]),
+    repo(3, `${HOME}/git/github/pitwall`, {}, [
+      worktree(`${HOME}/git/github/pitwall`, 'main', [conversation('s-split', 'Split-only diff view', null, now - 2 * DAY)], true),
+      worktree(`${HOME}/git/github/worktrees/board-grouping/pitwall`, 'board-grouping', [conversation('s-group', 'Group board tiles by repo', null, now - 6 * MIN, 76555)]),
+      worktree(`${HOME}/git/github/worktrees/artifact-thumbs/pitwall`, 'artifact-thumbs', [conversation('s-thumbs', 'Artifact thumbnails in Overview', null, now - MIN, 76002)]),
     ]),
-    repo(4, '~/code/docs-site', { setupCommand: 'pnpm install' }, [
-      worktree('~/code/docs-site', 'main', [], true),
-      worktree('~/code/worktrees/astro-5/docs-site', 'astro-5', [conversation('s-astro', 'Migrate docs to Astro 5', null, now - 2 * MIN, 75310)]),
-      worktree('~/code/worktrees/fix-anchors/docs-site', 'fix-anchors', [conversation('s-anchors', 'Fix broken doc anchors', null, now - 21 * MIN, 74888)]),
+    repo(4, `${HOME}/code/docs-site`, { setupCommand: 'pnpm install' }, [
+      worktree(`${HOME}/code/docs-site`, 'main', [], true),
+      worktree(`${HOME}/code/worktrees/astro-5/docs-site`, 'astro-5', [conversation('s-astro', 'Migrate docs to Astro 5', null, now - 2 * MIN, 75310)]),
+      worktree(`${HOME}/code/worktrees/fix-anchors/docs-site`, 'fix-anchors', [conversation('s-anchors', 'Fix broken doc anchors', null, now - 21 * MIN, 74888)]),
     ]),
   ];
 }
@@ -69,7 +70,7 @@ export const session = (fields: Given & Partial<Session>): Session => ({
 export function queue(now: number): Session[] {
   return [
     session({
-      id: 's-cart', repoId: 1, worktree: '~/code/worktrees/guest-cart-merge/storefront', tty: '/dev/ttys014', pid: 81234,
+      id: 's-cart', repoId: 1, worktree: `${HOME}/code/worktrees/guest-cart-merge/storefront`, tty: '/dev/ttys014', pid: 81234,
       title: 'Merge guest cart on login',
       firstPrompt: 'Shoppers lose their guest cart when they log in (CHK-412). Fix it, keep the change small and add tests.',
       status: 'idle', createdAt: now - 52 * MIN, updatedAt: now - 3 * MIN,
@@ -114,7 +115,7 @@ export function queue(now: number): Session[] {
       ],
     }),
     session({
-      id: 's-hooks', repoId: 2, worktree: '~/code/worktrees/webhook-retries/billing-api', tty: '/dev/ttys009', pid: 78120,
+      id: 's-hooks', repoId: 2, worktree: `${HOME}/code/worktrees/webhook-retries/billing-api`, tty: '/dev/ttys009', pid: 78120,
       title: 'Retry failed webhooks',
       firstPrompt: 'Webhook deliveries that fail are never retried (BILL-88). Add retries with backoff and stop hammering dead endpoints.',
       status: 'waiting', createdAt: now - 2 * HOUR, updatedAt: now - 9 * MIN,
@@ -154,7 +155,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-hooks-3', diffstat: { files: 6, insertions: 340, deletions: 22 },
     }),
     session({
-      id: 's-group', repoId: 3, worktree: '~/git/github/worktrees/board-grouping/pitwall', tty: '/dev/ttys021', pid: 76555,
+      id: 's-group', repoId: 3, worktree: `${HOME}/git/github/worktrees/board-grouping/pitwall`, tty: '/dev/ttys021', pid: 76555,
       title: 'Group board tiles by repo',
       firstPrompt: 'Try grouping the board tiles by repository. Keep attention order inside groups.',
       status: 'idle', createdAt: now - 70 * MIN, updatedAt: now - 6 * MIN,
@@ -183,7 +184,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-group-4', diffstat: { files: 3, insertions: 120, deletions: 15 },
     }),
     session({
-      id: 's-astro', repoId: 4, worktree: '~/code/worktrees/astro-5/docs-site', tty: '/dev/ttys017', pid: 75310,
+      id: 's-astro', repoId: 4, worktree: `${HOME}/code/worktrees/astro-5/docs-site`, tty: '/dev/ttys017', pid: 75310,
       title: 'Migrate docs to Astro 5',
       firstPrompt: 'Upgrade the docs site to Astro 5 and the new content layer.',
       status: 'waiting', waitingFor: 'a permission prompt for Bash(pnpm dlx @astrojs/upgrade)', createdAt: now - 95 * MIN, updatedAt: now - 2 * MIN,
@@ -196,7 +197,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-astro-5', diffstat: { files: 14, insertions: 260, deletions: 230 },
     }),
     session({
-      id: 's-reviews', repoId: 1, worktree: '~/code/worktrees/lazy-reviews/storefront', tty: '/dev/ttys011', pid: 80411,
+      id: 's-reviews', repoId: 1, worktree: `${HOME}/code/worktrees/lazy-reviews/storefront`, tty: '/dev/ttys011', pid: 80411,
       title: 'Lazy-load product reviews',
       firstPrompt: 'The product page loads all reviews up front. Load them when they scroll into view.',
       status: 'idle', createdAt: now - 3 * HOUR, updatedAt: now - 17 * MIN,
@@ -209,7 +210,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-reviews-7', diffstat: { files: 5, insertions: 96, deletions: 12 },
     }),
     session({
-      id: 's-anchors', repoId: 4, worktree: '~/code/worktrees/fix-anchors/docs-site', tty: '/dev/ttys019', pid: 74888,
+      id: 's-anchors', repoId: 4, worktree: `${HOME}/code/worktrees/fix-anchors/docs-site`, tty: '/dev/ttys019', pid: 74888,
       title: 'Fix broken doc anchors',
       firstPrompt: 'Fix the anchors broken by the heading slug change and open a PR with pr-to-green.',
       status: 'idle', createdAt: now - 2 * HOUR, updatedAt: now - 21 * MIN,
@@ -223,7 +224,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-anchors-4', diffstat: { files: 9, insertions: 41, deletions: 41 },
     }),
     session({
-      id: 's-invoice', repoId: 2, worktree: '/Users/me/code/worktrees/invoice-rounding/billing-api', tty: '/dev/ttys006', pid: 77031,
+      id: 's-invoice', repoId: 2, worktree: `${HOME}/code/worktrees/invoice-rounding/billing-api`, tty: '/dev/ttys006', pid: 77031,
       title: 'Fix invoice PDF rounding',
       firstPrompt: 'Invoice PDFs are sometimes off by a cent (BILL-91). Find out why, fix it, and get the PR green.',
       status: 'working', createdAt: now - 80 * MIN, updatedAt: now - MIN,
@@ -241,7 +242,7 @@ export function queue(now: number): Session[] {
       artifacts: [{ id: 'art-invoice-1', title: 'Where the cent goes missing', at: now - 25 * MIN }],
     }),
     session({
-      id: 's-thumbs', repoId: 3, worktree: '~/git/github/worktrees/artifact-thumbs/pitwall', tty: '/dev/ttys022', pid: 76002,
+      id: 's-thumbs', repoId: 3, worktree: `${HOME}/git/github/worktrees/artifact-thumbs/pitwall`, tty: '/dev/ttys022', pid: 76002,
       title: 'Artifact thumbnails in Overview',
       firstPrompt: 'Show a small preview of each artifact next to its link in Overview.',
       status: 'working', createdAt: now - 14 * MIN, updatedAt: now - MIN,
@@ -253,7 +254,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-thumbs-2', diffstat: { files: 2, insertions: 64, deletions: 3 },
     }),
     session({
-      id: 's-search', repoId: 1, worktree: '~/code/worktrees/search-typos/storefront', tty: '/dev/ttys012', pid: 79902,
+      id: 's-search', repoId: 1, worktree: `${HOME}/code/worktrees/search-typos/storefront`, tty: '/dev/ttys012', pid: 79902,
       title: 'Typo-tolerant search',
       firstPrompt: 'Make product search tolerate one typo per word ("snaekers" should find sneakers).',
       status: 'working', createdAt: now - 46 * MIN, updatedAt: now - MIN,
@@ -268,7 +269,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-search-3', diffstat: { files: 3, insertions: 52, deletions: 6 },
     }),
     session({
-      id: 's-stripe', repoId: 2, worktree: '~/code/worktrees/stripe-18/billing-api',
+      id: 's-stripe', repoId: 2, worktree: `${HOME}/code/worktrees/stripe-18/billing-api`,
       title: 'Upgrade Stripe SDK to v18',
       firstPrompt: 'Upgrade the Stripe SDK to v18 and fix whatever breaks. Use pr-to-green.',
       status: 'exited', createdAt: now - 6 * HOUR, updatedAt: now - 3 * HOUR,
@@ -281,7 +282,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-stripe-8', diffstat: { files: 6, insertions: 40, deletions: 33 },
     }),
     session({
-      id: 's-split', repoId: 3, worktree: '~/git/github/pitwall',
+      id: 's-split', repoId: 3, worktree: `${HOME}/git/github/pitwall`,
       title: 'Split-only diff view',
       firstPrompt: 'Make the diff split-only and let me resize the file list.',
       status: 'exited', createdAt: now - 2 * DAY - 2 * HOUR, updatedAt: now - 2 * DAY,
@@ -289,7 +290,7 @@ export function queue(now: number): Session[] {
       lastMessage: 'Committed as `ae16ff0`.', lastTurn: 't-split-5',
     }),
     session({
-      id: 's-edge', repoId: 1, worktree: '~/code/storefront',
+      id: 's-edge', repoId: 1, worktree: `${HOME}/code/storefront`,
       title: 'Spike: edge caching for PLP',
       firstPrompt: 'Spike: can the product listing page be cached at the edge per region?',
       status: 'exited', archived: true, createdAt: now - 5 * DAY - HOUR, updatedAt: now - 5 * DAY,
@@ -303,12 +304,16 @@ export const COMMANDS: Command[] = [
   { name: 'review', description: 'Review the current changes' },
   { name: 'compact', description: 'Clear history but keep a summary in context' },
   { name: 'clear', description: 'Clear the conversation' },
-  { name: 'pr-to-green', description: 'Open a PR and drive its checks to green' },
   { name: 'code-review', description: 'Review the diff for correctness bugs' },
   { name: 'simplify', description: 'Simplify the changed code' },
   { name: 'rename', description: 'Rename this session' },
   { name: 'model', description: 'Switch the model' },
 ];
+
+// A repository's own, from the .claude folder checked in with it, so every worktree of it has them.
+export const PROJECT_COMMANDS: Record<string, Command[]> = {
+  storefront: [{ name: 'pr-to-green', description: 'Open a PR and drive its checks to green' }],
+};
 
 export const DELETE_LOSS = { files: 3, commits: 2 };
 

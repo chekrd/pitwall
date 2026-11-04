@@ -1,10 +1,11 @@
+import { HOME } from './home.ts';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import { homedir } from 'node:os';
-import { extname, join, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { answering, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
@@ -23,15 +24,17 @@ import { asking } from '../../server/asides.ts';
 import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
+import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
+import type { deleteWorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
-import { isolateHome, refuseLive } from '../isolate.ts';
-import { addFromTemplate, artifactPage, COMMANDS, DELETE_LOSS, explanationOf, TEMPLATES, worktreeRootOf, type Template } from './fixtures.ts';
+import { refuseLive } from '../isolate.ts';
+import { addFromTemplate, artifactPage, COMMANDS, DELETE_LOSS, PROJECT_COMMANDS, explanationOf, TEMPLATES, worktreeRootOf, type Template } from './fixtures.ts';
 import { scenarios, type Flag, type Scenario } from './scenarios.ts';
 
 // The contract of server/main.ts over made-up sessions, without a Claude, tmux, Ghostty or the live board behind it.
 
-isolateHome();
+if (homedir() !== HOME) throw new Error(`the mock runs in ${homedir()}, not in its own ${HOME}`);
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const { values: args } = parseArgs({
@@ -44,7 +47,7 @@ const { values: args } = parseArgs({
 });
 refuseLive(Number(args.port));
 const DIST = resolve(args.dist);
-const UPLOADS_DIR = join(homedir(), 'Library', 'Caches', 'pitwall', 'uploads');
+const UPLOADS_DIR = uploadsDir(HOME);
 // Every Diff tab shows this commit of the repository itself, a real patch of 12 files.
 const FIXTURE_COMMIT = 'ff30c77';
 
@@ -106,8 +109,8 @@ const timers = new Set<NodeJS.Timeout>();
 const pauses = new Set<() => void>();
 const uploads = new Set<string>();
 const log: Entry[] = [];
-// What the page's usage recorder posted, its batches' events in order.
-const uxEvents: { name: string; data?: Record<string, unknown> }[] = [];
+// What the page's usage recorder posted, its batches' events in order, as the server stores them.
+const uxEvents: (UxEvent & { page: string })[] = [];
 let failNext: { error: string; code?: string } | null = null;
 let delayMs = 0;
 // While held, a Clear task waits as a large worktree's removal would, until /mock/clear-release lets it finish or fail.
@@ -149,8 +152,8 @@ const taskWorktrees = (taskFolder: string) =>
   state.repos.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && parentOf(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
 
 const snapshot = () => ({
-  home: '/Users/me', roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders(), schedules }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
-  ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: '~/git/github/pitwall' }),
+  home: HOME, roots: state.roots, repos: state.repos, ...(!args.legacy && { folders: folders(), schedules }), sessions: state.sessions.toSorted((a, b) => a.createdAt - b.createdAt).map(shown),
+  ...(!args.legacy && { usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: `${HOME}/git/github/pitwall` }),
 });
 
 // As in server/main.ts: every snapshot names the entry the polls have taken, and a socket that opens first reads
@@ -272,7 +275,13 @@ function checkUploads(paths: unknown) {
   return paths as string[];
 }
 
-const isCommand = (text: string) => text.startsWith('!') || COMMANDS.some((c) => c.name === text.match(/^\/(\S+)/)?.[1]);
+// As the server's listCommands(worktree): the repository's own commands and skills first, then the user's and built-in ones.
+const commandsIn = (worktree: string) => {
+  const repo = state.repos.find((r) => r.worktrees.some((w) => w.path === worktree));
+  return [...(repo && PROJECT_COMMANDS[repo.name]) || [], ...COMMANDS];
+};
+
+const isCommand = (s: Session, text: string) => text.startsWith('!') || commandsIn(s.worktree).some((c) => c.name === text.match(/^\/(\S+)/)?.[1]);
 
 // One per scenario: a send still waiting its turn when another scenario loads is refused, not run on the new one.
 function answeringFor(scenario: Scenario) {
@@ -286,7 +295,7 @@ function answeringFor(scenario: Scenario) {
     keys: () => pause(TYPING_MS),
     notify: push,
     decided: claudeWorks,
-    isCommand: async (_s, text) => isCommand(text),
+    isCommand: async (s, text) => isCommand(s, text),
     checkUploads: async (files) => checkUploads(files),
   });
 }
@@ -337,7 +346,7 @@ function legacyAnswer(s: Session, reply: Reply, commands = true) {
   const text = reply.text?.trim() ?? '';
   const files = checkUploads(reply.files);
   if (!reply.choice && !text && !files.length) throw new Error('empty answer');
-  if (commands && !reply.choice && !files.length && isCommand(text)) return;
+  if (commands && !reply.choice && !files.length && isCommand(s, text)) return;
   checkDecision(s, reply.key, !reply.choice);
   closeQuestion({ get: find, update }, s.id, reply.key ?? null);
   claudeWorks(s.id);
@@ -469,7 +478,7 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
   'delete-worktree': (s, body) => {
     if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");
     if (body.discard !== true) {
-      const loss = deleteLoss(s);
+      const loss: { files: number; commits: number; gone?: boolean; checkout?: boolean } = deleteLoss(s);
       if (!loss.gone && !loss.checkout && loss.files + loss.commits > 0) throw new Error('not everything is pushed: approve throwing it away in Clear task');
     }
     const worktree = repoOf(s.repoId)?.worktrees.find((w) => w.path === s.worktree);
@@ -519,7 +528,7 @@ const longLived = (repo: RepoView, branch: string) =>
 
 const subtasksOf = (id: string): Session[] => state.sessions.filter((o) => o.parent?.id === id).flatMap((o) => [o, ...subtasksOf(o.id)]);
 
-function deleteLoss(s: Session) {
+function deleteLoss(s: Session): Awaited<ReturnType<typeof deleteWorktreeLoss>> {
   if (flagged(s.id, 'lossFails')) throw new Error('git status failed: fatal: unable to read the index');
   const repo = repoOf(s.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);
@@ -527,10 +536,11 @@ function deleteLoss(s: Session) {
   const subtasks = subtasksOf(s.id).length;
   if (s.repoId === null) {
     const repos = taskWorktrees(s.worktree).map(({ repo: r, worktree: w }, i) => ({
-      name: r.name, branch: w.branch, deletesBranch: true, files: i === 0 ? DELETE_LOSS.files : 0, commits: i === 0 ? DELETE_LOSS.commits : 0,
+      name: r.name, branch: w.branch, deletesBranch: !!w.branch && !longLived(r, w.branch), files: i === 0 ? DELETE_LOSS.files : 0, commits: i === 0 ? DELETE_LOSS.commits : 0,
     }));
     const sum = (k: 'files' | 'commits') => repos.reduce((n, r) => n + r[k], 0);
-    return { branch: s.worktree.split('/').at(-1), deletesBranch: repos.length > 0, files: sum('files'), commits: sum('commits'), subtasks, repos };
+    // The mock's task folders are never removed behind its back, so none is gone.
+    return { branch: s.worktree.split('/').at(-1)!, deletesBranch: repos.some((r) => r.deletesBranch), files: sum('files'), commits: sum('commits'), gone: false, subtasks, repos };
   }
   if (!repo || !worktree) return { branch: null, deletesBranch: false, files: 0, commits: 0, checkout: true, gone: true, subtasks };
   if (worktree.isMain) return { branch: worktree.branch, deletesBranch: false, files: 0, commits: 0, checkout: true, subtasks };
@@ -585,8 +595,8 @@ function addWorktree(repo: RepoView, body: { name?: string; branch?: string; pat
   }
   if (!name) throw new Error('name is required');
   if (name === 'fail') throw new Error(`git wt: a branch named '${branch || name}' cannot be created here`);
-  const wanted = body.path?.trim();
-  if (wanted && !wanted.startsWith('/') && !wanted.startsWith('~')) throw new Error('the worktree path must be absolute');
+  const wanted = body.path?.trim().replace(/^~(?=\/|$)/, HOME);
+  if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
   const path = wanted || `${repo.defaultWorktreeRoot}/${name.replaceAll('/', '-')}/${repo.name}`;
   if (!repo.worktrees.some((w) => w.path === path)) {
     repo.worktrees.push({ path, branch: branch || name, head: randomUUID().replaceAll('-', '').padEnd(40, '0'), isMain: false, conversations: [] });
@@ -675,21 +685,26 @@ const route = (method: string, path: string, handler: Handler) =>
   routes.push([method, new RegExp(`^${path.replace(/:[a-z]+/g, '([^/]+)')}$`), handler]);
 
 route('GET', '/api/state', () => snapshot());
-route('POST', '/api/pick-folder', () => ({ path: '~/code/payments' }));
+route('POST', '/api/pick-folder', () => ({ path: `${HOME}/code/payments` }));
 // Logged only: a check must never open a real browser.
 route('POST', '/api/open', () => NONE);
+// As the server's: a folder in a repository adds the repository, any other folder is scanned for repositories. Here a
+// folder that holds known repositories is one to scan, and any other one a new repository.
 route('POST', '/api/repos', ({ body }) => {
   const path = String(body.path ?? '').trim().replace(/(.)\/$/, '$1');
-  if (!path.startsWith('/') && !path.startsWith('~')) throw new Error(`not a folder: ${path}`);
-  if (!state.repos.some((r) => r.path === path)) {
-    const name = path.split('/').at(-1)!;
-    state.repos.push({
-      id: Math.max(0, ...state.repos.map((r) => r.id)) + 1, path, name, baseBranch: null, setupCommand: null, worktreeRoot: null,
-      base: 'origin/main', defaultWorktreeRoot: worktreeRootOf(path),
-      worktrees: [{ path, branch: 'main', head: '0'.repeat(40), isMain: true, conversations: [] }],
-    });
+  if (!isAbsolute(path)) throw new Error(`not a folder: ${path}`);
+  if (state.repos.some((r) => path === r.path || path.startsWith(`${r.path}/`))) return { scanned: false };
+  if (state.repos.some((r) => r.path.startsWith(`${path}/`))) {
+    if (!state.roots.includes(path)) state.roots.push(path);
     push();
+    return { scanned: true };
   }
+  state.repos.push({
+    id: Math.max(0, ...state.repos.map((r) => r.id)) + 1, path, name: path.split('/').at(-1)!, baseBranch: null, setupCommand: null, worktreeRoot: null,
+    base: 'origin/main', defaultWorktreeRoot: worktreeRootOf(path),
+    worktrees: [{ path, branch: 'main', head: '0'.repeat(40), isMain: true, conversations: [] }],
+  });
+  push();
   return { scanned: false };
 });
 route('DELETE', '/api/roots', ({ body }) => {
@@ -819,7 +834,7 @@ route('GET', '/api/sessions/:id/conversation', ({ params }): ConversationLog[] =
       id: s.conversation,
       exchanges: s.firstPrompt ? [
         { id: `${s.id}-1`, at: start, prompt: s.firstPrompt, images: 0, reply: 'I read the code around it. Should I **keep the change small**, or also clean up what it touches?', artifacts: [] },
-        { id: `${s.id}-2`, at: start + 60_000, prompt: `[Image #1] Keep it small; this is what the PDF shows.\n\n${uploadsDir('/Users/me')}/m1/page.png`, images: 1, reply: null, artifacts: [] },
+        { id: `${s.id}-2`, at: start + 60_000, prompt: `[Image #1] Keep it small; this is what the PDF shows.\n\n${UPLOADS_DIR}/m1/page.png`, images: 1, reply: null, artifacts: [] },
         { id: `${s.id}-3`, at: start + 120_000, prompt: s.lastPrompt ?? 'Go on, and tell me when it is done.', images: 0, reply: s.lastMessage, artifacts: s.artifacts.map((a) => a.id) },
       ] : [],
     },
@@ -842,10 +857,12 @@ route('POST', '/api/uploads', ({ raw, headers }) => {
   return { path };
 });
 route('POST', '/api/ux', ({ body }) => {
-  uxEvents.push(...(body as { events: typeof uxEvents }).events);
+  const batch = cleanBatch(body);
+  if (!batch) throw new HttpError(400, 'bad batch');
+  uxEvents.push(...batch.events.map((e) => ({ ...e, page: batch.page })));
   return NONE;
 });
-route('GET', '/api/commands', () => COMMANDS);
+route('GET', '/api/commands', ({ url }) => commandsIn(url.searchParams.get('worktree') ?? ''));
 // As the server's folderDiff(): the fixture's change in every worktree of the task, each under its repository's folder.
 async function folderDiff(taskFolder: string, paths: string[] = []): Promise<FullDiff> {
   const parts = await Promise.all(taskWorktrees(taskFolder).map(async ({ repo }) => {
@@ -1039,7 +1056,7 @@ route('GET', '/mock/log', ({ url }) => {
   }
   return entries;
 });
-route('GET', '/mock/ux', () => uxEvents);
+route('GET', '/mock/ux', () => uxEvents.map((e) => ({ ...e, data: e.data === null ? null : JSON.parse(e.data) })));
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
