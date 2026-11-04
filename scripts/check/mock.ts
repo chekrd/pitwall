@@ -1,9 +1,15 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { refuseLive } from '../isolate.ts';
 import { sleep, until } from './cdp.ts';
 
 const SERVER = join(import.meta.dirname, '..', 'mock', 'server.ts');
+
+// However this process ends, the mocks it started go with it.
+const children = new Set<ChildProcess>();
+process.on('exit', () => {
+  for (const child of children) child.kill('SIGKILL');
+});
 
 export interface Entry {
   at: number;
@@ -20,11 +26,11 @@ export interface Entry {
 
 export type Mock = ReturnType<typeof client>;
 
-function client(url: string, stop: () => Promise<void>) {
+function client(url: string, stop: () => Promise<void>, alive = () => true) {
   refuseLive(url);
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await fetch(url + path, {
-      method, ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      method, signal: AbortSignal.timeout(30_000), ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${text}`);
@@ -33,6 +39,7 @@ function client(url: string, stop: () => Promise<void>) {
   return {
     url,
     stop,
+    alive,
     post: (path: string, body: unknown = {}) => call('POST', path, body),
     get: (path: string) => call('GET', path),
     log: (): Promise<Entry[]> => call('GET', '/mock/log'),
@@ -46,18 +53,25 @@ function client(url: string, stop: () => Promise<void>) {
 export async function startMock(o: { port?: number; dist: string }) {
   if (o.port) return client(`http://127.0.0.1:${o.port}`, async () => {});
   const child = spawn(process.execPath, [SERVER, '--port', '0', '--dist', o.dist], { stdio: ['ignore', 'pipe', 'inherit'] });
+  children.add(child);
   let output = '';
   child.stdout.on('data', (d) => (output += d));
   let exited = false;
-  child.once('exit', () => (exited = true));
+  child.once('exit', () => {
+    exited = true;
+    children.delete(child);
+  });
   const url = await until('the mock to listen', () => {
     if (exited) throw new Error(`the mock exited: ${output}`);
     return output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
-  }, 15_000);
+  }, 15_000).catch((err) => {
+    child.kill('SIGKILL');
+    throw err;
+  });
   return client(url, async () => {
     if (exited) return;
     child.kill('SIGTERM');
     for (let i = 0; i < 40 && !exited; i++) await sleep(50);
     if (!exited) child.kill('SIGKILL');
-  });
+  }, () => !exited);
 }

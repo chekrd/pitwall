@@ -31,6 +31,22 @@ export async function until<T>(what: string, fn: () => T | Promise<T>, timeout =
   }
 }
 
+// Fails once `ms` pass without `promise` settling; the promise itself goes on.
+export async function within<T>(ms: number, what: string, promise: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<never>((_, fail) => (timer = setTimeout(() => fail(new Error(`${what} took over ${ms} ms`)), ms)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// However this process ends, the browsers it started go with it.
+const discards = new Set<() => void>();
+process.on('exit', () => {
+  for (const discard of discards) discard();
+});
+
 interface CdpEvent {
   method: string;
   params: any;
@@ -65,9 +81,11 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
   child.once('exit', () => (exited = true));
 
   const discard = () => {
+    discards.delete(discard);
     if (!exited) child.kill('SIGKILL');
     rmSync(profile, { recursive: true, force: true });
   };
+  discards.add(discard);
   let socket: WebSocket;
   try {
     const [port, path] = await until('the DevToolsActivePort file', async () => {
@@ -101,11 +119,16 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
     for (const call of pending.values()) call.fail(new Error(`${call.method}: the browser connection closed`));
     pending.clear();
   });
+  // ws drops a message sent after the close without a word, which would leave the call waiting for ever.
   const send = (method: string, params: object = {}, sessionId?: string) =>
     new Promise<any>((ok, fail) => {
+      if (socket.readyState !== WebSocket.OPEN) return fail(new Error(`${method}: the browser connection closed`));
       const id = ++seq;
       pending.set(id, { ok, fail, method });
-      socket.send(JSON.stringify({ id, method, params, ...(sessionId && { sessionId }) }));
+      socket.send(JSON.stringify({ id, method, params, ...(sessionId && { sessionId }) }), (err) => {
+        if (!err || !pending.delete(id)) return;
+        fail(new Error(`${method}: ${err.message}`));
+      });
     });
 
   // Runs in the page. Ids stay the real timers', so clearTimeout and clearInterval need no change.
@@ -301,6 +324,7 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
 
   return {
     newPage,
+    alive: () => !exited && socket.readyState === WebSocket.OPEN,
     async close() {
       await Promise.race([send('Browser.close').catch(() => {}), sleep(3000)]);
       socket.close();
