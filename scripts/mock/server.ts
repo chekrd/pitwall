@@ -18,7 +18,7 @@ import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
-import { uploadsDir } from '../../server/uploadPaths.ts';
+import { UPLOAD_DIR_NAME, UPLOAD_IMAGE_NAME, uploadsDir } from '../../server/uploadPaths.ts';
 import { addParked, editParked, removeParked, turnEnds } from '../../server/parked.ts';
 import { asking } from '../../server/asides.ts';
 import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, type Scheduled, type TaskRequest } from '../../server/schedule.ts';
@@ -730,7 +730,10 @@ route('DELETE', '/api/repos/:id', ({ params }) => {
   return NONE;
 });
 route('GET', '/api/repos/:id/branches', ({ params }) => branches(mustRepo(Number(params[0]))));
-route('GET', '/api/repos/:id/models', () => MODELS);
+route('GET', '/api/repos/:id/models', ({ params }) => {
+  mustRepo(Number(params[0]));
+  return MODELS;
+});
 // As the server's startTask: what New task posts, and what a schedule starts when due.
 function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const model = MODELS.models[req.model ?? ''] ?? req.model;
@@ -752,7 +755,10 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
 }
 
 route('POST', '/api/worktrees', ({ body }) => startTask({ kind: 'repo', branch: '', path: '', prompt: '', model: '', effort: '', ...body, existingBranch: !!body.existingBranch }));
-route('GET', '/api/folders/models', () => MODELS);
+route('GET', '/api/folders/models', ({ url }) => {
+  if (!folders().some((f) => f.path === url.searchParams.get('path'))) throw new Error('unknown folder');
+  return MODELS;
+});
 route('POST', '/api/folder-tasks', ({ body }) => startTask({ kind: 'folder', prompt: '', model: '', effort: '', ...body }));
 
 // The server's scheduler over the mock's tasks; /mock/schedules/step runs a step as if the clock read `at`.
@@ -844,7 +850,10 @@ route('GET', '/api/sessions/:id/conversation/:conversation/:entry/:n', ({ params
   must(params[0]);
   return new Page(PICTURE, { 'content-type': 'image/svg+xml' });
 });
-route('GET', '/api/uploads/:dir/:name', () => new Page(PICTURE, { 'content-type': 'image/svg+xml' }));
+route('GET', '/api/uploads/:dir/:name', ({ params: [dir, name] }) => {
+  if (!UPLOAD_DIR_NAME.test(dir) || !UPLOAD_IMAGE_NAME.test(name)) throw new HttpError(404, 'picture not found');
+  return new Page(PICTURE, { 'content-type': 'image/svg+xml' });
+});
 route('GET', '/api/sessions/:id/delete-worktree', ({ params }) => deleteLoss(must(params[0])));
 route('POST', '/api/sessions/:id/:action', async ({ params, body }) => {
   return (await sessionAction(params[0], params[1], body)) ?? NONE;
