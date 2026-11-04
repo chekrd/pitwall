@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   arrivals, choose, deckOf, dismissal, freeze, isCommand, kindOf, meter, METER_SEGMENTS, primary, promptOf, refreeze, resolveFront,
-  rotate, successor, targetOf, typed, type Composer, type Frozen,
+  rotate, startPicks, successor, suggestionText, targetOf, togglePick, typed, type Composer, type Frozen,
 } from './deck.ts';
 import { advice, menu, options, question, session, turn } from './testing.ts';
 import type { Command, Session } from './types.ts';
@@ -312,4 +312,27 @@ test('the meter: one segment per card up to 20, then one bar per group with its 
   assert.deepEqual(at45.bars?.map((b) => [b.count, b.current, b.arrived, b.target]), [[30, true, false, 'd0'], [5, false, false, 'f0'], [10, false, true, 'i0']]);
   assert.equal(meter(crowd(30, 5, 10), 'd4').bars?.[0].target, 'd5', 'within the front card\'s group, the next card');
   assert.deepEqual([meter(crowd(1, 0, 1), null).label, meter([], null).label], ['1 decision · 1 finished turn', '']);
+});
+
+test('a menu\'s picks start as made on it before, else as frozen, as copies the view can change; a press toggles in a pick-any question and picks or clears in a pick-one question', () => {
+  const frozen: Frozen = { via: 'menu', picks: [{ labels: ['Linear'], other: '' }, { labels: ['Email'], other: '' }], adviceAt: 7 };
+  const start = startPicks(null, frozen);
+  assert.deepEqual(start, frozen.picks);
+  start[0].labels.push('Exponential');
+  assert.deepEqual(frozen.picks[0].labels, ['Linear'], 'the frozen picks changed with the view');
+  assert.deepEqual(startPicks([{ labels: [], other: 'Never' }], frozen), [{ labels: [], other: 'Never' }]);
+  assert.deepEqual(startPicks(null, { via: 'none', label: null }), []);
+
+  const picks = [{ labels: ['Linear'], other: '' }, { labels: ['Email'], other: '' }];
+  assert.deepEqual(togglePick(picks, 0, 'Exponential', false), [{ labels: ['Exponential'], other: '' }, picks[1]]);
+  assert.deepEqual(togglePick(picks, 0, 'Linear', false), [{ labels: [], other: '' }, picks[1]]);
+  assert.deepEqual(togglePick([{ labels: [], other: 'Custom' }], 0, 'Linear', false), [{ labels: ['Linear'], other: '' }], 'a pick replaces an own answer');
+  assert.deepEqual(togglePick(picks, 1, 'Log', true), [picks[0], { labels: ['Email', 'Log'], other: '' }]);
+  assert.deepEqual(togglePick(picks, 1, 'Email', true), [picks[0], { labels: [], other: '' }]);
+});
+
+test('the second opinion as a reply to edit leads with its choice, unless its answer already does', () => {
+  assert.equal(suggestionText(advice('q:q1', { choice: 'Merge', answer: 'Because it is smaller.' })), 'Merge. Because it is smaller.');
+  assert.equal(suggestionText(advice('q:q1', { choice: 'Merge', answer: 'Merge, because it is smaller.' })), 'Merge, because it is smaller.');
+  assert.equal(suggestionText(advice('q:q1')), 'Because it is smaller.');
 });

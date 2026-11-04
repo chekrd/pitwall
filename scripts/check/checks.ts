@@ -4235,6 +4235,29 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P5.2.21b In your queue: a menu that replaces another in one snapshot starts with its own picks on the task page, as on the card, and the choice each first showed is frozen',
+    async run({ page, mock }) {
+      const pressed = () => [...document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]')].map((b) => b.textContent ?? '');
+      const frozen = (key: string) => {
+        try {
+          return (JSON.parse(sessionStorage.getItem('pitwall:frozen') ?? '[]') as [string, unknown][]).some(([k]) => k === key);
+        } catch {
+          return false;
+        }
+      };
+      await page.goto(`${mock.url}/s/s-hooks/overview`);
+      await page.until('the second opinion\'s picks', () => document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]').length === 3);
+      await page.click('#task-sheet [data-queued] [data-option]', 'Linear, 6 tries');
+      await page.until('Linear picked', () => [...document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]')].some((b) => b.textContent?.includes('Linear, 6 tries')));
+      await page.until('the menu frozen', frozen, 'm:toolu_01Hooks');
+
+      const { menu } = await stateOf(mock, 's-hooks');
+      await mock.post('/mock/patch', { id: 's-hooks', patch: { menu: { ...menu, toolUseId: 'toolu_02Hooks', at: Date.now() } } });
+      await page.until('the new menu frozen', frozen, 'm:toolu_02Hooks');
+      assert.deepEqual(await page.eval(pressed), [], 'the picks made on the menu before carried over');
+    },
+  },
+  {
     name: 'P5.2.22 the sheet\'s reply box: a message typed in Fix invoice PDF rounding and Enter shows a toast with Undo in the sheet, which stays open, and 5 s on answer goes out with "key":null and the text',
     clock: 'fast',
     async run({ page, mock, shot }) {

@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { decisionKey } from '../../../server/decision.ts';
 import { sessionAction } from '../api.ts';
-import { acceptance, choose, dismissal, freeze, kindOf, menuAnswer, primary as primaryOf, typed, type Composer as Note } from '../deck.ts';
+import { acceptance, choose, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
 import type { Request } from '../outbox.ts';
-import { queue, useQueue } from '../queue.ts';
+import { queue } from '../queue.ts';
 import { closeSheet, closeSheetToQueue, showTab } from '../router.ts';
 import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
-import type { MenuAnswer, RepoView, Session } from '../types.ts';
+import type { RepoView, Session } from '../types.ts';
+import { useDecision } from '../useDecision.ts';
 import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
@@ -25,7 +25,6 @@ import { SecondOpinion } from './SecondOpinion.tsx';
 import { STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { FocusButton } from './SessionMenu.tsx';
-import { toast } from './Toasts.tsx';
 import { explain, SENDS } from './explain.ts';
 
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
@@ -44,39 +43,24 @@ function Copy({ value, what, title, shown = value }: { value: string; what: stri
 // A decision answered on its task page: the same options, second opinion and reply box as on its card. A send is held
 // with its Undo as from the card, and the box goes with it. `box` is off while Message Claude stays for the writing in it.
 function Queued({ session, name, box: ownBox }: { session: Session; name: string; box: boolean }) {
-  const q = useQueue();
-  const key = decisionKey(session);
   const menu = session.menu;
   const decision = menu ? null : decisionOf(session);
+  const { frozen, picks, setPicks, toggle, answerOwn, lone } = useDecision(session, menu);
   const { sessions } = useStore();
   const advice = adviceFor(session);
   const done = advice?.state === 'done' ? advice : null;
-  const frozen = key ? (q.frozen.get(key) ?? freeze(session)) : null;
   const draft = useDraft(session.id);
   const [focus, setFocus] = useState(0);
   const [note, setNote] = useState<string | null>(null);
-  const [picks, showPicks] = useState<MenuAnswer[]>(() =>
-    (key && queue.picksOf(key)) || (frozen?.via === 'menu' ? frozen.picks.map((p) => ({ ...p, labels: [...p.labels] })) : []));
-  const setPicks = (value: MenuAnswer[]) => {
-    showPicks(value);
-    if (key) queue.pick(key, value);
-  };
   const box: Note = { open: true, text: draft.text, files: readyPaths(draft), uploading: uploading(draft) };
   const send = (r: Request | null) => {
     if (!r) return setNote('An attachment is still uploading; nothing was sent.');
     setNote(r.command ? `${r.label.split(/\s/)[0]} goes to the terminal as typed; the question stays open.` : null);
     hold(session, r, name);
   };
-  const questions = menu?.questions ?? [];
-  const lone = questions.length === 1 && !questions[0].multiSelect;
   const pickInMenu = (question: number, label: string) => {
-    if (lone) return send(menuAnswer(session, [{ labels: [label], other: '' }]));
-    const multi = questions[question]?.multiSelect;
-    setPicks(picks.map((p, i) => {
-      if (i !== question) return p;
-      if (multi) return { ...p, labels: p.labels.includes(label) ? p.labels.filter((l) => l !== label) : [...p.labels, label] };
-      return { labels: p.labels[0] === label ? [] : [label], other: '' };
-    }));
+    if (lone) send(menuAnswer(session, [{ labels: [label], other: '' }]));
+    else toggle(question, label);
   };
   const menuPress = menu ? primaryOf(session, frozen, { picks }) : null;
   const submitMenu = () => {
@@ -84,8 +68,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
   };
   const edit = () => {
     if (!done) return;
-    const text = done.choice && !done.answer.startsWith(done.choice) ? `${done.choice}. ${done.answer}` : done.answer;
-    editDraft(session.id, (d) => ({ ...d, text }));
+    editDraft(session.id, (d) => ({ ...d, text: suggestionText(done) }));
     setFocus((n) => n + 1);
   };
   const toCard = () => {
@@ -130,7 +113,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
             picks={picks}
             advice={advice}
             onPick={pickInMenu}
-            onOther={(question, other) => setPicks(picks.map((p, i) => (i === question ? { labels: other ? [] : p.labels, other } : p)))}
+            onOther={answerOwn}
             onPicks={setPicks}
             onSubmit={submitMenu}
           />

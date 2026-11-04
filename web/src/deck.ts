@@ -1,7 +1,7 @@
 import { decisionKey, menuAnswerText, openDecision } from '../../server/decision.ts';
 import { compare } from './order.ts';
 import type { Body, Request } from './outbox.ts';
-import type { Command, MenuAnswer, Session } from './types.ts';
+import type { Advice, Command, MenuAnswer, Session } from './types.ts';
 import { adviceFor, attentionOf, decisionOf, menuStuck, type Attention } from './util.ts';
 
 // The queue's cards: what waits on the developer, in board order, and what each press on the card sends.
@@ -183,6 +183,25 @@ function noteOf(composer: Composer | undefined): Body | null {
 const samePicks = (a: readonly MenuAnswer[], b: readonly MenuAnswer[] | undefined) =>
   !!b && a.length === b.length && a.every((p, i) =>
     p.other.trim() === (b[i].other ?? '').trim() && p.labels.length === b[i].labels.length && p.labels.every((l) => b[i].labels.includes(l)));
+
+// A menu's picks as they start: those made on it before, kept across views and reloads, or else the frozen ones.
+export function startPicks(kept: readonly MenuAnswer[] | null, frozen: Frozen | null): MenuAnswer[] {
+  const from = kept ?? (frozen?.via === 'menu' ? frozen.picks : []);
+  return from.map((p) => ({ ...p, labels: [...p.labels] }));
+}
+
+// A press on a menu's option: it toggles in a pick-any question, and in a pick-one question it becomes the pick, or
+// clears it when it was the pick, along with an own answer.
+export function togglePick(picks: readonly MenuAnswer[], question: number, label: string, multi: boolean): MenuAnswer[] {
+  return picks.map((p, i) => {
+    if (i !== question) return p;
+    if (multi) return { ...p, labels: p.labels.includes(label) ? p.labels.filter((l) => l !== label) : [...p.labels, label] };
+    return { labels: p.labels[0] === label ? [] : [label], other: '' };
+  });
+}
+
+// The second opinion as a reply to edit: its choice, then its answer.
+export const suggestionText = (a: Advice) => (a.choice && !a.answer.startsWith(a.choice) ? `${a.choice}. ${a.answer}` : a.answer);
 
 export function menuAnswer(s: Session, picks: readonly MenuAnswer[]): Request {
   const answers = picks.map((p) => ({ labels: [...p.labels], other: p.other }));

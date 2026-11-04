@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { decisionKey } from '../../../server/decision.ts';
-import { acceptance, choose, dismissal, freeze, kindOf, menuAnswer, primary as primaryOf, type Composer as Note, type Intent } from '../deck.ts';
+import { acceptance, choose, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, type Composer as Note, type Intent } from '../deck.ts';
 import type { Action, Card as Keys } from '../keys.ts';
 import type { Request } from '../outbox.ts';
 import { queue, useQueue } from '../queue.ts';
 import { openSheet, sessionPath } from '../router.ts';
 import { hold } from '../sends.ts';
-import type { MenuAnswer, RepoView, Session } from '../types.ts';
+import type { RepoView, Session } from '../types.ts';
+import { useDecision, useKeyed } from '../useDecision.ts';
 import { useFront } from '../useKeys.ts';
 import { adviceFor, attentionOf, decisionOf, locate, sessionLabel } from '../util.ts';
 import { track } from '../ux.ts';
@@ -27,14 +27,6 @@ import { TaskRail } from './TaskRail.tsx';
 import { TurnBody } from './TurnBody.tsx';
 import { elaborate, explanationFor } from './WhyPanel.tsx';
 import { explain, SENDS } from './explain.ts';
-
-// State that belongs to one decision: a new decision on the same card starts it afresh.
-function useKeyed<T>(key: string | null, initial: () => T): [T, (value: T) => void] {
-  const [state, setState] = useState(() => ({ key, value: initial() }));
-  const current = state.key === key ? state : { key, value: initial() };
-  if (current !== state) setState(current);
-  return [current.value, (value: T) => setState({ key, value })];
-}
 
 // The guard as the card draws it, redrawn when it ends.
 function useGuarded(until: number) {
@@ -73,15 +65,13 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   const name = sessionLabel(session, branch);
   const kind = kindOf(session) ?? 'idle';
   const attention = attentionOf(session);
-  const key = decisionKey(session);
   const decision = kind === 'ask' || kind === 'turn' ? decisionOf(session) : null;
   const menu = kind === 'menu' ? session.menu : null;
-  // The compiler reads what a callback uses during render, so a `menu!.questions` there would throw on other cards.
+  // The compiler reads what a callback uses during render, so a `decision!.options` there would throw on other cards.
   const options = decision?.options ?? [];
-  const questions = menu?.questions ?? [];
+  const { key, frozen, picks, setPicks, toggle, answerOwn, questions, lone } = useDecision(session, menu);
   const advice = adviceFor(session);
   const done = advice?.state === 'done' ? advice : null;
-  const frozen = key ? (q.frozen.get(key) ?? freeze(session)) : null;
   const draft = useDraft(session.id);
   const filled = !!draft.text || draft.files.length > 0;
   const guarded = useGuarded(q.guardUntil);
@@ -92,16 +82,6 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   const [note, setNote] = useState<string | null>(null);
   const [hidden, setHidden] = useKeyed(key, () => false);
   const [whyOpen, setWhyOpen] = useKeyed(key, () => false);
-  const [picks, showPicks] = useKeyed<MenuAnswer[]>(key, () =>
-    (key && queue.picksOf(key)) || (frozen?.via === 'menu' ? frozen.picks.map((p) => ({ ...p, labels: [...p.labels] })) : []));
-  const setPicks = (value: MenuAnswer[]) => {
-    showPicks(value);
-    if (key) queue.pick(key, value);
-  };
-
-  useEffect(() => {
-    if (key && frozen) queue.freeze(key, frozen);
-  }, [key, frozen]);
 
   // A draft that comes back, from a send taken back or refused, shows in the reply box.
   useEffect(() => {
@@ -174,8 +154,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   };
   const edit = () => {
     if (!done) return;
-    const text = done.choice && !done.answer.startsWith(done.choice) ? `${done.choice}. ${done.answer}` : done.answer;
-    editDraft(session.id, (d) => ({ ...d, text }));
+    editDraft(session.id, (d) => ({ ...d, text: suggestionText(done) }));
     compose();
   };
   const toggleWhy = () => {
@@ -186,18 +165,8 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     }
     setWhyOpen(!whyOpen);
   };
-  const toggleMenu = (question: number, label: string) => {
-    const multi = questions[question]?.multiSelect;
-    setPicks(picks.map((p, i) => {
-      if (i !== question) return p;
-      if (multi) return { ...p, labels: p.labels.includes(label) ? p.labels.filter((l) => l !== label) : [...p.labels, label] };
-      return { labels: p.labels[0] === label ? [] : [label], other: '' };
-    }));
-  };
-  const lone = questions.length === 1 && !questions[0].multiSelect;
-  // A menu of one single-choice question answers with the pick, as the terminal does.
   const pickInMenu = (question: number, label: string) => {
-    if (!lone) return toggleMenu(question, label);
+    if (!lone) return toggle(question, label);
     if (queue.guarded()) return;
     const only = [{ labels: [label], other: '' }];
     setPicks(only);
@@ -334,7 +303,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
                 picks={picks}
                 advice={advice}
                 onPick={pickInMenu}
-                onOther={(question, other) => setPicks(picks.map((p, i) => (i === question ? { labels: other ? [] : p.labels, other } : p)))}
+                onOther={answerOwn}
                 onPicks={setPicks}
                 onSubmit={pressPrimary}
               />
