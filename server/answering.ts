@@ -1,13 +1,14 @@
 import type { Session } from './db.ts';
 import { adviceToSend, answerText, checkDecision, claim, menuAnswerText, type AnswerStore } from './decision.ts';
+import { Unsent, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
 import { menuKeystrokes, type MenuAnswer } from './menu.ts';
 
 // Everything that touches the machine comes in as a dependency, so tests and the mock run this very code.
 export interface AnsweringDeps {
   store: AnswerStore;
-  send: (tty: string, text: string, files?: string[]) => Promise<void>;
-  keys: (tty: string, strokes: Keystroke[]) => Promise<void>;
+  send: (to: Target, text: string, files?: string[]) => Promise<void>;
+  keys: (to: Target, strokes: Keystroke[]) => Promise<void>;
   notify: () => void;
   // A decision closed on the board: its rank and second opinion go.
   decided: (id: string) => void;
@@ -29,15 +30,17 @@ interface Typing {
 
 export function liveTty(s: Session) {
   if (s.status === 'exited') throw new Error('this session has ended; continue it first');
-  if (!s.tty) throw new Error('this session has no terminal yet');
+  if (!s.tty || s.pid === null) throw new Error('this session has no terminal yet');
   return s.tty;
 }
 
+export const liveTarget = (s: Session, prompt = false): Target => ({ tty: liveTty(s), pid: s.pid!, conversation: s.conversation, prompt });
+
 // Text typed while Claude shows a permission prompt or a menu would answer that instead.
-function promptTty(s: Session) {
-  const tty = liveTty(s);
+function promptTarget(s: Session) {
+  const to = liveTarget(s);
   if (s.status === 'waiting' || s.menu) throw new Error(`Claude is showing ${s.waitingFor ?? 'a question'} in its terminal; answer that first`);
-  return tty;
+  return to;
 }
 
 // The transcript keeps an ask_human question open until the next prompt, so one answered or dismissed on the board is
@@ -72,6 +75,7 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     } catch (err) {
       if (err instanceof PartlyTyped) {
         closed();
+        if (err instanceof Unsent) throw err;
         throw new Error("the keys stopped part way through Claude's menu; finish it in the terminal", { cause: err });
       }
       reopen();
@@ -104,25 +108,25 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     const command = commands && !reply.choice && !files.length && (await isCommand(must(id), text));
     await inTurn(id, () => {
       const s = must(id);
-      const tty = promptTty(s);
-      if (command) return { type: () => send(tty, text) };
+      const to = promptTarget(s);
+      if (command) return { type: () => send(to, text) };
       checkDecision(s, reply.key, !reply.choice);
       const about = s.question && reply.key === `q:${s.question.toolUseId}` ? `Re: "${s.question.title}"` : '';
       const said = [about, reply.choice ? `My decision: ${reply.choice}.` : '', text].filter(Boolean).join(' — ');
       // Claude Code would run an answer that starts with `!` in its shell, and one that starts with `/` as a command.
       const prompt = /^[!/]/.test(said) ? `My reply: ${said}` : said;
-      return { claim: { seen: reply.key, typed: !reply.choice, text: answerText(reply.choice, text, files.length) }, type: () => send(tty, prompt, files) };
+      return { claim: { seen: reply.key, typed: !reply.choice, text: answerText(reply.choice, text, files.length) }, type: () => send(to, prompt, files) };
     });
   }
 
   async function answerMenu(id: string, body: { toolUseId: string; answers: MenuAnswer[] }) {
     await inTurn(id, () => {
       const s = must(id);
-      const tty = liveTty(s);
+      const to = liveTarget(s, true);
       const key = `m:${body.toolUseId}`;
       checkDecision(s, key);
       const strokes = menuKeystrokes(s.menu!, body.answers);
-      return { claim: { seen: key, typed: false, text: menuAnswerText(s.menu!, body.answers) }, type: () => keys(tty, strokes) };
+      return { claim: { seen: key, typed: false, text: menuAnswerText(s.menu!, body.answers) }, type: () => keys(to, strokes) };
     });
   }
 
@@ -141,8 +145,8 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
   // For typing that answers nothing, such as a /rename: it takes its turn too, so it never lands inside another send.
   async function type(id: string, text: string) {
     await inTurn(id, () => {
-      const tty = promptTty(must(id));
-      return { type: () => send(tty, text) };
+      const to = promptTarget(must(id));
+      return { type: () => send(to, text) };
     });
   }
 

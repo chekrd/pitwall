@@ -566,6 +566,9 @@ export function alive(pid: number) {
 
 const words = (s: string) => s.trim().split(/\s+/).join(' ');
 
+// `lstart` is ps's start time of the process, read in UTC as procStart is written.
+export const sameStart = (procStart: unknown, lstart: string | undefined) => !procStart || words(String(procStart)) === lstart;
+
 // A crashed Claude leaves its file behind and macOS reuses pids, so the process must also
 // have started when the file says. procStart is written in UTC.
 async function startTimes(pids: number[]) {
@@ -602,12 +605,43 @@ export async function liveConversations(): Promise<Map<string, LiveProcess>> {
   const started = await startTimes(infos.map((i) => i.pid));
   const live = new Map<string, LiveProcess>();
   for (const info of infos) {
-    if (!started.has(info.pid) || (info.procStart && words(info.procStart) !== started.get(info.pid))) continue;
+    if (!started.has(info.pid) || !sameStart(info.procStart, started.get(info.pid))) continue;
     // Claude Code 2.1.314 reports "shell" while a shell command runs, and shows it as working like "busy".
     const status = info.status === 'shell' ? 'busy' : info.status;
     live.set(info.sessionId, { pid: info.pid, cwd: info.cwd, status, waitingFor: info.waitingFor ?? null });
   }
   return live;
+}
+
+// One Claude process as it is now: its ~/.claude/sessions file, and from ps when it started, its tty and its process
+// group beside the one in the foreground of that tty.
+export interface LiveState {
+  file: Record<string, unknown> | null;
+  ps: { start: string; tty: string | null; pgid: number; tpgid: number } | null;
+}
+
+async function sessionFile(pid: number) {
+  const file = join(CLAUDE_DIR, 'sessions', `${pid}.json`);
+  for (let tries = 2; ; tries--) {
+    const text = await readFile(file, 'utf8').catch(() => null);
+    if (text === null) return null;
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      if (tries === 1) return null; // being rewritten
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+export async function liveState(pid: number): Promise<LiveState> {
+  const [file, { stdout }] = await Promise.all([
+    sessionFile(pid),
+    run('/bin/ps', ['-o', 'pgid=,tpgid=,tty=,lstart=', '-p', String(pid)], { env: { ...process.env, TZ: 'UTC' } }).catch(() => ({ stdout: '' })),
+  ]);
+  const [pgid, tpgid, tty, ...start] = stdout.trim().split(/\s+/);
+  const ps = start.length ? { start: start.join(' '), tty: tty && tty !== '??' ? `/dev/${tty}` : null, pgid: Number(pgid), tpgid: Number(tpgid) } : null;
+  return { file, ps };
 }
 
 export async function listConversations(cwd: string, live: Map<string, LiveProcess>, limit = 15): Promise<Conversation[]> {

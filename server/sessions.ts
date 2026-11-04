@@ -5,7 +5,7 @@ import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
-import { answering, liveTty } from './answering.ts';
+import { answering, liveTarget } from './answering.ts';
 import { listCommands } from './commands.ts';
 import { alive, conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, transcriptFile, type ConversationLog } from './conversations.ts';
 import { report } from './claudeFormat.ts';
@@ -289,7 +289,7 @@ function notifyPaused() {
 const pausing = pauser({
   escape: async (id) => {
     await answers.settled(id);
-    await terminal.keys(liveTty(must(id)), [{ key: 'escape' }]);
+    await terminal.keys(liveTarget(must(id)), [{ key: 'escape' }]);
   },
   type: answers.type,
   mark: (id, interrupted) => sessions.update(id, { interrupted }),

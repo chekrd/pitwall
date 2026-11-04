@@ -1,3 +1,5 @@
+import { liveState } from './conversations.ts';
+import { pressIn, sendTo, type Driver, type Target } from './delivery.ts';
 import * as ghostty from './ghostty.ts';
 import * as tmux from './tmux.ts';
 
@@ -18,36 +20,16 @@ export async function tmuxSessions() {
   return new Set([...(await tmux.panes()).values()].map((p) => p.session));
 }
 
-async function driver(tty: string) {
+async function driver(tty: string): Promise<Driver> {
   const pane = (await tmux.panes()).get(tty);
   return pane
     ? { paste: (text: string) => tmux.paste(pane, text), keys: (strokes: ghostty.Keystroke[]) => tmux.keys(pane, strokes) }
     : { paste: (text: string) => ghostty.paste(tty, text), keys: (strokes: ghostty.Keystroke[]) => ghostty.keys(tty, strokes) };
 }
 
-// A paste of text arrives as one prompt even with several lines; Enter goes separately once
-// the TUI has taken it in. Control characters are dropped so the text cannot end the paste and
-// type keys itself. Claude Code turns a paste of nothing but image paths into image attachments,
-// so images go in a paste of their own first; other files stay paths in the text for Claude to read.
-export async function send(tty: string, text: string, files: string[] = []) {
-  const d = await driver(tty);
-  const pause = () => new Promise((r) => setTimeout(r, 200));
-  const images = files.filter((f) => /\.(png|jpe?g|gif|webp)$/i.test(f));
-  if (images.length) {
-    await d.paste(images.join(' '));
-    await pause();
-  }
-  const clean = [...files.filter((f) => !images.includes(f)), text.replaceAll('\r\n', '\n').replace(/[^\P{Cc}\n\t]/gu, '')]
-    .filter(Boolean)
-    .join(' ');
-  if (clean) await d.paste(images.length ? ` ${clean}` : clean);
-  await pause();
-  await d.keys([{ key: 'enter' }]);
-}
+export const send = async (to: Target, text: string, files: string[] = []) => sendTo(await driver(to.tty), to, liveState, text, files);
 
-export async function keys(tty: string, strokes: ghostty.Keystroke[]) {
-  await (await driver(tty)).keys(strokes.map((k) => ('key' in k ? k : { text: k.text.replace(/[^\P{Cc}\n\t]/gu, '') })));
-}
+export const keys = async (to: Target, strokes: ghostty.Keystroke[]) => pressIn(await driver(to.tty), to, liveState, strokes);
 
 // A tmux session already attached in a Ghostty tab gets that tab; otherwise a new tab attaches.
 export async function show(tty: string | null, name: string, cwd: string) {

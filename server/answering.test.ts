@@ -4,6 +4,7 @@ import { setImmediate as flush } from 'node:timers/promises';
 import { answering } from './answering.ts';
 import type { Advice, Session } from './db.ts';
 import { claim, decisionKey } from './decision.ts';
+import { Unsent, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
 
 const session = (patch: Partial<Session>): Session => ({
@@ -28,16 +29,19 @@ function world(s: Session, { hold = false, pressFails }: { hold?: boolean; press
   let notified = 0;
   const typed: string[] = [];
   const pressed: Keystroke[][] = [];
+  const targets: Target[] = [];
   const decided: string[] = [];
   const sends: { done: () => void; fail: (err: Error) => void }[] = [];
   const store = { get: (id: string) => (id === row.id ? row : undefined), update: (_: string, patch: Partial<Session>) => void (row = { ...row, ...patch }) };
   const answers = answering({
     store,
-    send: (_tty, text) => {
+    send: (to, text) => {
+      targets.push(to);
       typed.push(text);
       return hold ? new Promise((done, fail) => sends.push({ done: () => done(), fail })) : Promise.resolve();
     },
-    keys: async (_tty, strokes) => {
+    keys: async (to, strokes) => {
+      targets.push(to);
       pressed.push(strokes);
       if (pressFails) throw pressFails;
     },
@@ -46,7 +50,7 @@ function world(s: Session, { hold = false, pressFails }: { hold?: boolean; press
     isCommand: async (_s, text) => text.startsWith('!') || text.split(' ')[0] === '/review',
     checkUploads: async (files) => (files as string[] | undefined) ?? [],
   });
-  return { answers, store, row: () => row, notified: () => notified, typed, pressed, decided, sends };
+  return { answers, store, row: () => row, notified: () => notified, typed, pressed, targets, decided, sends };
 }
 
 test('two answers to one decision at once type once: the second is refused while the first still types', async () => {
@@ -210,6 +214,27 @@ test('a menu answer whose keys stopped part way stays answered, since the same k
   const none = world(session({ menu, status: 'waiting' }), { pressFails: new Error('can\'t find pane: s') });
   await assert.rejects(none.answers.answerMenu('s', blue), /can't find pane/);
   assert.deepEqual([none.row().answered, decisionKey(none.row()), none.decided], [null, 'm:m1', []]);
+});
+
+test('an answer whose Enter was held back stays answered, as the text waits in the terminal, and says so', async () => {
+  const w = world(session({ question }), { hold: true });
+  const answer = w.answers.answer('s', { key: 'q:q1', choice: 'A' });
+  await flush();
+  const held = new Unsent('Claude is showing a permission prompt in its terminal, so Enter was not pressed');
+  w.sends[0].fail(held);
+  await assert.rejects(answer, (err) => err === held);
+  assert.deepEqual([w.row().answered?.key, decisionKey(w.row()), w.decided], ['q:q1', null, ['s']]);
+});
+
+test("each send names the Claude it is for, by pid, tty and conversation, and only a menu answer may answer Claude's prompt", async () => {
+  const w = world(session({ menu, status: 'waiting' }));
+  await w.answers.answerMenu('s', { toolUseId: 'm1', answers: [{ labels: ['Red'], other: '' }] });
+  const typing = world(session({}));
+  await typing.answers.type('s', '/rename Cart merge');
+  assert.deepEqual([...w.targets, ...typing.targets], [
+    { pid: 1, tty: '/dev/ttys001', conversation: 's', prompt: true },
+    { pid: 1, tty: '/dev/ttys001', conversation: 's', prompt: false },
+  ]);
 });
 
 test('accepting the second opinion is claimed like an answer: a second accept is refused while the first types', async () => {
