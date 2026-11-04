@@ -32,6 +32,11 @@ test('multiple choice toggles in order, Tab moves on, and the review step needs 
   assert.deepEqual(menuKeystrokes(menu(question(true)), [{ labels: ['Blue', 'Red'], other: '' }]), keys('enter', 'arrow_down', 'arrow_down', 'enter', 'tab', 'enter'));
 });
 
+test('a label picked twice is ticked once, as a second Enter on it would untick it', () => {
+  assert.deepEqual(menuKeystrokes(menu(question(true)), [{ labels: ['Blue', 'Blue'], other: '' }]), keys('arrow_down', 'arrow_down', 'enter', 'tab', 'enter'));
+  assert.deepEqual(menuKeystrokes(menu(question()), [{ labels: ['Red', 'Red'], other: '' }]), keys('enter'));
+});
+
 test('two questions end with the review Enter', () => {
   assert.deepEqual(
     menuKeystrokes(menu(question(), question()), [{ labels: ['Red'], other: '' }, { labels: ['Green'], other: '' }]),

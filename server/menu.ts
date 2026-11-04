@@ -17,7 +17,8 @@ export function menuKeystrokes(menu: Menu, answers: MenuAnswer[]) {
     const a = answers[i];
     // Typed into a one-line field, where a newline would be Enter and a tab Tab.
     const other = a.other?.replace(/\s+/g, ' ').trim() ?? '';
-    const picked = a.labels.map((l) => q.options.findIndex((o) => o.label === l));
+    // Enter toggles a multiple choice, so a label picked twice would untick it.
+    const picked = [...new Set(a.labels)].map((l) => q.options.findIndex((o) => o.label === l));
     if (picked.includes(-1)) throw new Error(`unknown option for "${q.question}"`);
     if (q.multiSelect) {
       if (other) throw new Error('a multiple-choice question takes only its options here; write anything else in the terminal');
