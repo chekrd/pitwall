@@ -10,6 +10,9 @@ const plistOf = (label: string) => join(homedir(), 'Library', 'LaunchAgents', `$
 const PLIST = plistOf(LABEL);
 const DOMAIN = `gui/${process.getuid!()}`;
 const LOG = join(DATA_DIR, 'server.log');
+// pnpm's real Node path is versioned and pruned on a devEngines bump; its .bin symlink is re-pointed instead.
+const PNPM_NODE = join(ROOT, 'node_modules', '.bin', 'node');
+const NODE = existsSync(PNPM_NODE) ? PNPM_NODE : process.execPath;
 
 const launchctl = (...args: string[]) => execFileSync('/bin/launchctl', args, { stdio: 'inherit' });
 
@@ -20,7 +23,7 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${process.execPath}</string>
+    <string>${NODE}</string>
     <string>${join(ROOT, 'server', 'main.ts')}</string>
   </array>
   <key>WorkingDirectory</key><string>${ROOT}</string>
@@ -60,7 +63,7 @@ switch (process.argv[2]) {
     mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(PLIST, plist);
     launchctl('bootstrap', DOMAIN, PLIST);
-    console.log(`installed ${PLIST}\nnode: ${process.execPath}\nlog: ${LOG}`);
+    console.log(`installed ${PLIST}\nnode: ${NODE}\nlog: ${LOG}`);
     break;
   case 'uninstall':
     uninstall();
