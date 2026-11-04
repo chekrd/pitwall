@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { loginEnv, which } from './env.ts';
 
-export const CLAUDE = await which('claude');
+// Missing only where Claude Code is not installed, as in tests; a run then fails when it spawns.
+export const CLAUDE = await which('claude').catch(() => 'claude');
 
 export interface HeadlessOptions {
   cwd: string;
@@ -10,19 +11,109 @@ export interface HeadlessOptions {
   signal?: AbortSignal;
   // Keeps the run's session, which a later run can resume.
   persist?: boolean;
+  // Asked for by the developer, or waited on by them: it goes ahead of background runs.
+  urgent?: boolean;
   onEvent?: (event: Record<string, any>) => void;
 }
 
+const MAX_RUNS = 4;
+const GRACE_MS = 5000;
+
+// Every claude -p shares these slots; background runs leave one free, so the developer's never wait behind them.
+export function limiter(max: number) {
+  let active = 0;
+  const queue: { urgent: boolean; go: () => void }[] = [];
+  const pump = () => {
+    for (let i = 0; i < queue.length;) {
+      if (active < (queue[i].urgent ? max : max - 1)) {
+        active++;
+        queue.splice(i, 1)[0].go();
+      } else {
+        i++;
+      }
+    }
+  };
+  return {
+    slot(urgent: boolean, signal?: AbortSignal): Promise<() => void> {
+      return new Promise((resolve, reject) => {
+        if (signal?.aborted) return reject(new Error('stopped'));
+        let released = false;
+        const release = () => {
+          if (released) return;
+          released = true;
+          active--;
+          pump();
+        };
+        const onAbort = () => {
+          const i = queue.indexOf(entry);
+          if (i < 0) return;
+          queue.splice(i, 1);
+          reject(new Error('stopped'));
+        };
+        const entry = {
+          urgent,
+          go: () => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve(release);
+          },
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+        const firstBackground = urgent ? queue.findIndex((q) => !q.urgent) : -1;
+        queue.splice(firstBackground < 0 ? queue.length : firstBackground, 0, entry);
+        pump();
+      });
+    },
+    get active() {
+      return active;
+    },
+    get waiting() {
+      return queue.length;
+    },
+  };
+}
+
+const runs = limiter(MAX_RUNS);
+
 // With onEvent the run streams its messages and the final result is the stream's `result` event.
-export function headless(prompt: string, opts: HeadlessOptions): Promise<Record<string, any>> {
+export async function headless(prompt: string, opts: HeadlessOptions): Promise<Record<string, any>> {
+  const release = await runs.slot(!!opts.urgent, opts.signal);
+  try {
+    return await runCommand(CLAUDE, prompt, opts);
+  } finally {
+    release();
+  }
+}
+
+// Claude runs in a process group of its own, so the shells and servers it started go with it when it is stopped.
+export function runCommand(command: string, prompt: string, opts: HeadlessOptions, graceMs = GRACE_MS): Promise<Record<string, any>> {
   const format = opts.onEvent ? ['--output-format', 'stream-json', '--verbose'] : ['--output-format', 'json'];
   return new Promise((resolve, reject) => {
-    const child = spawn(CLAUDE, ['-p', ...format, ...(opts.persist ? [] : ['--no-session-persistence']), ...opts.args], {
+    if (opts.signal?.aborted) return reject(new Error('stopped'));
+    const child = spawn(command, ['-p', ...format, ...(opts.persist ? [] : ['--no-session-persistence']), ...opts.args], {
       cwd: opts.cwd,
       env: loginEnv,
-      signal: opts.signal,
+      detached: true,
     });
-    const timer = setTimeout(() => child.kill('SIGTERM'), opts.timeoutMs);
+    let closed = false;
+    let killer: NodeJS.Timeout | undefined;
+    let timedOut = false;
+    const signalGroup = (signal: NodeJS.Signals) => {
+      try {
+        process.kill(-child.pid!, signal);
+      } catch {
+        // already gone
+      }
+    };
+    const stop = () => {
+      if (closed || killer || child.pid === undefined) return;
+      signalGroup('SIGTERM');
+      killer = setTimeout(() => signalGroup('SIGKILL'), graceMs);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stop();
+    }, opts.timeoutMs);
+    opts.signal?.addEventListener('abort', stop, { once: true });
     let out = '';
     let err = '';
     let result: Record<string, any> | null = null;
@@ -42,11 +133,24 @@ export function headless(prompt: string, opts: HeadlessOptions): Promise<Record<
       }
     });
     child.stderr.on('data', (d) => (err += d));
-    child.on('error', (e) => reject(e.name === 'AbortError' ? new Error('stopped') : e));
-    child.on('close', (code, signal) => {
+    child.on('error', (e) => {
+      closed = true;
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', stop);
+      reject(e);
+    });
+    child.on('close', (code, signal) => {
+      closed = true;
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', stop);
+      // The group may outlive its leader; whatever is left of it goes now.
+      if (killer) {
+        clearTimeout(killer);
+        signalGroup('SIGKILL');
+      }
       if (opts.signal?.aborted) return reject(new Error('stopped'));
-      if (code !== 0) return reject(new Error(signal ? 'claude -p timed out' : `claude -p exited ${code}: ${err || out}`.slice(0, 1000)));
+      if (timedOut) return reject(new Error('claude -p timed out'));
+      if (code !== 0) return reject(new Error(signal ? `claude -p was killed by ${signal}` : `claude -p exited ${code}: ${err || out}`.slice(0, 1000)));
       if (opts.onEvent) return result ? resolve(result) : reject(new Error('claude -p ended without a result'));
       try {
         resolve(JSON.parse(out));
