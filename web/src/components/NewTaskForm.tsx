@@ -216,6 +216,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
   };
 
   const onFilterKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (shown.length) setActive((at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length);
@@ -319,6 +320,7 @@ function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | n
   };
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!open) return show();

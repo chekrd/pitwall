@@ -34,6 +34,7 @@ export function TaskName({ session, name }: { session: Session; name: string }) 
         e.currentTarget.setSelectionRange(end, end);
       }}
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter') e.currentTarget.blur();
         if (e.key === 'Escape') {
           e.preventDefault();

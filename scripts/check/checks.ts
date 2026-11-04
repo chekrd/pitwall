@@ -2766,6 +2766,51 @@ export const checks: Check[] = [
     },
   },
   {
+    name: 'P4.ime Enter and Esc that an input method takes while it composes leave the rename field, New task\'s repository filter and its branch list as they are',
+    async run({ page, mock }) {
+      // The keydown a key gives while an input method composes, which the method takes for its own.
+      const composing = (key: string) => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, isComposing: true, bubbles: true, cancelable: true }));
+      await openSheetOf(page, mock, 's-reviews');
+      await page.click('#task-sheet h2 button');
+      await page.until('the rename field', () => document.activeElement?.getAttribute('aria-label') === 'Task name');
+      await page.type(' X');
+      await page.eval(composing, 'Enter');
+      await page.eval(composing, 'Escape');
+      await sleep(150);
+      assert.equal(await page.eval(() => document.activeElement?.getAttribute('aria-label')), 'Task name', 'a composing key ended the rename');
+      await page.key('Escape');
+      await page.until('the title back', () => document.querySelector('#task-sheet h2')?.textContent === 'Lazy-load product reviews');
+
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      await page.click('dialog#new-task button[aria-haspopup="listbox"]');
+      await page.until('the picker, its filter focused', () => document.activeElement === document.querySelector('#new-task [data-repo-picker] input'));
+      await page.type('storefront');
+      await page.eval(composing, 'Enter');
+      await sleep(150);
+      assert.equal(await page.eval(pickerOpen), true, 'a composing Enter picked the repository');
+      await page.key('Enter');
+      await page.until('the picker to close', () => !document.querySelector('#new-task [data-repo-picker]:popover-open'));
+
+      const list = '#new-task [data-branch-picker]';
+      const open = (list: string) => !!document.querySelector(`${list}:popover-open`);
+      await page.click('dialog#new-task label', 'Current checkout');
+      await page.until('the branches', (list: string) => document.querySelectorAll(`${list} [role="option"]`).length > 40, list);
+      await page.eval(() => document.querySelector<HTMLInputElement>('#new-task [data-branch-field] input')!.focus());
+      await page.key('ArrowDown');
+      await page.until('the list', open, list);
+      await page.type('kcl-1561');
+      await page.until('ten matches', (list: string) => document.querySelectorAll(`${list} [role="option"]`).length === 10, list);
+      await page.eval(composing, 'Enter');
+      await page.eval(composing, 'Escape');
+      await sleep(150);
+      assert.deepEqual([await page.eval(open, list), await page.eval(() => document.querySelector<HTMLInputElement>('#new-task [data-branch-field] input')!.value)], [true, 'kcl-1561'], 'a composing key picked a branch or closed the list');
+      await page.key('Escape');
+      await page.until('the list to close', (list: string) => !document.querySelector(`${list}:popover-open`), list);
+    },
+  },
+  {
     name: 'P4.delete-stays-closed a delete dialog closed just as its loss check comes back stays closed',
     async run({ page, mock }) {
       await page.goto(`${mock.url}/wall`);
