@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
 import { storeArtifacts } from './artifacts.ts';
-import { conversationMeta, liveConversations, startSource, type Activity, type LiveProcess } from './conversations.ts';
+import { conversationMeta, forgetHooked, liveConversations, startSource, type Activity, type LiveProcess } from './conversations.ts';
 import { repos, sessions, type Session, type SessionStatus } from './db.ts';
 import { handOver, leftBy, taskOf } from './handover.ts';
 import { fullDiff, pullRequestUrl, repoRoot } from './git.ts';
@@ -165,6 +165,7 @@ export async function sync() {
 }
 
 async function syncLive() {
+  for (const [id, at] of ignored) if (Date.now() - at >= IGNORE_RETRY_MS) ignored.delete(id);
   const live = await liveConversations();
   const livePids = new Set([...live.values()].map((p) => p.pid));
   let changed = false;
@@ -211,7 +212,10 @@ async function syncLive() {
     if (s.aliveAt === null || now - s.aliveAt >= ALIVE_MS) sessions.alive(s.id, now);
   }
   let starting: Set<string> | undefined;
-  for (const s of sessions.all()) {
+  const all = sessions.all();
+  const known = new Set(all.flatMap((s) => [s.conversation, ...s.history.map((h) => h.id)]));
+  forgetHooked((id) => live.has(id) || known.has(id));
+  for (const s of all) {
     if (s.status === 'exited' || live.has(s.conversation)) {
       if (s.status !== 'exited') changed = (await readTranscript(s, live.get(s.conversation))) || changed;
       continue;

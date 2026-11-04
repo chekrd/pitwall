@@ -663,15 +663,22 @@ export async function listConversations(cwd: string, live: Map<string, LiveProce
 }
 
 // Where the hooks said each conversation's transcript is, and how it started; the folder name is guessed only without.
-const hooked = new Map<string, { transcript: string | null; source: string | null }>();
+const hooked = new Map<string, { transcript: string | null; source: string | null; at: number }>();
+const HOOKED_MS = 10 * 60_000;
 
 export const guessedTranscriptFile = async (cwd: string, id: string) => join(await projectDir(cwd), `${id}.jsonl`);
 
 export const transcriptFile = async (cwd: string, id: string) => hooked.get(id)?.transcript ?? guessedTranscriptFile(cwd, id);
 
-export function hookedConversation(id: string, seen: { transcript?: string | null; source?: string | null }) {
+export function hookedConversation(id: string, seen: { transcript?: string | null; source?: string | null }, now = Date.now()) {
   const known = hooked.get(id);
-  hooked.set(id, { transcript: seen.transcript ?? known?.transcript ?? null, source: seen.source ?? known?.source ?? null });
+  hooked.set(id, { transcript: seen.transcript ?? known?.transcript ?? null, source: seen.source ?? known?.source ?? null, at: now });
+}
+
+// Forgets the conversations no task has and no Claude runs, once their hooks have been quiet a while: a hook comes
+// before the sync finds its Claude.
+export function forgetHooked(kept: (id: string) => boolean, now = Date.now()) {
+  for (const [id, h] of hooked) if (now - h.at > HOOKED_MS && !kept(id)) hooked.delete(id);
 }
 
 // The SessionStart hook's source, when it ran for this conversation: 'clear' for one that /clear started.

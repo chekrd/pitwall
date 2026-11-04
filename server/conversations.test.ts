@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { exchanges, fileMeta, promptImage } from './conversations.ts';
+import { exchanges, fileMeta, forgetHooked, hookedConversation, promptImage, startSource } from './conversations.ts';
 import { mergeLinks } from './links.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'pitwall-test-'));
@@ -396,4 +396,14 @@ test('the model and effort come from the last request of the main conversation, 
   assert.deepEqual([m.model, m.effort], ['claude-opus-5-5', 'high']);
   const older = await meta([prompt('x'), { ...assistant([text('ok')]), message: { model: 'claude-sonnet-5-5', content: [text('ok')] } }]);
   assert.deepEqual([older.model, older.effort], ['claude-sonnet-5-5', null]);
+});
+
+test("what the hooks said is forgotten for a conversation no task has and no Claude runs, once they have been quiet ten minutes", () => {
+  const minute = 60_000;
+  hookedConversation('gone', { source: 'startup' }, 0);
+  hookedConversation('kept', { source: 'clear' }, 0);
+  hookedConversation('recent', { source: 'resume' }, 0);
+  hookedConversation('recent', { transcript: '/t/recent.jsonl' }, 5 * minute);
+  forgetHooked((id) => id === 'kept', 11 * minute);
+  assert.deepEqual(['gone', 'kept', 'recent'].map(startSource), [null, 'clear', 'resume']);
 });
