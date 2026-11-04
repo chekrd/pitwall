@@ -482,12 +482,12 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
       if (!loss.gone && !loss.checkout && loss.files + loss.commits > 0) throw new Error('not everything is pushed: approve throwing it away in Clear task');
     }
     const worktree = repoOf(s.repoId)?.worktrees.find((w) => w.path === s.worktree);
-    const path = s.repoId === null || (worktree && !worktree.isMain) ? s.worktree : null;
+    const path = (s.repoId === null || (worktree && !worktree.isMain)) && !sharedWith(s) ? s.worktree : null;
     const ids = (path ? state.sessions.filter((o) => o.worktree === path || o.worktree.startsWith(`${path}/`)) : [s, ...subtasksOf(s.id)]).map((o) => o.id);
     const hold = clearHold;
     return clearing.run(path ?? `task:${s.id}`, ids, async () => {
       await hold?.done;
-      clearTask(s);
+      clearTask(s, path !== null);
     });
   },
   'dismiss-clear-error': (s) => clearing.dismiss(s.id),
@@ -495,15 +495,20 @@ const actions: Record<string, (s: Session, body: any) => unknown> = {
 
 const clearing = clearings(() => push());
 
-function clearTask(s: Session) {
-  if (s.repoId === null) {
+// As the server: a worktree or task folder goes only when no other task works in it; else only the task goes.
+function sharedWith(s: Session) {
+  const own = new Set([s, ...subtasksOf(s.id)]);
+  return state.sessions.some((o) => !own.has(o) && (o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)));
+}
+
+function clearTask(s: Session, removesPlace: boolean) {
+  if (s.repoId === null && removesPlace) {
     for (const { repo, worktree } of taskWorktrees(s.worktree)) repo.worktrees = repo.worktrees.filter((w) => w !== worktree);
     state.sessions = state.sessions.filter((o) => o.worktree !== s.worktree && !o.worktree.startsWith(`${s.worktree}/`));
     push();
     return;
   }
-  const worktree = mustRepo(s.repoId).worktrees.find((w) => w.path === s.worktree);
-  if (worktree && !worktree.isMain) return removeWorktree(mustRepo(s.repoId), s.worktree);
+  if (removesPlace && s.repoId !== null) return removeWorktree(mustRepo(s.repoId), s.worktree);
   const gone = new Set([s, ...subtasksOf(s.id)]);
   state.sessions = state.sessions.filter((o) => !gone.has(o));
   push();
@@ -534,6 +539,8 @@ function deleteLoss(s: Session): Awaited<ReturnType<typeof deleteWorktreeLoss>> 
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);
   if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");
   const subtasks = subtasksOf(s.id).length;
+  const shared = { deletesBranch: false, files: 0, commits: 0, checkout: true, shared: true, subtasks };
+  if (s.repoId === null && sharedWith(s)) return { branch: null, ...shared };
   if (s.repoId === null) {
     const repos = taskWorktrees(s.worktree).map(({ repo: r, worktree: w }, i) => ({
       name: r.name, branch: w.branch, deletesBranch: !!w.branch && !longLived(r, w.branch), files: i === 0 ? DELETE_LOSS.files : 0, commits: i === 0 ? DELETE_LOSS.commits : 0,
@@ -544,6 +551,7 @@ function deleteLoss(s: Session): Awaited<ReturnType<typeof deleteWorktreeLoss>> 
   }
   if (!repo || !worktree) return { branch: null, deletesBranch: false, files: 0, commits: 0, checkout: true, gone: true, subtasks };
   if (worktree.isMain) return { branch: worktree.branch, deletesBranch: false, files: 0, commits: 0, checkout: true, subtasks };
+  if (sharedWith(s)) return { branch: worktree.branch, ...shared };
   const deletesBranch = !!worktree.branch && !longLived(repo, worktree.branch);
   return { branch: worktree.branch, deletesBranch, files: DELETE_LOSS.files, commits: DELETE_LOSS.commits, subtasks };
 }

@@ -1866,12 +1866,37 @@ export const checks: Check[] = [
     },
   },
   {
-    name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task, its subtask and another task in its worktree show Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
+    name: 'P4.9.shared a task started in a worktree another task works in: Clear task asks to clear only the task, says the worktree stays because another task works in it, and as nothing is lost starts on Clear task; the other task and the worktree stay',
+    async run({ page, mock }) {
+      const before = await mock.get('/api/state');
+      const worktree = before.sessions.find((x: { id: string }) => x.id === 's-search').worktree;
+      await mock.post('/mock/add', { template: 'idle', id: 's-twin', worktree, title: 'Another task in search-typos' });
+      await page.goto(`${mock.url}/s/s-twin/overview`);
+      await page.until('the task page', sheetOpen);
+      await page.click('#task-sheet button[aria-label="Clear task"]');
+      const shown = await page.until('the dialog', () => {
+        const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
+        return d?.open && !d.innerText.includes('Checking') && document.activeElement?.textContent === 'Clear task'
+          ? { title: d.querySelector('h2')?.textContent?.trim(), text: d.querySelector('[data-shared]')?.textContent, loss: d.querySelectorAll('li').length, approve: !!d.querySelector('[data-approve]') }
+          : null;
+      });
+      assert.deepEqual({ ...shown, text: undefined }, { title: 'Clear the task?', text: undefined, loss: 0, approve: false });
+      assert.match(shown.text ?? '', /Another task on the board, archived or not, works in this worktree too, so it stays as it is, on \S+\. Clearing that task as well removes it\./);
+      await page.key('Enter');
+      const [cleared] = await logged(mock, 'the clearing', (e) => e.method === 'POST' && e.action === 'delete-worktree');
+      assert.deepEqual([cleared.sessionId, cleared.status], ['s-twin', 204]);
+      await until('s-twin gone', async () => !(await mock.get('/api/state')).sessions.some((x: { id: string }) => x.id === 's-twin'));
+      const after = await mock.get('/api/state');
+      assert.ok(after.sessions.some((x: { id: string }) => x.id === 's-search'), 'the other task went');
+      assert.ok(after.repos.some((r: { worktrees: { path: string }[] }) => r.worktrees.some((w) => w.path === worktree)), 'the worktree went');
+    },
+  },
+  {
+    name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task and its subtask show Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
     expectedErrors: [/status of 400/, /Claude did not quit/],
     async run({ page, mock, shot }) {
       const worktree = `${await mock.home()}/code/worktrees/search-typos/storefront`;
-      const ids = ['s-search', 's-sub', 's-twin'];
-      await mock.post('/mock/add', { template: 'idle', id: 's-twin', worktree, title: 'Another task in search-typos' });
+      const ids = ['s-search', 's-sub'];
       await mock.post('/mock/add', { template: 'idle', id: 's-sub', worktree, title: 'Fix: typo ranking', parent: { id: 's-search', basis: 'b', finding: 0, title: 'Typo ranking', kind: 'accept', text: '' } });
       const clear = async () => {
         await page.until('the delete dialog', () => {
@@ -1894,14 +1919,14 @@ export const checks: Check[] = [
       await page.click(':popover-open button', 'Clear task');
       await clear();
       await page.goto(`${mock.url}/wall`);
-      const tiles = await page.until('both tiles clearing', (all: string[]) => {
+      const tiles = await page.until('the tile clearing', (all: string[]) => {
         const shown = all.map((id) => {
           const t = document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`);
           return t && { attention: t.dataset.attention, label: t.querySelector('header [class*="state"]')?.textContent, trash: !!t.querySelector('[data-clear]') };
         });
         return shown.every((t) => t?.attention === 'clearing') && shown;
-      }, ['s-search', 's-twin']);
-      assert.deepEqual(tiles, [0, 1].map(() => ({ attention: 'clearing', label: 'Clearing…', trash: false })));
+      }, ['s-search']);
+      assert.deepEqual(tiles, [{ attention: 'clearing', label: 'Clearing…', trash: false }]);
       assert.notEqual((await page.eval(tileOf, 's-cart'))?.attention, 'clearing', 'a task in another worktree is not clearing');
       const state = (await mock.get('/api/state')).sessions as { id: string; clearing: boolean; clearError: string | null }[];
       assert.deepEqual(state.filter((s) => s.clearing).map((s) => s.id).sort(), ids);
@@ -1916,14 +1941,14 @@ export const checks: Check[] = [
       await page.key('Escape');
       await shot('clearing-page');
 
-      const second = mock.post('/api/sessions/s-twin/delete-worktree', { discard: true });
+      const second = mock.post('/api/sessions/s-search/delete-worktree', { discard: true });
       await sleep(300);
-      assert.equal((await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length, 3, 'the held removal is still running');
+      assert.equal((await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length, 2, 'the held removal is still running');
       await mock.post('/mock/clear-release', {});
       await second;
       const removals = await logged(mock, 'both clears', (e) => e.method === 'POST' && e.action === 'delete-worktree');
-      assert.deepEqual(removals.map((e) => [e.sessionId, e.status]), [['s-search', 204], ['s-twin', 204]], 'the second joined the first, which a second removal of the gone worktree would fail');
-      await until('the three gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => ids.includes(s.id)));
+      assert.deepEqual(removals.map((e) => [e.sessionId, e.status]), [['s-search', 204], ['s-search', 204]], 'the second joined the first, which a second removal of the gone worktree would fail');
+      await until('both gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => ids.includes(s.id)));
 
       await mock.post('/mock/clear-hold', {});
       await page.goto(`${mock.url}/wall`);
