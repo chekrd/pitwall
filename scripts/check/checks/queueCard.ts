@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { sleep, until } from '../cdp.ts';
-import { card, frontIs, logged, newTaskOnRepo, openNewTask, openQueue, peeks, reachable, segmentsNow, settled, sidewaysScroll, startsInScroll, stateOf, still, tiles, toastsOf, whole, type Check } from '../helpers.ts';
+import { until } from '../cdp.ts';
+import { card, frontIs, logged, matches, newTaskOnRepo, openNewTask, openQueue, peeks, reachable, segmentsNow, settled, sidewaysScroll, startsInScroll, stateOf, still, tiles, toastsOf, whole, type Check } from '../helpers.ts';
 
 export const queueCard: Check[] = [
   {
@@ -223,7 +223,7 @@ export const queueCard: Check[] = [
   },
   {
     name: 'P5.1.8p a repository\'s own skill is suggested in its own worktrees only: /pr-to lists /pr-to-green on a storefront task and nothing on a billing-api one, each asking for its worktree\'s commands',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const home = await mock.home();
       const listed = () => [...document.querySelectorAll('#task-sheet [role="listbox"] [role="option"] code')].map((c) => c.textContent);
       const ask = async (id: string, worktree: string) => {
@@ -238,8 +238,7 @@ export const queueCard: Check[] = [
         return list.length ? list : null;
       }), ['/pr-to-green']);
       await ask('s-invoice', `${home}/code/worktrees/invoice-rounding/billing-api`);
-      await sleep(500);
-      assert.deepEqual(await page.eval(listed), []);
+      await holds('no skill of storefront\'s listed', 500, async () => matches(await page.eval(listed), []));
     },
   },
   {
@@ -321,14 +320,13 @@ export const queueCard: Check[] = [
   },
   {
     name: 'P5.1.13 when s-hooks, at the front, stops waiting for a reason outside the page, the card after it comes up, with no toast',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.key('ArrowRight');
       await page.until('s-hooks at the front', frontIs, 's-hooks');
       await mock.post('/mock/patch', { id: 's-hooks', patch: { menu: null, status: 'working' } });
       await page.until('s-group at the front', frontIs, 's-group');
-      await sleep(300);
-      assert.equal(await page.eval(toastsOf, 'info'), null);
+      await holds('no toast', 300, async () => (await page.eval(toastsOf, 'info')) === null);
     },
   },
   {
@@ -458,7 +456,7 @@ export const queueCard: Check[] = [
   {
     name: 'P5.1.19 a second opinion still running shows a spinner, a ticking clock, the step and Stop, which stops it at once; Retry asks again; on a menu the band shows running and failed too, and so does the task\'s page',
     clock: 'fast',
-    async run({ wait, page, mock, shot }) {
+    async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
       await page.until('s-group at the front', frontIs, 's-group');
@@ -469,8 +467,10 @@ export const queueCard: Check[] = [
       const first = await page.until('the running second opinion', running);
       assert.match(first.text, /^Second opinion in progress\s+\d+:\d\d\s+Stop\s+Read web\/src\/order\.ts$/);
       assert.equal(first.spinner, true);
-      await wait(1100);
-      assert.notEqual((await page.eval(running))?.clock, first.clock, 'the clock did not tick');
+      await page.until('the clock to tick', (clock) => {
+        const box = document.querySelector<HTMLElement>('[data-card] [data-advice="running"]');
+        return !!box && box.querySelector('strong + span')?.textContent !== clock;
+      }, first.clock);
       await page.until('the card to settle', still);
       await shot('queue-advice-running');
       const pressed = Date.now();
@@ -544,7 +544,7 @@ export const queueCard: Check[] = [
   {
     name: 'P5.1.21 typing in New task over the empty queue while a session arrives: "we fix 3 x" and Shift+Enter stay in the prompt, which keeps focus while the card comes up under the dialog; nothing is held, archived or undone',
     scenario: 'zero',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await openNewTask(page);
@@ -553,20 +553,18 @@ export const queueCard: Check[] = [
       await page.until('the arrival in the meter', () => !!document.querySelector('[data-segment][data-session="s-idle"]'));
       for (const key of 'we fix 3 x') await page.key(key);
       await page.key('Enter', { shift: true });
-      await sleep(300);
-      const held = await page.eval(() => ({
+      const prompt = () => ({
         open: !!document.querySelector('dialog#new-task:modal'),
         value: document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')?.value,
         focused: document.activeElement === document.querySelector('dialog#new-task textarea'),
         toasts: [...document.querySelectorAll('[data-toast]')].length,
-      }));
-      assert.deepEqual(held, { open: true, value: 'Fix the login we fix 3 x\n', focused: true, toasts: 0 });
-      assert.deepEqual((await mock.log()).filter((e) => e.path.startsWith('/api/sessions/')), []);
+      });
+      const untouched = async () => matches((await mock.log()).filter((e) => e.path.startsWith('/api/sessions/')), []);
+      await holds('the keys to stay in the prompt', 300, async () => matches(await page.eval(prompt), { open: true, value: 'Fix the login we fix 3 x\n', focused: true, toasts: 0 }) && untouched());
       await shot('typing-over-an-arrival');
       await page.key('Escape');
       await page.until('the card once New task closed', frontIs, 's-idle');
-      await sleep(300);
-      assert.deepEqual((await mock.log()).filter((e) => e.path.startsWith('/api/sessions/')), []);
+      await holds('nothing to go out', 300, untouched);
     },
   },
   {
@@ -680,7 +678,7 @@ export const queueCard: Check[] = [
     },
   },  {
     name: 'P5.1.n1-card typing in the reply box holds the card as it is: a new decision on it waits, then updates it in place with the same box and draft; the card leaving waits too, until focus leaves',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
       await page.key('w');
@@ -696,8 +694,7 @@ export const queueCard: Check[] = [
       };
       await mock.post('/mock/patch', { id: 's-cart', patch: { question: { toolUseId: 'toolu_02', title: 'Merge the carts for app logins too?' } } });
       await until('the new decision in the snapshot', async () => (await mock.get('/api/state')).sessions.find((x: { id: string }) => x.id === 's-cart').question.toolUseId === 'toolu_02');
-      await sleep(500);
-      assert.deepEqual(await page.eval(box), { session: 's-cart', key: 'q:toolu_01Cart', value: 'only if stock', focused: true, same: true });
+      await holds('the card to wait as it is', 500, async () => matches(await page.eval(box), { session: 's-cart', key: 'q:toolu_01Cart', value: 'only if stock', focused: true, same: true }));
       await page.click('[data-card] h1');
       await page.until('the update in place', () => document.querySelector<HTMLElement>('[data-card]')?.dataset.key === 'q:toolu_02');
       assert.deepEqual(await page.eval(box), { session: 's-cart', key: 'q:toolu_02', value: 'only if stock', focused: false, same: true });
@@ -707,8 +704,7 @@ export const queueCard: Check[] = [
       await page.type(' allows');
       await mock.post('/mock/patch', { id: 's-cart', patch: { question: null, status: 'working' } });
       await until('s-cart working in the snapshot', async () => (await mock.get('/api/state')).sessions.find((x: { id: string }) => x.id === 's-cart').status === 'working');
-      await sleep(500);
-      assert.deepEqual(await page.eval(box), { session: 's-cart', key: 'q:toolu_02', value: 'only if stock allows', focused: true, same: true });
+      await holds('the card to stay while the reply box has focus', 500, async () => matches(await page.eval(box), { session: 's-cart', key: 'q:toolu_02', value: 'only if stock allows', focused: true, same: true }));
       // Not on the card, which goes as the pointer goes down.
       await page.click('[data-wordmark]');
       await page.until('the card after it once focus left', frontIs, 's-hooks');

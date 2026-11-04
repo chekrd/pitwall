@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { sleep, until } from '../cdp.ts';
+import { until } from '../cdp.ts';
 import { connection, edgeLine, logged, luminance, openQueue, openSheetOf, POSTED_MS, reachable, ready, sidewaysScroll, wholeFile, type Check } from '../helpers.ts';
 
 export const board: Check[] = [
@@ -57,7 +57,7 @@ export const board: Check[] = [
   },
   {
     name: 'P0.4 diff: the fixture patch (12 files from ff30c77) renders split and dark, long lines wrapped; a file in the tree opens whole',
-    async run({ themes, page, mock, shot }) {
+    async run({ holds, themes, page, mock, shot }) {
       await page.goto(`${mock.url}/s/s-cart/diff`);
       const files = await page.until('the file tree', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length);
       assert.equal(files, 12);
@@ -106,9 +106,12 @@ export const board: Check[] = [
       await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
       await page.until('server/git.ts alone, as a whole file', wholeFile, 'server/git.ts');
       await page.until('its first change in view', () => !!document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-line-type^="change-"]'));
-      await sleep(300);
-      const frames = await page.eval(() => (window as unknown as { seen: string[] }).seen);
-      assert.equal(frames.length, 1, `the file changed after it showed, as its hunks alone or scrolled elsewhere: ${frames.join(' → ')}`);
+      await page.until('the file as it showed', () => (window as unknown as { seen: string[] }).seen.length > 0);
+      await holds('the file to stay as it showed', 300, async () => {
+        const frames = await page.eval(() => (window as unknown as { seen: string[] }).seen);
+        assert.equal(frames.length, 1, `the file changed after it showed, as its hunks alone or scrolled elsewhere: ${frames.join(' → ')}`);
+        return true;
+      });
       assert.equal(await page.eval(() => document.querySelector('nav[aria-label="Changed files"] > button')?.getAttribute('aria-pressed')), 'false');
       await shot('diff-whole-file');
       // The file opens at its first change and renders only the lines near the viewport, so look at both ends.

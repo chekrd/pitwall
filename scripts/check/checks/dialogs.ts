@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { sleep, until } from '../cdp.ts';
-import { actions, card, frontIs, HELD_MS, openFromWall, openNewTask, openQueue, openSheetOf, pickerOpen, pickRepo, ready, sheetOpen, still, tiles, toastsOf, wholeFile, type Check } from '../helpers.ts';
+import { until } from '../cdp.ts';
+import { actions, card, frontIs, HELD_MS, matches, openFromWall, openNewTask, openQueue, openSheetOf, pickerOpen, pickRepo, ready, sheetOpen, still, tiles, toastsOf, wholeFile, type Check } from '../helpers.ts';
 
 export const dialogs: Check[] = [
   {
     name: 'P4.esc-layers Esc over one file of the diff closes what is on top first: Keys, the ⋯ menu and the delete dialog each close and leave the file on its own; then Esc goes back to all files, and then closes the sheet',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openFromWall(page, mock, 's-invoice');
       await page.key('3');
       await page.until('the file tree', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 12);
@@ -23,9 +23,8 @@ export const dialogs: Check[] = [
         await page.until(what, (s: string) => !!document.querySelector(s), selector);
         await page.key('Escape');
         await page.until(`${what} to close`, (s: string) => !document.querySelector(s), selector);
-        await sleep(150);
-        assert.deepEqual(await page.eval(layers), { keys: false, menu: false, delete: false, sheet: true, files: 1 }, what);
-        assert.equal(await page.eval(wholeFile, 'server/git.ts'), true, `Esc on ${what} let go of the one file`);
+        await holds(`Esc on ${what} to keep the one file`, 150, async () =>
+          matches(await page.eval(layers), { keys: false, menu: false, delete: false, sheet: true, files: 1 }) && (await page.eval(wholeFile, 'server/git.ts')));
       };
       await escape('Keys', 'dialog#keys[open]', () => page.key('?'));
       await escape('the ⋯ menu', '[popover="auto"]:popover-open', () => page.click('#task-sheet button[aria-label="Session actions"]'));
@@ -42,7 +41,7 @@ export const dialogs: Check[] = [
   },
   {
     name: 'P4.esc-tooltip Esc with the pointer on the held send\'s toast, its tooltip showing, takes the send back and nothing goes out; with nothing held, Esc on a tooltip only dismisses it, and the next Esc leaves the Wall',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const tip = () => !!document.querySelector('#tooltip:popover-open');
       await openQueue(page, mock);
       await ready(page, 's-cart');
@@ -54,8 +53,7 @@ export const dialogs: Check[] = [
       await page.until('s-cart back at the front', frontIs, 's-cart');
       assert.equal(await page.eval(toastsOf, 'undo'), null, 'the undo toast stayed');
       await page.until('the tooltip gone', () => !document.querySelector('#tooltip:popover-open'));
-      await sleep(HELD_MS);
-      assert.deepEqual(await actions(mock), [], 'the send went out');
+      await holds('the send taken back to stay back', HELD_MS, async () => !(await actions(mock)).length);
 
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
@@ -63,15 +61,14 @@ export const dialogs: Check[] = [
       await page.until('the usage\'s tooltip', tip);
       await page.key('Escape');
       await page.until('the tooltip gone', () => !document.querySelector('#tooltip:popover-open'));
-      await sleep(150);
-      assert.equal(await page.eval(() => location.pathname), '/wall', 'the Esc on the tooltip left the Wall');
+      await holds('the Esc on the tooltip to stay on the Wall', 150, () => page.eval(() => location.pathname === '/wall'));
       await page.key('Escape');
       await page.until('the queue', () => location.pathname === '/');
     },
   },
   {
     name: 'P4.esc-diff over one file of the diff, Esc takes back a send held from the reply box and keeps the file, and Esc in the rename field only cancels the rename; the next Esc goes back to all files, and the reply box has the message back',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       // The page's clock runs slow, so the hold outlasts the steps to the file.
       await page.fastClock(0.4);
       await openFromWall(page, mock, 's-invoice');
@@ -86,16 +83,15 @@ export const dialogs: Check[] = [
       assert.ok(await page.eval(toastsOf, 'undo'), 'the hold ran out before the file opened');
       await page.key('Escape');
       await page.until('the undo toast gone', () => !document.querySelector('[data-toast][data-kind="undo"]'));
-      await sleep(150);
-      assert.deepEqual([await page.eval(sheetOpen), await page.eval(wholeFile, 'server/git.ts')], [true, true], 'the Esc that took the send back left the file');
+      const keptFile = async () => (await page.eval(sheetOpen)) && (await page.eval(wholeFile, 'server/git.ts'));
+      await holds('the Esc that took the send back to keep the file', 150, keptFile);
 
       await page.click('#task-sheet h2 button');
       await page.until('the rename field', () => document.activeElement?.getAttribute('aria-label') === 'Task name');
       await page.type(' X');
       await page.key('Escape');
       await page.until('the title back', () => document.querySelector('#task-sheet h2')?.textContent === 'Fix invoice PDF rounding');
-      await sleep(150);
-      assert.deepEqual([await page.eval(sheetOpen), await page.eval(wholeFile, 'server/git.ts')], [true, true], 'the Esc in the rename field left the file');
+      await holds('the Esc in the rename field to keep the file', 150, keptFile);
 
       await page.key('Escape');
       await page.until('all files again', () => document.querySelectorAll('section[data-file]').length === 12);
@@ -121,7 +117,7 @@ export const dialogs: Check[] = [
   },
   {
     name: 'P4.branches-once New task reads a repository\'s branch list once per opening: Current checkout does not ask again, a change of repository asks once, and opening New task again asks again',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const reads = async (repo: number) => (await mock.log()).filter((e) => e.method === 'GET' && e.path === `/api/repos/${repo}/branches`).length;
       const rows = (host: string) => [...document.querySelectorAll(`${host} [aria-label="Branches"] code`)].map((c) => c.textContent);
       await page.goto(`${mock.url}/wall`);
@@ -130,19 +126,16 @@ export const dialogs: Check[] = [
       await pickRepo(page, 'storefront');
       await page.click('dialog#new-task label', 'Current checkout');
       await page.until('the storefront branches', (host: string) => [...document.querySelectorAll(`${host} [aria-label="Branches"] code`)].some((c) => c.textContent === 'guest-cart-merge'), '#new-task');
-      await sleep(300);
-      assert.equal(await reads(1), 1);
+      await holds('Current checkout not to read the branches again', 300, async () => (await reads(1)) === 1);
       await pickRepo(page, 'billing');
       await page.until('the billing-api branches', (host: string) => [...document.querySelectorAll(`${host} [aria-label="Branches"] code`)].some((c) => c.textContent === 'webhook-retries'), '#new-task');
-      await sleep(300);
-      assert.deepEqual([await reads(1), await reads(2)], [1, 1]);
+      await holds('the change of repository to read its branches once', 300, async () => matches([await reads(1), await reads(2)], [1, 1]));
       assert.ok((await page.eval(rows, '#new-task')).includes('webhook-retries'));
       await page.key('Escape');
       await page.until('New task to close', () => !document.querySelector('#new-task[open]'));
       await openNewTask(page);
       await until('billing-api read again', async () => (await reads(2)) === 2);
-      await sleep(300);
-      assert.deepEqual([await reads(1), await reads(2)], [1, 2]);
+      await holds('New task opened again to read the branches once', 300, async () => matches([await reads(1), await reads(2)], [1, 2]));
     },
   },
   {
@@ -231,7 +224,7 @@ export const dialogs: Check[] = [
   },
   {
     name: 'P4.branch-filter New task\'s branch list stays closed until a click, ↓ or typing; 43+ branches scroll inside it and leave the dialog its size; typing filters, arrows and Enter pick, Esc closes only the list, and no match says so',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       const list = '#new-task [data-branch-picker]';
       const field = '#new-task [data-branch-field] input';
       const open = (list: string) => !!document.querySelector(`${list}:popover-open`);
@@ -247,8 +240,7 @@ export const dialogs: Check[] = [
       const before = await page.eval(dialogHeight);
       assert.equal(await page.eval(open, list), false, 'closed until asked');
       await page.eval((field: string) => document.querySelector<HTMLInputElement>(field)!.focus(), field);
-      await sleep(200);
-      assert.equal(await page.eval(open, list), false, 'focus alone does not open it');
+      await holds('focus alone to leave the list closed', 200, async () => !(await page.eval(open, list)));
 
       await page.key('ArrowDown');
       await page.until('the list', open, list);
@@ -282,7 +274,7 @@ export const dialogs: Check[] = [
   },
   {
     name: 'P4.ime Enter and Esc that an input method takes while it composes leave the rename field, New task\'s repository filter and its branch list as they are',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       // The keydown a key gives while an input method composes, which the method takes for its own.
       const composing = (key: string) => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, isComposing: true, bubbles: true, cancelable: true }));
       await openSheetOf(page, mock, 's-reviews');
@@ -291,8 +283,7 @@ export const dialogs: Check[] = [
       await page.type(' X');
       await page.eval(composing, 'Enter');
       await page.eval(composing, 'Escape');
-      await sleep(150);
-      assert.equal(await page.eval(() => document.activeElement?.getAttribute('aria-label')), 'Task name', 'a composing key ended the rename');
+      await holds('composing keys to leave the rename as it is', 150, () => page.eval(() => document.activeElement?.getAttribute('aria-label') === 'Task name'));
       await page.key('Escape');
       await page.until('the title back', () => document.querySelector('#task-sheet h2')?.textContent === 'Lazy-load product reviews');
 
@@ -303,8 +294,7 @@ export const dialogs: Check[] = [
       await page.until('the picker, its filter focused', () => document.activeElement === document.querySelector('#new-task [data-repo-picker] input'));
       await page.type('storefront');
       await page.eval(composing, 'Enter');
-      await sleep(150);
-      assert.equal(await page.eval(pickerOpen), true, 'a composing Enter picked the repository');
+      await holds('a composing Enter to leave the picker open', 150, () => page.eval(pickerOpen));
       await page.key('Enter');
       await page.until('the picker to close', () => !document.querySelector('#new-task [data-repo-picker]:popover-open'));
 
@@ -319,15 +309,15 @@ export const dialogs: Check[] = [
       await page.until('ten matches', (list: string) => document.querySelectorAll(`${list} [role="option"]`).length === 10, list);
       await page.eval(composing, 'Enter');
       await page.eval(composing, 'Escape');
-      await sleep(150);
-      assert.deepEqual([await page.eval(open, list), await page.eval(() => document.querySelector<HTMLInputElement>('#new-task [data-branch-field] input')!.value)], [true, 'kcl-1561'], 'a composing key picked a branch or closed the list');
+      await holds('composing keys to leave the branch list as it is', 150, async () =>
+        matches([await page.eval(open, list), await page.eval(() => document.querySelector<HTMLInputElement>('#new-task [data-branch-field] input')!.value)], [true, 'kcl-1561']));
       await page.key('Escape');
       await page.until('the list to close', (list: string) => !document.querySelector(`${list}:popover-open`), list);
     },
   },
   {
     name: 'P4.delete-stays-closed a delete dialog closed just as its loss check comes back stays closed',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       // The loss check's answer waits until the check lets it through.
@@ -355,8 +345,8 @@ export const dialogs: Check[] = [
         drawn.observe(dialog, { subtree: true, childList: true, characterData: true });
         (window as unknown as { e2eRelease: () => void }).e2eRelease();
       });
-      await sleep(400);
-      assert.equal(await page.eval(() => !!document.querySelector('dialog#delete-worktree[open]')), false, 'the dialog opened again');
+      await page.until('the dialog to close', () => !document.querySelector('dialog#delete-worktree[open]'));
+      await holds('the dialog to stay closed', 400, () => page.eval(() => !document.querySelector('dialog#delete-worktree[open]')));
     },
   },
   {

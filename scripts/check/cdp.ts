@@ -21,12 +21,37 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Truthy<T> = Exclude<T, null | undefined | false | 0 | ''>;
 
+// A call into a page whose document went away under it, as on a reload or a navigation.
+class Gone extends Error {}
+const GONE = /Inspected target navigated or closed|Execution context was destroyed|Cannot find (default )?(execution )?context/;
+
+async function unlessGone<T, G>(fn: () => T | Promise<T>, gone: G): Promise<T | G> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof Gone) return gone;
+    throw err;
+  }
+}
+
+// Polls `fn` until it returns something truthy. A page that reloads meanwhile counts as "not yet"; any other error ends it.
 export async function until<T>(what: string, fn: () => T | Promise<T>, timeout = 5000): Promise<Truthy<T>> {
   const end = Date.now() + timeout;
   for (;;) {
-    const value = await fn();
+    const value = await unlessGone(fn, null);
     if (value) return value as Truthy<T>;
     if (Date.now() > end) throw new Error(`timed out after ${timeout} ms waiting for ${what}`);
+    await sleep(50);
+  }
+}
+
+// Polls `fn` for `ms` and fails as soon as it returns something falsy, or the page reloads under it: for what must not
+// happen in that time, such as a reload or a send.
+export async function holds(what: string, ms: number, fn: () => unknown): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    if (!(await unlessGone(fn, false))) throw new Error(`expected ${what} for ${ms} ms; it ended after ${Date.now() - start} ms`);
+    if (Date.now() - start >= ms) return;
     await sleep(50);
   }
 }
@@ -182,7 +207,9 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
     });
 
     const evaluate = async (expression: string) => {
-      const r = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
+      const r = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }).catch((err: Error) => {
+        throw GONE.test(err.message) ? new Gone(err.message) : err;
+      });
       if (r.exceptionDetails) throw new Error(`in the page: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
       return r.result.value;
     };
@@ -272,17 +299,25 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
           for (const type of ['mousePressed', 'mouseReleased']) await cdp('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
         }
       },
-      // Moves the pointer to the middle of the first visible match (whose text contains `text`), once it is on top there.
+      // Moves the pointer to the middle of the first visible match (whose text contains `text`), once it is on top there
+      // and stays put, as click() does.
       async hover(selector: string, text = '') {
-        const at = await until(`${selector}${text ? ` with "${text}"` : ''} to take the pointer`, () => run((selector: string, text: string) => {
-          const el = [...document.querySelectorAll<HTMLElement>(selector)].find((e) => e.checkVisibility() && (e.textContent ?? '').includes(text));
-          if (!el) return null;
-          el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-          const r = el.getBoundingClientRect();
-          const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-          const hit = document.elementFromPoint(at.x, at.y);
-          return hit && el.contains(hit) ? at : null;
-        }, selector, text));
+        let last = '';
+        const at = await until(`${selector}${text ? ` with "${text}"` : ''} to take the pointer`, async () => {
+          const at = await run((selector: string, text: string) => {
+            const el = [...document.querySelectorAll<HTMLElement>(selector)].find((e) => e.checkVisibility() && (e.textContent ?? '').includes(text));
+            if (!el) return null;
+            el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            const r = el.getBoundingClientRect();
+            const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            const hit = document.elementFromPoint(at.x, at.y);
+            return hit && el.contains(hit) ? at : null;
+          }, selector, text);
+          const now = JSON.stringify(at);
+          const still = !!at && now === last;
+          last = now;
+          return still && at;
+        });
         await mouse('mouseMoved', at.x, at.y);
       },
       // Moves the pointer to a point of the viewport, and with `click` clicks there: on a dialog's backdrop, say, which no

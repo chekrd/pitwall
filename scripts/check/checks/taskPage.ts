@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { uploadsDir } from '../../../server/uploadPaths.ts';
-import { sleep, until } from '../cdp.ts';
+import { until } from '../cdp.ts';
 import { approveLoss, clearDisabled, logged, menuItems, openFromWall, openSheetOf, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
 
 export const taskPage: Check[] = [
@@ -210,7 +210,7 @@ export const taskPage: Check[] = [
   {
     name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task and its subtask show Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
     expectedErrors: [/status of 400/, /Claude did not quit/],
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       const worktree = `${await mock.home()}/code/worktrees/search-typos/storefront`;
       const ids = ['s-search', 's-sub'];
       await mock.post('/mock/add', { template: 'idle', id: 's-sub', worktree, title: 'Fix: typo ranking', parent: { id: 's-search', basis: 'b', finding: 0, title: 'Typo ranking', kind: 'accept', text: '' } });
@@ -258,8 +258,7 @@ export const taskPage: Check[] = [
       await shot('clearing-page');
 
       const second = mock.post('/api/sessions/s-search/delete-worktree', { discard: true });
-      await sleep(300);
-      assert.equal((await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length, 2, 'the held removal is still running');
+      await holds('the held removal to keep running', 300, async () => (await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length === 2);
       await mock.post('/mock/clear-release', {});
       await second;
       const removals = await logged(mock, 'both clears', (e) => e.method === 'POST' && e.action === 'delete-worktree');
@@ -364,7 +363,7 @@ export const taskPage: Check[] = [
   },
   {
     name: 'P4.9.conversation-long a long transcript opens on its last prompt with the replies near it drawn as Markdown and the far ones as written; scrolled up, the earliest is drawn as Markdown too, and the last prompt stays where it was until then',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const now = Date.now();
       const history = Array.from({ length: 80 }, (_, i) => ({ id: `c-old-${i}`, lastMessage: `Reply ${i} with **bold** and \`code\`.`, until: now - (80 - i) * 60_000 }));
       const long = Array.from({ length: 30 }, (_, i) => `Checked the rounding of line ${i + 1}.`).join('\n\n');
@@ -381,9 +380,7 @@ export const taskPage: Check[] = [
         const prompt = [...document.querySelectorAll('#task-sheet [data-prompt]')].at(-1)!.getBoundingClientRect().top;
         return Math.round(prompt - document.querySelector('#task-sheet [role="tabpanel"]')!.getBoundingClientRect().top);
       };
-      const at = await page.eval(lastPrompt);
-      await sleep(300);
-      assert.deepEqual([at, await page.eval(lastPrompt)], [18, 18], 'the last prompt moved as the replies near it were drawn');
+      await holds('the last prompt to stay put as the replies near it draw', 300, async () => (await page.eval(lastPrompt)) === 18);
       assert.match(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet article[data-exchange] [data-reply] > div')!.textContent), /^Reply 0 with \*\*bold\*\* and `code`\.$/);
       await page.eval(() => document.querySelector('#task-sheet [role="tabpanel"] > div')!.scrollTo({ top: 0 }));
       await page.until('the first reply drawn as Markdown', () => !!document.querySelector('#task-sheet article[data-exchange]')?.querySelector('[data-reply] strong'));

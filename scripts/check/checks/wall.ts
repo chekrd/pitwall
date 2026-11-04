@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { sleep, until } from '../cdp.ts';
+import { until } from '../cdp.ts';
 import { card, frame, meterIn, openFromWall, openSheetOf, settled, sheetOpen, tiles, wholeFile, withoutBoard, type Check } from '../helpers.ts';
 
 export const wall: Check[] = [
@@ -37,10 +37,8 @@ export const wall: Check[] = [
       assert.match(shown.texts['s-invoice'], /billing-api · invoice-rounding/);
       const clock = () => document.querySelector('[data-tile][data-session="s-invoice"] [data-explain="How long the turn has run"]')?.textContent;
       const first = await page.eval(clock);
-      await sleep(1100);
-      const second = await page.eval(clock);
       assert.match(first ?? '', /^\d+:\d\d$/);
-      assert.notEqual(second, first, 'the working clock did not tick');
+      await until('the working clock to tick', async () => (await page.eval(clock)) !== first);
       await shot('wall');
 
       await page.key('Escape');
@@ -90,13 +88,11 @@ export const wall: Check[] = [
       await withoutBoard(async (url) => {
         for (const path of ['/', '/wall', '/s/s-cart/overview']) {
           await page.goto(`${url}${path}`);
-          await sleep(300);
-          const before = await page.eval(() => ({
-            link: document.querySelector<HTMLElement>('[data-link]')?.dataset.link,
-            text: document.querySelector<HTMLElement>('[data-link]')?.innerText.trim(),
-            view: [...document.querySelectorAll<HTMLElement>('main, #task-sheet')].map((v) => v.innerText.trim()).at(-1),
-          }));
-          assert.deepEqual(before, { link: 'connecting', text: 'Connecting…', view: 'Connecting…' }, path);
+          await page.until(`${path} to say Connecting…`, () => {
+            const link = document.querySelector<HTMLElement>('[data-link]');
+            const view = [...document.querySelectorAll<HTMLElement>('main, #task-sheet')].map((v) => v.innerText.trim()).at(-1);
+            return link?.dataset.link === 'connecting' && link.innerText.trim() === 'Connecting…' && view === 'Connecting…';
+          });
         }
         await shot('connecting');
       });
@@ -154,7 +150,7 @@ export const wall: Check[] = [
   {
     name: 'P4.4 a tile opens its sheet on Overview, which takes focus itself: the working banner with a 30 px clock that ticks, the composer, Session summary · updated, Worth knowing, the latest reply with its code in colour, Facts with the repository, the worktree\'s name and its path under ~, whose Path, Branch and Session copy on a click (the path whole) and say Copied in place, Worth knowing and the reply copy from their heading, and the Artifacts links; Esc in the composer\'s command list closes only the list',
     clock: 'fast',
-    async run({ wait, page, mock, shot }) {
+    async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await page.click('[data-tile][data-session="s-invoice"] p');
@@ -187,8 +183,7 @@ export const wall: Check[] = [
         facts: ['Task', 'Repository', 'Worktree', 'Path', 'Branch', 'Model', 'Terminal', 'Session'], artifacts: ['Where the cent goes missing'],
       });
       assert.match(overview.status ?? '', /^Session summary · updated \d+m ago$/);
-      await wait(1100);
-      assert.notEqual((await page.eval(clock))?.text, first.text, 'the clock did not tick');
+      await until('the clock to tick', async () => (await page.eval(clock))?.text !== first.text);
       await page.until('the sheet to settle', settled);
       await shot('sheet-overview');
 
@@ -499,10 +494,12 @@ export const wall: Check[] = [
       await page.key('3');
       await page.until('every file listed', () => document.querySelectorAll('section[data-file]').length === 120);
       const drawn = () => [...document.querySelectorAll<HTMLElement>('section[data-file]')].filter((s) => s.querySelector('diffs-container')).map((s) => s.dataset.file!);
-      await sleep(300);
-      const first = await page.eval(drawn);
-      assert.ok(first.length >= 12 && first.length < 60, `${first.length} files drawn at once`);
-      assert.ok(first.includes((await page.eval(() => document.querySelector<HTMLElement>('section[data-file]')!.dataset.file))!), 'the first file is not drawn');
+      const top = await page.eval(() => document.querySelector<HTMLElement>('section[data-file]')!.dataset.file!);
+      const first = await until('the files in view to draw', async () => {
+        const now = await page.eval(drawn);
+        return now.length >= 12 && now.includes(top) && now;
+      });
+      assert.ok(first.length < 60, `${first.length} files drawn at once`);
 
       const last = await page.eval(() => [...document.querySelectorAll<HTMLElement>('section[data-file]')].at(-1)!.dataset.file!);
       assert.ok(!first.includes(last), 'the last file was drawn at once');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sleep, until } from '../cdp.ts';
-import { actions, card, dealt, frontIs, HELD_MS, logged, openQueue, pastePng, pillAt, POSTED_MS, pressEnter, ready, replyIn, sent, stateOf, still, toastsOf, unguarded, watchDeals, type Check } from '../helpers.ts';
+import { actions, card, dealt, frontIs, HELD_MS, logged, matches, openQueue, pastePng, pillAt, POSTED_MS, pressEnter, ready, replyIn, sent, stateOf, still, toastsOf, unguarded, watchDeals, type Check } from '../helpers.ts';
 
 export const sends: Check[] = [
   {
@@ -24,8 +24,7 @@ export const sends: Check[] = [
         '2 decisions · 1 terminal prompt · 2 finished turns', 'Pitwall',
       ]);
       await shot('queue-held');
-      await sleep(HELD_MS - (Date.now() - pressed));
-      const sent = await actions(mock);
+      const sent = await logged(mock, 'the held send', (e) => e.method === 'POST' && e.action !== null, POSTED_MS);
       assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.body, e.status]), [['accept-advice', 's-cart', { key: 'q:toolu_01Cart', adviceAt: advice.at }, 204]]);
       assert.ok(sent[0].at - pressed >= 4900, `posted ${sent[0].at - pressed} ms after ⏎`);
     },
@@ -33,7 +32,7 @@ export const sends: Check[] = [
   {
     name: 'P5.2.2 Undo gives back what the send took: option 2 with a note and a pasted picture held, Z within 3 s brings s-cart back with both in the reply box and nothing goes out; sent again, the answer carries the choice, the note and the picture',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.key('w');
@@ -50,8 +49,7 @@ export const sends: Check[] = [
       assert.ok(Date.now() - pressed < 3000, `back ${Date.now() - pressed} ms after the press`);
       assert.deepEqual({ ...(await page.eval(replyIn, '[data-card]')), focused: undefined }, { value: 'only if stock allows', files: ['ready shot.png'], focused: undefined });
       assert.equal(await page.eval(() => document.querySelector('[data-toast][data-kind="undo"]')), null, 'the undo toast stayed');
-      await wait(6000);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', 6000, async () => !(await actions(mock)).length);
 
       await page.until('the guard to end', unguarded);
       await page.click('[data-card] [data-option="2"]');
@@ -70,7 +68,7 @@ export const sends: Check[] = [
     name: 'P5.2.3 the choice frozen while the second opinion runs stays: with Send “Merge both carts” shown, advice that finishes on Ask the shopper shows on option 3, option 1 keeps the highlight, and ⏎ answers Merge both carts, not the advice',
     clock: 'fast',
     scenario: 'freeze',
-    async run({ wait, page, mock, shot }) {
+    async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       assert.equal((await page.eval(card))!.primary, 'Send “Merge both carts”');
@@ -85,7 +83,6 @@ export const sends: Check[] = [
       await shot('queue-freeze');
       await page.until('the guard to end', unguarded);
       await page.key('Enter');
-      await wait(HELD_MS);
       await logged(mock, 'the send', sent, POSTED_MS);
       assert.deepEqual((await actions(mock)).map((e) => [e.action, e.body]), [['answer', { key: 'q:toolu_01Cart', choice: 'Merge both carts' }]]);
     },
@@ -94,14 +91,13 @@ export const sends: Check[] = [
     name: 'P5.2.4 a second opinion that came in after the freeze is accepted by its own digit: 3 sends accept-advice with the new advice\'s at',
     clock: 'fast',
     scenario: 'freeze',
-    async run({ wait, page, mock }) {
+    async run({ page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       const advice = await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
       await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes("Second opinion's pick · 71%"));
       await page.until('the guard to end', unguarded);
       await page.key('3');
-      await wait(HELD_MS);
       await logged(mock, 'the send', sent, POSTED_MS);
       assert.deepEqual((await actions(mock)).map((e) => [e.action, e.body]), [['accept-advice', { key: 'q:toolu_01Cart', adviceAt: advice.at }]]);
     },
@@ -122,7 +118,6 @@ export const sends: Check[] = [
       const held = Date.now() - changed;
       assert.ok(held > 700 && held < 1600, `the guard ended ${held} ms after the advice changed`);
       await page.key('Enter');
-      await sleep(HELD_MS);
       await logged(mock, 'the send', sent, POSTED_MS);
       assert.deepEqual((await actions(mock)).map((e) => [e.action, e.body]), [['answer', { key: 'q:toolu_01Cart', choice: 'Merge both carts' }]]);
     },
@@ -157,11 +152,10 @@ export const sends: Check[] = [
   },
   {
     name: 'P5.2.7 the key guard: ⏎ as the first card comes up does nothing; two ⏎ 300 ms apart hold one send, and two 650 ms apart one more while the card after it stays; an auto-repeated ⏎ does nothing, and a double click on an option holds it once',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.eval(pressEnter, []);
-      await sleep(300);
-      assert.deepEqual([(await page.eval(card))!.session, await page.eval(toastsOf, 'undo')], ['s-cart', null], 'the first card was not guarded');
+      await holds('the ⏎ as the first card comes up to do nothing', 300, async () => matches([(await page.eval(card))!.session, await page.eval(toastsOf, 'undo')], ['s-cart', null]));
       await ready(page, 's-cart');
       await page.eval(pressEnter, [300]);
       await page.until('s-hooks at the front', frontIs, 's-hooks');
@@ -169,15 +163,13 @@ export const sends: Check[] = [
       await page.until('the guard to end', unguarded);
       await page.eval(pressEnter, [650]);
       await page.until('s-group at the front', frontIs, 's-group');
-      await sleep(400);
-      assert.equal((await page.eval(card))!.session, 's-group', 'the second ⏎ answered the card after it');
+      await holds('the second ⏎ to leave the card after it', 400, async () => (await page.eval(card))!.session === 's-group');
       await page.until('the guard to end', unguarded);
       await page.eval(pressEnter, [], true);
-      await sleep(400);
-      assert.equal((await page.eval(card))!.session, 's-group', 'an auto-repeated ⏎ answered');
+      await holds('an auto-repeated ⏎ to do nothing', 400, async () => (await page.eval(card))!.session === 's-group');
       await page.dblclick('[data-card] [data-option="2"]');
       await page.until('s-astro at the front', frontIs, 's-astro');
-      await sleep(HELD_MS + 600);
+      await until('the three held sends', async () => (await actions(mock)).length >= 3, POSTED_MS);
       assert.deepEqual((await actions(mock)).map((e) => [e.sessionId, e.action, e.body.choice ?? null]).toSorted(), [
         ['s-cart', 'accept-advice', null], ['s-group', 'answer', 'By repo'], ['s-hooks', 'answer-menu', null],
       ]);
@@ -186,15 +178,14 @@ export const sends: Check[] = [
   {
     name: 'P5.2.8 Space on a focused option shows or hides the details and holds nothing',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.eval(() => document.querySelector<HTMLElement>('[data-card] [data-option="2"]')!.focus());
       await page.key(' ');
       await page.until('the details hidden', () => document.querySelector('[data-card] section[aria-label="Claude\'s details"] button')?.getAttribute('aria-expanded') === 'false');
       assert.deepEqual([(await page.eval(card))!.session, await page.eval(toastsOf, 'undo')], ['s-cart', null]);
-      await wait(HELD_MS);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
     },
   },
   {
@@ -263,7 +254,7 @@ export const sends: Check[] = [
   {
     name: 'P5.2.12 a command: /compact and Enter hold it with a toast Sending: /compact, the card stays and its reply box is empty and says the question stays open; it goes out 5 s on; Z puts it back in the box instead',
     clock: 'fast',
-    async run({ wait, page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.key('w');
@@ -289,8 +280,7 @@ export const sends: Check[] = [
       await page.key('z');
       await page.until('the command back in the box', () => document.querySelector<HTMLTextAreaElement>('[data-card] textarea')?.value === '/compact');
       assert.equal((await page.eval(card))!.session, 's-cart');
-      await wait(6000);
-      assert.equal((await actions(mock)).length, 1, 'the command taken back went out');
+      await holds('the command taken back to stay', 6000, async () => (await actions(mock)).length === 1);
     },
   },
   {
@@ -388,7 +378,7 @@ export const sends: Check[] = [
   {
     name: 'P5.2.16 the early check: an answer held on s-group whose turn moves on (lastTurn t9) fails with Not sent to Group board tiles by repo: this question is no longer open, and nothing is posted',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
       await ready(page, 's-group');
@@ -397,14 +387,13 @@ export const sends: Check[] = [
       await mock.post('/mock/patch', { id: 's-group', patch: { lastTurn: 't9' } });
       const [error] = await page.until('the error toast', toastsOf, 'error');
       assert.equal(error.text, 'Not sent to Group board tiles by repo: this question is no longer open\nShow');
-      await wait(HELD_MS);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
     },
   },
   {
     name: 'P5.2.16-working the early check when the session went on working: Show opens its sheet on Overview, and the answer it held is back in the sheet\'s reply box',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
       await ready(page, 's-group');
@@ -419,14 +408,13 @@ export const sends: Check[] = [
       await page.click('[data-toast][data-kind="error"] button', 'Show');
       await page.until('the sheet of s-group', () => location.pathname === '/s/s-group/overview' && !!document.querySelector('#task-sheet'));
       assert.deepEqual({ ...(await page.eval(replyIn, '#task-sheet')), focused: undefined }, { value: 'Group by repo, attention inside', files: [], focused: undefined });
-      await wait(HELD_MS);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
     },
   },
   {
     name: 'P5.2.17 answered elsewhere: a send held on s-cart whose decision another window answers is dropped with word that it was already answered, and nothing is posted',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.key('Enter');
@@ -435,14 +423,13 @@ export const sends: Check[] = [
       const [info] = await page.until('the toast', toastsOf, 'info');
       assert.equal(info.text, 'Already answered elsewhere; nothing was sent to Merge guest cart on login');
       assert.equal(await page.eval(toastsOf, 'undo'), null);
-      await wait(HELD_MS);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
     },
   },
   {
     name: 'P5.2.18 reconnecting: a send held as the connection drops for 8 s waits for Pitwall at about 5 s, and goes out once, after the pill reads Live again',
     expectedErrors: [/WebSocket/, /ERR_/],
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.key('Enter');
@@ -465,8 +452,7 @@ export const sends: Check[] = [
       }, POSTED_MS);
       assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['accept-advice', 's-cart', 204]]);
       assert.ok(sent[0].at - pressed > 8000, `posted ${sent[0].at - pressed} ms after ⏎, inside the drop`);
-      await sleep(1000);
-      assert.equal((await actions(mock)).length, 1);
+      await holds('the send to go out once', 1000, async () => (await actions(mock)).length === 1);
     },
   },
   {

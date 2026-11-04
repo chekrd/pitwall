@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sleep } from '../cdp.ts';
-import { logged, openNewTask, openQueue, openSheetOf, pickRepo, sheetOpen, tiles, typeInPrompt, type Check } from '../helpers.ts';
+import { logged, matches, openNewTask, openQueue, openSheetOf, pickRepo, sheetOpen, tiles, typeInPrompt, type Check } from '../helpers.ts';
 
 export const schedulesLater: Check[] = [
   {
@@ -163,7 +163,7 @@ export const schedulesLater: Check[] = [
   {
     name: "L1 Later keeps messages written while Claude works on the task's Overview: Enter keeps one, the card counts them; the ones set to Send when it's my turn go out as one message at the end of the turn, a reply after that end holds them back, and Send now sends one held with its Undo",
     clock: 'fast',
-    async run({ page, mock, shot, wait }) {
+    async run({ holds, page, mock, shot }) {
       type Snap = { sessions: { id: string; parked: { id: string; text: string; auto: boolean }[]; answered: { text: string } | null }[] };
       const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
       const until = async (what: string, ok: (s: Awaited<ReturnType<typeof invoice>>) => boolean) => {
@@ -214,13 +214,11 @@ export const schedulesLater: Check[] = [
       await page.click('#task-sheet [data-later] li[data-parked] input[type="checkbox"]');
       await until('the last one armed', (s) => s.parked[0].auto);
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, lastTurn: 't-later-2', answered: { key: null, text: 'Typed on the card', at: Date.now() + 60_000 }, summary: { text: 'Fixed', basis: 't-later-2', at: Date.now(), question: null, decision: null } } });
-      await sleep(1500);
-      assert.deepEqual((await invoice()).parked.map((p) => p.text), ['Kept for a press.'], 'a reply after the end holds it back');
+      await holds('a reply after the end to hold the draft back', 6000, async () => matches((await invoice()).parked.map((p) => p.text), ['Kept for a press.']));
 
       await page.click('#task-sheet [data-later] li[data-parked] button', 'Send now');
       await page.until('the draft out of the list while held', () => !document.querySelector('#task-sheet [data-later] li[data-parked]'));
       await page.until('the hold toast', () => [...document.querySelectorAll('[role="status"], [data-toast]')].some((t) => t.textContent?.includes('Kept for a press.')));
-      await wait(6000);
       const pressed = await until('the pressed draft sent', (s) => s.parked.length === 0);
       assert.equal(pressed.answered?.text, 'Kept for a press.');
       const posted = (await mock.log()).filter((e) => e.action === 'answer' && e.sessionId === 's-invoice').at(-1)!;

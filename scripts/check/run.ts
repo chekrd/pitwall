@@ -3,7 +3,7 @@ import { availableParallelism } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { LIVE_PORT, refuseLive } from '../isolate.ts';
-import { launch, lookName, sleep, within, type Browser, type Look, type Page } from './cdp.ts';
+import { holds, launch, lookName, sleep, within, type Browser, type Look, type Page } from './cdp.ts';
 import { checks } from './checks/index.ts';
 import { NEW_TASK_MORE, type Check } from './helpers.ts';
 import { startMock, type Mock } from './mock.ts';
@@ -156,10 +156,11 @@ async function runOne(mock: Mock, browser: Browser, check: Check, look: Look) {
       await themes((scheme) => save(scheme, name));
     };
     // What the page times shrinks; the half second the check allows for delivery and rendering does not.
+    const onPageClock = (ms: number) => (speed === 1 ? ms : ms / speed + 500);
     const wait = async (ms: number) => {
-      await sleep(speed === 1 ? ms : ms / speed + 500);
+      await sleep(onPageClock(ms));
     };
-    running = check.run({ page: p, mock, look, shot, themes, wait });
+    running = check.run({ page: p, mock, look, shot, themes, wait, holds: (what, ms, fn) => holds(what, onPageClock(ms), fn) });
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
       running,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { decisionKey } from '../../../server/decision.ts';
-import { sleep, until } from '../cdp.ts';
+import { until } from '../cdp.ts';
 import { card, listen, loads, logged, named, navigation, openNewTask, openQueue, POSTED_MS, ready, received, tiles, withOwnBuild, type Check, type Probe } from '../helpers.ts';
 
 export const builds: Check[] = [
@@ -84,7 +84,7 @@ export const builds: Check[] = [
   },
   {
     name: 'P1a.mock-reset an answer still typing when the scenario loads again fails and leaves the fresh scenario alone; so does a note waiting behind an answer to an end-of-turn decision',
-    async run({ mock }) {
+    async run({ holds, mock }) {
       const { legacy } = await mock.get('/mock');
       const sessionsNow = async () => new Map<string, any>((await mock.get('/api/state')).sessions.map((s: { id: string }) => [s.id, s]));
       const answer = (id: string, body: object) => fetch(`${mock.url}/api/sessions/${id}/answer`, {
@@ -110,7 +110,10 @@ export const builds: Check[] = [
         return [reply.status, reply.status === 204 ? null : (await reply.json()).error];
       }));
       assert.deepEqual(replies, Array(3).fill(legacy ? [204, null] : [400, 'the mock loaded another scenario meanwhile']));
-      await sleep(1000);
+      await holds('the fresh s-cart and s-group to stay unanswered and idle', 1000, async () => {
+        const now = await sessionsNow();
+        return ['s-cart', 's-group'].every((id) => !now.get(id).answered && now.get(id).status === 'idle');
+      });
       const now = await sessionsNow();
       const [cart, group] = [now.get('s-cart'), now.get('s-group')];
       assert.deepEqual([cart.question?.toolUseId, cart.answered ?? null, cart.status], ['toolu_01Cart', null, 'idle']);
@@ -119,7 +122,7 @@ export const builds: Check[] = [
   },
   {
     name: 'P1b.ui-entry a socket gets uiEntry, the build\'s entry script, on open and in every snapshot pushed after (on --legacy only on open); the open page keeps itself when the entry is its own',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const { legacy } = await mock.get('/mock');
       await page.goto(`${mock.url}/`);
       await page.until('the first snapshot', () => document.querySelector('[data-link]')?.getAttribute('data-link') === 'live');
@@ -129,14 +132,14 @@ export const builds: Check[] = [
       const title = 'Lazy-load product reviews, patched';
       await mock.post('/mock/patch', { id: 's-reviews', patch: { title } });
       assert.deepEqual(await page.until('the snapshot pushed after the patch', received, title), legacy ? { carries: false, uiEntry: null } : { carries: true, uiEntry: entry });
-      // The page's own socket got the same push; a reload it caused would have replaced the document by now.
-      await sleep(1000);
+      // The page's own socket got the same push.
+      await holds('the page not to reload', 1000, () => page.eval(() => (window as unknown as Probe).e2eMarker === true));
       assert.deepEqual(await page.eval(navigation), { marker: true, type: 'navigate', entry });
     },
   },
   {
     name: 'P1b.ui-entry-build a build written into the folder the server serves reaches an open page: it reloads into the new entry once, and stays',
-    async run({ page }) {
+    async run({ holds, page }) {
       await withOwnBuild(page, async (own, build) => {
         const url = `${own.url}/`;
         await page.goto(url);
@@ -144,56 +147,51 @@ export const builds: Check[] = [
         await page.eval(() => void ((window as unknown as Probe).e2eMarker = true));
         const next = build();
         // Read twice 2 s apart before it counts, so the reload comes 2 to 4 s after the build.
-        const reloaded = await until('the page to reload into the new build', () => page.eval(navigation).then((n) => n.entry === next && n, () => null), 15_000);
+        const reloaded = await until('the page to reload into the new build', async () => {
+          const n = await page.eval(navigation);
+          return n.entry === next && n;
+        }, 15_000);
         assert.deepEqual(reloaded, { marker: null, type: 'reload', entry: next });
         await page.until('the first snapshot', () => document.querySelector('[data-link]')?.getAttribute('data-link') === 'live');
         await page.eval(() => void ((window as unknown as Probe).e2eMarker = true));
         await own.post('/mock/patch', { id: 's-reviews', patch: { title: 'Lazy-load product reviews, patched' } });
-        await sleep(3000);
+        await holds('the page not to reload again', 3000, () => page.eval(() => (window as unknown as Probe).e2eMarker === true));
         assert.deepEqual([await page.eval(navigation), loads(page, url)], [{ marker: true, type: 'reload', entry: next }, 2]);
       });
     },
   },
   {
     name: 'P1b.ui-entry-early a page loaded from a new build before the server has taken it loads once and stays: the snapshot on open and one pushed meanwhile name no entry, and the one when the build is taken names its entry',
-    async run({ page }) {
+    async run({ holds, page }) {
       await withOwnBuild(page, async (own, build) => {
         const url = `${own.url}/`;
         const next = build();
         await page.goto(url);
-        // Time for the reload a snapshot on open naming the older entry would cause.
-        await sleep(500);
-        assert.equal(loads(page, url), 1, 'the page reloaded');
         await page.until('the first snapshot', () => document.querySelector('[data-link]')?.getAttribute('data-link') === 'live');
+        // Time for the reload a snapshot on open naming the older entry would cause.
+        await holds('the page to stay as loaded', 500, () => loads(page, url) === 1);
         assert.equal(await page.eval(listen), next);
         assert.deepEqual(await page.until('the snapshot on open', received, null), { carries: true, uiEntry: null });
         const title = 'Lazy-load product reviews, patched';
         await own.post('/mock/patch', { id: 's-reviews', patch: { title } });
-        await sleep(300);
-        assert.equal(loads(page, url), 1, 'the snapshot pushed after the patch reloaded the page');
         // The build is taken two polls 2 s apart after it lands, so this push comes before.
         assert.deepEqual(await page.until('the snapshot pushed after the patch', received, title), { carries: true, uiEntry: null });
+        await holds('the snapshot pushed after the patch not to reload the page', 300, () => loads(page, url) === 1);
         await page.until('the snapshot pushed when the build is taken', named, next, title);
-        // The page's own socket got the same pushes; a reload they caused would have replaced the document by now.
-        await sleep(1000);
+        // The page's own socket got the same pushes.
+        await holds('the page not to reload', 1000, () => loads(page, url) === 1);
         assert.deepEqual([await page.eval(navigation), loads(page, url)], [{ marker: true, type: 'navigate', entry: next }, 1]);
       });
     },
   },
   {
     name: 'P3.reload-gate a new build reloads the board when nothing is focused; New task holds it until it closes, on the Wall as over the queue, even with nothing focused in it; the page\'s own entry never reloads it, nor a build it already reloaded for',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       const mark = () => page.eval(() => void ((window as unknown as { probe?: number }).probe = 1));
       const marked = () => page.eval(() => (window as unknown as { probe?: number }).probe === 1);
       const newBuild = (n: number) => mock.post('/mock/ui-entry', { src: `/assets/index-next${n}.js` });
-      // The old document goes away under a call, so a failed call means "not yet".
-      const reloaded = (what: string) => until(`the page to reload ${what}`, async () => {
-        try {
-          return await page.eval(() => (window as unknown as { probe?: number }).probe === undefined && document.readyState === 'complete');
-        } catch {
-          return false;
-        }
-      });
+      const reloaded = (what: string) => page.until(`the page to reload ${what}`, () => (window as unknown as { probe?: number }).probe === undefined && document.readyState === 'complete');
+      const stays = (what: string) => holds(`the page not to reload ${what}`, 3000, marked);
 
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
@@ -206,8 +204,7 @@ export const builds: Check[] = [
       const own = await page.eval(() => document.querySelector('script[type="module"][src]')!.getAttribute('src')!);
       await mock.post('/mock/ui-entry', { src: own });
       await mock.post('/mock/ui-entry', { src: `${mock.url}${own}` });
-      await sleep(3000);
-      assert.equal(await marked(), true, 'its own entry reloaded the page');
+      await stays('for its own entry');
 
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
@@ -215,7 +212,7 @@ export const builds: Check[] = [
       await page.type('Ship it after lunch');
       await mark();
       await newBuild(2);
-      await sleep(3000);
+      await stays('while New task holds a draft');
       const typing = await page.eval(() => [
         (window as unknown as { probe?: number }).probe, document.activeElement?.tagName, document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')?.value,
       ]);
@@ -234,8 +231,7 @@ export const builds: Check[] = [
       assert.equal(blurred, true, 'only the open dialog holds the reload');
       await mark();
       await newBuild(3);
-      await sleep(3000);
-      assert.equal(await marked(), true, 'reloaded under the New task dialog');
+      await stays('under the New task dialog');
       await shot('dialog-holds-reload');
       await page.key('Escape');
       await reloaded('once the dialog closed');
@@ -245,14 +241,13 @@ export const builds: Check[] = [
       await page.until('the card', () => !!document.querySelector('[data-card]'));
       await mark();
       await newBuild(3);
-      await sleep(3000);
-      assert.equal(await marked(), true, 'reloaded again for a build that brought it back to its own entry');
+      await stays('again for a build that brought it back to its own entry');
     },
   },
   {
     name: 'P3.reload-offline a new build waits for the server: New task closing while the server cannot be reached does not reload the board, and it reloads once the server is back and names that build',
     expectedErrors: [/WebSocket/, /ERR_CONNECTION/, /ERR_EMPTY_RESPONSE/, /ERR_SOCKET_NOT_CONNECTED/],
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
@@ -263,7 +258,7 @@ export const builds: Check[] = [
       try {
         await page.until('the server to drop the page', () => fetch('/').then(() => false, () => true));
         await page.key('Escape');
-        await sleep(1500);
+        await holds('the page not to reload while the server cannot be reached', 1500, () => page.eval(() => (window as unknown as { probe?: number }).probe === 1));
         const kept = await page.eval(() => [
           (window as unknown as { probe?: number }).probe, !document.querySelector('dialog#new-task[open]'), document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')?.value,
         ]);
@@ -275,21 +270,9 @@ export const builds: Check[] = [
       }
       // A server back with the new build names it to the page that reconnects; the mock names the build it serves, so
       // the check names the new one again once the page is live.
-      const back = await until('the page to reconnect', async () => {
-        try {
-          return await page.eval(() => ((window as unknown as { probe?: number }).probe === undefined ? 'reloaded' : document.querySelector('[data-link="live"]') ? 'live' : null));
-        } catch {
-          return null;
-        }
-      }, 10_000);
+      const back = await until('the page to reconnect', () => page.eval(() => ((window as unknown as { probe?: number }).probe === undefined ? 'reloaded' : document.querySelector('[data-link="live"]') ? 'live' : null)), 10_000);
       if (back === 'live') await mock.post('/mock/ui-entry', { src: '/assets/index-offline.js' });
-      await until('the page to reload once the server is back', async () => {
-        try {
-          return await page.eval(() => (window as unknown as { probe?: number }).probe === undefined && document.readyState === 'complete');
-        } catch {
-          return false;
-        }
-      }, 10_000);
+      await until('the page to reload once the server is back', () => page.eval(() => (window as unknown as { probe?: number }).probe === undefined && document.readyState === 'complete'), 10_000);
       await page.until('the Wall', () => document.querySelectorAll('[data-tile]').length > 0);
     },
   },

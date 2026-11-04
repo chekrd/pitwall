@@ -22,6 +22,8 @@ export interface Context {
   themes: (fn: (scheme: Look['scheme']) => Promise<void>) => Promise<void>;
   // Waits `ms` on the page's clock: real time, or a share of it under a fast clock.
   wait: (ms: number) => Promise<void>;
+  // Fails as soon as `fn` returns something falsy within `ms` on the page's clock, the span wait(ms) takes.
+  holds: (what: string, ms: number, fn: () => unknown) => Promise<void>;
 }
 
 export interface Check {
@@ -34,7 +36,7 @@ export interface Check {
   // Console errors the check provokes on purpose.
   expectedErrors?: RegExp[];
   // The page's timers and dates run faster (FAST_CLOCK times), so the 5 s hold, the 0.9 s guard and the like pass
-  // quickly. The check waits with wait(), not sleep(), for anything timed by the page.
+  // quickly. A window timed by the page is waited with wait() or held with holds(), not sleep().
   clock?: 'fast';
   // New task as it first opens: More folded on Current checkout. Every other check starts with More open on New
   // worktree, as a stored choice would have it.
@@ -43,6 +45,12 @@ export interface Check {
 }
 
 export const NEW_TASK_MORE = `try { localStorage.getItem('pitwall:new-task-choices') || localStorage.setItem('pitwall:new-task-choices', '{"existing":false,"more":true}'); } catch {}`;
+
+// For holds(): true while `actual` deep-equals `expected`, and a failure that says how once it does not.
+export const matches = (actual: unknown, expected: unknown) => {
+  assert.deepEqual(actual, expected);
+  return true;
+};
 
 export const logged = (mock: Mock, what: string, match: (e: Entry) => boolean, timeout = 5000) =>
   until(`${what} in the mock's log`, async () => {

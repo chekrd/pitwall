@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { KEYS } from '../../../web/src/keys.ts';
-import { sleep, until } from '../cdp.ts';
-import { card, logged, openFromWall, openNewTask, openQueue, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
+import { until } from '../cdp.ts';
+import { card, logged, matches, openFromWall, openNewTask, openQueue, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
 
 export const newTask: Check[] = [
   {
@@ -271,7 +271,7 @@ export const newTask: Check[] = [
   },
   {
     name: 'P4.13 ? opens Keys with the rows of the KEYS table and Esc closes it; with the delete dialog open ? does nothing',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await page.key('?');
@@ -288,8 +288,7 @@ export const newTask: Check[] = [
       await page.click(':popover-open button', 'Clear task');
       await page.until('the delete dialog', () => !!document.querySelector('dialog#delete-worktree[open]'));
       await page.key('?');
-      await sleep(300);
-      assert.deepEqual(await page.eval(() => [!!document.querySelector('dialog#keys[open]'), !!document.querySelector('dialog#delete-worktree[open]')]), [false, true]);
+      await holds('Keys to stay closed over the delete dialog', 300, () => page.eval(() => !document.querySelector('dialog#keys[open]') && !!document.querySelector('dialog#delete-worktree[open]')));
     },
   },
   {
@@ -357,7 +356,7 @@ export const newTask: Check[] = [
   },
   {
     name: 'P4.17 the reload pill: a new build announced while the New task prompt has focus offers "New version · Reload" after 15 s with the link live; the page\'s own build clears it, another arms it again, and the pill itself reloads while the prompt keeps focus, noting the build it reloaded for',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
@@ -367,8 +366,8 @@ export const newTask: Check[] = [
       const offered = async (build: string) => {
         const at = Date.now();
         await mock.post('/mock/ui-entry', { src: build });
-        await sleep(1000);
-        assert.deepEqual(await page.eval(reloadState, null), { pill: null, link: 'live', marker: true, prompt: 'Fix the login redirect', typing: true });
+        const before = { pill: null, link: 'live', marker: true, prompt: 'Fix the login redirect', typing: true };
+        await holds('the page as it was, with no pill yet', 1000, async () => matches(await page.eval(reloadState, null), before));
         const state = await until('the reload pill', () => page.eval(reloadState, 'pill'), 20_000);
         assert.ok(Date.now() - at >= 14_500, `offered after ${Date.now() - at} ms`);
         assert.deepEqual(state, { pill: 'New version · Reload', link: 'live', marker: true, prompt: 'Fix the login redirect', typing: true });
@@ -384,13 +383,7 @@ export const newTask: Check[] = [
         return document.activeElement === document.querySelector('dialog#new-task textarea');
       });
       assert.equal(typing, true, 'the prompt lost focus before the pill was clicked');
-      await until('the page to reload', async () => {
-        try {
-          return await page.eval(() => (window as unknown as Probe).e2eMarker === undefined && document.readyState === 'complete');
-        } catch {
-          return false;
-        }
-      });
+      await page.until('the page to reload', () => (window as unknown as Probe).e2eMarker === undefined && document.readyState === 'complete');
       await page.until('the prompt kept through the reload', () => document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')?.value === 'Fix the login redirect');
       assert.equal(await page.eval(() => {
         const entry = document.querySelector<HTMLScriptElement>('script[type="module"][src]')!.src;

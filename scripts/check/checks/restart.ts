@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { logged, openQueue, openSheetOf, reachable, sidewaysScroll, type Check } from '../helpers.ts';
+import { logged, openQueue, openSheetOf, POSTED_MS, reachable, sidewaysScroll, type Check } from '../helpers.ts';
 import type { UxRow } from '../mock.ts';
 
 export const restart: Check[] = [
@@ -232,7 +232,7 @@ export const restart: Check[] = [
     name: 'R1 after a restart the banner counts the tasks it ended; Resume all brings them back, the ones cut short mid-turn stay marked until Continue the turn',
     scenario: 'restarted',
     clock: 'fast',
-    async run({ page, mock, shot, wait }) {
+    async run({ page, mock, shot }) {
       const before = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; parent: unknown; interrupted: { status: string } | null }[];
       const ended = before.filter((s) => s.interrupted && !s.archived);
       const subtasks = ended.filter((s) => s.parent).length;
@@ -267,8 +267,7 @@ export const restart: Check[] = [
       const id = await page.until('its page', () => location.pathname.match(/^\/s\/([^/]+)/)?.[1] ?? null);
       assert.ok(midTurn.some((s) => s.id === id));
       await page.click('#task-sheet [data-interrupted="cut-short"] button', 'Continue the turn');
-      await wait(5500);
-      const [sent] = await logged(mock, 'the continue', (e) => e.action === 'answer' && e.sessionId === id);
+      const [sent] = await logged(mock, 'the continue', (e) => e.action === 'answer' && e.sessionId === id, POSTED_MS);
       assert.match(String(sent.body.text), /The Mac restarted while you were working/);
       await page.until('the note to go once Claude works', () => !document.querySelector('#task-sheet [data-interrupted]'));
       const left = await page.until('one fewer in the banner', (n: number) => {
@@ -440,7 +439,7 @@ export const restart: Check[] = [
   },
   {
     name: 'E1 a turn that ended on an API error says Stopped on an error on its tile and page, with what to do for its kind and Try again unless it was refused, until Claude replies again',
-    async run({ page, mock, shot, wait }) {
+    async run({ page, mock, shot }) {
       const all = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; question: unknown; menu: unknown; summary: { decision?: unknown } | null }[];
       const s = all.find((o) => o.status === 'idle' && !o.archived && !o.question && !o.menu && !o.summary?.decision)!;
       const refused = "API Error: Opus 5.5's safeguards flagged this message (https://www.anthropic.com/legal/aup). This sometimes happens with safe, normal conversations.\n\nDouble press esc to edit your last message, or try a different model with /model.";
@@ -483,8 +482,7 @@ export const restart: Check[] = [
       await mock.post('/mock/patch', { id: s.id, patch: { turnError: { at: Date.now(), kind: 'other', text: 'API Error: 500 Internal server error.' } } });
       await page.until('the failed request', () => document.querySelector('#task-sheet [data-turn-error="other"]')?.textContent?.includes('500 Internal server error') || null);
       await page.click('#task-sheet [data-turn-error="other"] button', 'Try again');
-      await wait(5500);
-      const [sent] = await logged(mock, 'the retry', (e) => e.action === 'answer' && e.sessionId === s.id);
+      const [sent] = await logged(mock, 'the retry', (e) => e.action === 'answer' && e.sessionId === s.id, POSTED_MS);
       assert.match(String(sent.body.text), /stopped on an API error before you replied/);
 
       await mock.post('/mock/patch', { id: s.id, patch: { status: 'idle', turnError: null } });

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { sleep } from '../cdp.ts';
-import { actions, animations, approveLoss, dealt, docked, dockState, frontIs, HELD_MS, hoverCard, logged, lowContrast, menuItems, narrowCard, newTaskOnRepo, noteAnimations, openNewTask, openQueue, pickerOpen, pillAt, primaryAtEnds, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, typeInPrompt, unguarded, watchDeals, type Check } from '../helpers.ts';
+import { actions, animations, approveLoss, dealt, docked, dockState, frontIs, HELD_MS, hoverCard, logged, lowContrast, matches, menuItems, narrowCard, newTaskOnRepo, noteAnimations, openNewTask, openQueue, pickerOpen, pillAt, primaryAtEnds, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, typeInPrompt, unguarded, watchDeals, type Check } from '../helpers.ts';
 
 export const layout: Check[] = [
   {
     name: 'P7.leave-deals Quit Claude and Delete worktree from the card\'s ⋯ deal the card out sideways, as Archive does; the card after it comes up, with no word that anything stopped waiting',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const confirmable = () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
         return !!d?.open && !d.innerText.includes('Checking');
@@ -32,14 +32,15 @@ export const layout: Check[] = [
       assert.deepEqual(await page.eval(dealt), ['side', 'side']);
       const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual([deleted.sessionId, deleted.status], ['s-hooks', 204]);
-      await sleep(600);
-      assert.equal(await page.eval(() => !!document.querySelector('[data-session="s-cart"]:is([data-segment], [data-peek]), [data-session="s-hooks"]:is([data-segment], [data-peek])')), false);
-      assert.deepEqual([await page.eval(toastsOf, 'info'), await page.eval(toastsOf, 'error')], [null, null]);
+      await holds('s-cart and s-hooks to stay gone, with no toast', 600, async () => matches([
+        await page.eval(() => !!document.querySelector('[data-session="s-cart"]:is([data-segment], [data-peek]), [data-session="s-hooks"]:is([data-segment], [data-peek])')),
+        await page.eval(toastsOf, 'info'), await page.eval(toastsOf, 'error'),
+      ], [false, null, null]));
     },
   },
   {
     name: 'P7.archive-stays an archive shows at once and stays: a snapshot pushed before the server has stored it does not bring the card back for a moment',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.click('[data-segment][data-session="s-reviews"]');
       await ready(page, 's-reviews');
@@ -58,14 +59,13 @@ export const layout: Check[] = [
       await page.until('that snapshot', () => !!document.querySelector('[data-capsule][data-session="s-invoice"]')?.textContent?.includes('--reporter=dot'));
       const [archived] = await logged(mock, 'the archive', (e) => e.action === 'archive', 4000);
       assert.deepEqual([archived.sessionId, archived.status], ['s-reviews', 204]);
-      await sleep(300);
-      assert.deepEqual([await page.eval(() => (window as unknown as { e2eBack: boolean }).e2eBack), await page.eval(shownAnywhere)], [false, false]);
+      await holds('s-reviews to stay archived', 300, async () => matches([await page.eval(() => (window as unknown as { e2eBack: boolean }).e2eBack), await page.eval(shownAnywhere)], [false, false]));
       assert.equal((await stateOf(mock, 's-reviews')).archived, true);
     },
   },
   {
     name: 'P7.skip-ends-wait a click on Skip that ends a wait for typing brings up the card that waited and skips nothing; the next click skips',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.key('w');
@@ -77,8 +77,7 @@ export const layout: Check[] = [
       await page.eval(watchDeals);
       await page.click('main button[aria-label="Skip to the next card"]');
       await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await sleep(700);
-      assert.deepEqual([await page.eval(() => document.querySelector<HTMLElement>('[data-card]')?.dataset.session), await page.eval(dealt)], ['s-hooks', []]);
+      await holds('the click to skip nothing', 700, async () => matches([await page.eval(() => document.querySelector<HTMLElement>('[data-card]')?.dataset.session), await page.eval(dealt)], ['s-hooks', []]));
       await page.click('main button[aria-label="Skip to the next card"]');
       await page.until('s-group at the front', frontIs, 's-group');
       assert.deepEqual(await page.eval(dealt), ['back']);
@@ -108,7 +107,7 @@ export const layout: Check[] = [
       await page.type('Fix');
       await page.key('Escape');
       await page.key('q');
-      await sleep(400);
+      await page.until('New task to close and let go of focus', () => !document.querySelector<HTMLDialogElement>('#new-task')!.open && !document.activeElement?.closest('#new-task'));
       assert.deepEqual(await page.eval(() => ({
         open: document.querySelector<HTMLDialogElement>('#new-task')!.open,
         prompt: document.querySelector<HTMLTextAreaElement>('#new-task textarea')!.value,
@@ -118,7 +117,7 @@ export const layout: Check[] = [
   },
   {
     name: 'P7.picker-outside a click beside New task while its repository picker is open closes only the picker; the next click beside it closes the dialog',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.key('n');
       await page.until('New task', () => !!document.querySelector('#new-task:modal'));
@@ -127,8 +126,7 @@ export const layout: Check[] = [
       await page.until('the picker', pickerOpen);
       await page.pointAt(24, 860, true);
       await page.until('the picker to close', () => !document.querySelector('#new-task [data-repo-picker]:popover-open'));
-      await sleep(300);
-      assert.equal(await page.eval(() => !!document.querySelector('#new-task:modal')), true, 'the click closed the dialog with the picker');
+      await holds('New task to stay open', 300, () => page.eval(() => !!document.querySelector('#new-task:modal')));
       await page.pointAt(24, 860, true);
       await page.until('the dialog to close', () => !document.querySelector('#new-task[open]'));
     },
@@ -163,7 +161,7 @@ export const layout: Check[] = [
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
       await page.type('/re');
       await page.until('the command list', () => document.querySelectorAll('[data-card] [role="option"]').length > 0);
-      await sleep(200);
+      await page.until('the command list to settle', settled);
       const at = await page.eval(() => {
         const hint = [...document.querySelectorAll('[data-card] section p')].find((p) => p.textContent?.startsWith('Enter sends'))!.getBoundingClientRect();
         const scroll = document.querySelector('[data-card] [data-scroll]')!.getBoundingClientRect();
@@ -196,7 +194,7 @@ export const layout: Check[] = [
       await ready(page, 's-cart');
       await page.click('[data-card] footer button', 'Write my own');
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
-      await sleep(200);
+      await page.until('the reply box to settle', settled);
       const reply = await page.eval(() => {
         const hint = [...document.querySelectorAll('[data-card] section p')].find((p) => p.textContent?.startsWith('Enter sends'))!.getBoundingClientRect();
         const box = document.querySelector('[data-card] textarea')!.getBoundingClientRect();
@@ -271,7 +269,7 @@ export const layout: Check[] = [
     name: 'P7.reduced-motion with reduced motion a card change runs no animation longer than 10 ms: skip, previous, a peek, an answer, its Undo and the answer again until its capsule rings',
     clock: 'fast',
     motion: 'reduce',
-    async run({ wait, page, mock }) {
+    async run({ page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.eval(noteAnimations);
@@ -288,8 +286,8 @@ export const layout: Check[] = [
       await page.key('z');
       await ready(page, 's-cart');
       await page.key('Enter');
-      await wait(HELD_MS);
       await page.until('the answered capsule ringing', () => !!document.querySelector('[data-capsule][data-session="s-cart"][data-fresh]'));
+      // Frames for the ring's animations, if any, to be noted.
       await sleep(300);
       const all = await page.eval(animations);
       assert.ok(all.length > 0, 'no animation was noted');
@@ -475,7 +473,7 @@ export const layout: Check[] = [
   },
   {
     name: 'P7.send-capsules a send puts its capsule first, Sending in N s with Undo; two sends give two capsules, and each Undo takes back its own: the card comes back to the front with what its send took from the reply box; after the POST the capsule reads Sent, then turns into the working capsule with a fresh ring for about 2.6 s',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       const capsules = async () => ((await page.eval(dockState))?.capsules ?? []).map((c) => ({ session: c.session, state: c.state, line: c.line }));
       await openQueue(page, mock);
       await ready(page, 's-cart');
@@ -504,8 +502,7 @@ export const layout: Check[] = [
 
       // The answer goes out 5 s after the press and the mock then types the menu, which can outlast a 5 s wait that
       // starts this soon after the press, as it does when no deal or Undo runs an animation.
-      await sleep(Math.max(0, 4000 - (Date.now() - pressed)));
-      assert.deepEqual((await capsules()).filter((c) => c.session === 's-hooks').map((c) => c.state), ['held'], 'the send went out before its 5 s');
+      await holds('the send to wait its 5 s', Math.max(0, 4000 - (Date.now() - pressed)), async () => matches((await capsules()).filter((c) => c.session === 's-hooks').map((c) => c.state), ['held']));
       await page.until('Sent on the capsule', () => {
         const c = document.querySelector<HTMLElement>('[data-capsule][data-session="s-hooks"]');
         return c?.dataset.state === 'sent' && c.innerText.includes('Sent');
@@ -526,7 +523,7 @@ export const layout: Check[] = [
   {
     name: 'P7.keyboard with no pointer at all: ⏎ answers and Z takes it back, → skips and ← goes back; O opens Overview, 2 the Diff, J a file, Esc all files and Esc the queue; V the Wall, N New task, typing and Esc; ? Keys and Esc',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await page.goto(`${mock.url}/`);
       await page.eval(() => {
         const w = window as unknown as { e2ePointer: number };
@@ -571,8 +568,7 @@ export const layout: Check[] = [
       await page.key('Escape');
       await page.until('Keys to close', () => !document.querySelector('#keys[open]'));
       assert.equal(await page.eval(() => (window as unknown as { e2ePointer: number }).e2ePointer), 0);
-      await wait(HELD_MS);
-      assert.deepEqual(await actions(mock), [], 'the answer taken back went out');
+      await holds('the answer taken back to stay back', HELD_MS, async () => !(await actions(mock)).length);
     },
   },
   {

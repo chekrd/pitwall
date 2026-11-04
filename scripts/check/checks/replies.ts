@@ -6,7 +6,7 @@ export const replies: Check[] = [
   {
     name: 'P5.2.20 the reload gate: a new build announced while a send is held does not reload the page until it went out, and then it does',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.eval(() => void ((window as unknown as { e2eProbe?: number }).e2eProbe = 1));
@@ -14,15 +14,8 @@ export const replies: Check[] = [
       const pressed = Date.now();
       await page.until('the undo toast', toastsOf, 'undo');
       await mock.post('/mock/ui-entry', { src: '/assets/next.js' });
-      await wait(2000);
-      assert.equal(await page.eval(() => (window as unknown as { e2eProbe?: number }).e2eProbe), 1, 'reloaded with a send held');
-      const loadedAt = await until('the page to reload', async () => {
-        try {
-          return await page.eval(() => ((window as unknown as { e2eProbe?: number }).e2eProbe === undefined && document.readyState === 'complete' ? performance.timeOrigin : 0));
-        } catch {
-          return 0;
-        }
-      }, 7000 - (Date.now() - pressed));
+      await holds('the page not to reload with a send held', 2000, () => page.eval(() => (window as unknown as { e2eProbe?: number }).e2eProbe === 1));
+      const loadedAt = await until('the page to reload', () => page.eval(() => ((window as unknown as { e2eProbe?: number }).e2eProbe === undefined && document.readyState === 'complete' ? performance.timeOrigin : 0)), 7000 - (Date.now() - pressed));
       const [sent] = await logged(mock, 'the held answer', (e) => e.action === 'accept-advice');
       assert.equal(sent.status, 204);
       assert.ok(sent.at < loadedAt, `the answer went out ${sent.at - loadedAt} ms after the reload`);
@@ -405,7 +398,7 @@ export const replies: Check[] = [
   {
     name: 'P5.2.undo-sheet the toast\'s Undo takes back a message sent from a sheet over the queue: the text is back in its reply box, nothing goes out, and the card being read stays, with no word that anything stopped waiting',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await page.goto(`${mock.url}/s/s-invoice/overview`);
       await page.until('the sheet over the queue', () => !!document.querySelector('#task-sheet') && document.documentElement.dataset.view === 'queue');
@@ -415,18 +408,16 @@ export const replies: Check[] = [
       await page.until('the undo toast', toastsOf, 'undo');
       await page.click('[data-toast][data-kind="undo"] button', 'Undo');
       await page.until('the message back in the reply box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')?.value === 'Also round the tax lines');
-      await wait(1000);
-      assert.deepEqual([await page.eval(toastsOf, 'info'), await page.eval(toastsOf, 'undo')], [null, null]);
+      await holds('no toast', 1000, async () => (await page.eval(toastsOf, 'info')) === null && (await page.eval(toastsOf, 'undo')) === null);
       await page.click('#task-sheet button[aria-label^="Back to"]');
       await page.until('the card of s-cart', frontIs, 's-cart');
-      await wait(HELD_MS - 1000);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', HELD_MS - 1000, async () => !(await actions(mock)).length);
     },
   },
   {
     name: 'P5.2.esc-undo Esc takes back a held send: an option sent from the card brings s-cart back, and a message sent from the sheet goes back into its empty reply box; nothing goes out',
     clock: 'fast',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.click('[data-card] [data-option="2"]');
@@ -443,8 +434,7 @@ export const replies: Check[] = [
       await page.key('Escape');
       await page.until('the message back in the reply box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')?.value === 'Also round the tax lines');
       assert.equal(await page.eval(() => !!document.querySelector('#task-sheet')), true, 'the sheet stayed');
-      await wait(HELD_MS);
-      assert.deepEqual(await actions(mock), []);
+      await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
     },
   },
   {

@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { sleep } from '../cdp.ts';
-import { docked, dockState, frontIs, hoverCard, openCards, openFromWall, settled, sheetOpen, sidewaysScroll, withoutBoard, type Check } from '../helpers.ts';
+import { until } from '../cdp.ts';
+import { docked, dockState, frontIs, hoverCard, matches, openCards, openFromWall, settled, sheetOpen, sidewaysScroll, withoutBoard, type Check } from '../helpers.ts';
 
 export const dock: Check[] = [
   {
     name: 'P6.menu-outside a click on the top bar while the task\'s ⋯ menu is open closes only the menu; after a click inside the task closed the menu, Esc still goes back to the Wall; the task is a page, so a click on the top bar with no menu open leaves it open',
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       const layers = () => ({ menu: !!document.querySelector('[popover="auto"]:popover-open'), sheet: !!document.querySelector('#task-sheet'), path: location.pathname });
+      const stays = async () => matches(await page.eval(layers), { menu: false, sheet: true, path: '/s/s-invoice/overview' });
       const menu = async () => {
         await page.click('#task-sheet button[aria-label="Session actions"]');
         await page.until('the ⋯ menu', () => !!document.querySelector('[popover="auto"]:popover-open'));
@@ -16,15 +17,13 @@ export const dock: Check[] = [
       await menu();
       await page.pointAt(12, 12, true);
       await page.until('the menu to close', () => !document.querySelector('[popover="auto"]:popover-open'));
-      await sleep(400);
-      assert.deepEqual(await page.eval(layers), { menu: false, sheet: true, path: '/s/s-invoice/overview' });
+      await holds('the sheet to stay', 400, stays);
       await shot('sheet-after-menu-outside');
 
       await menu();
       await page.click('#task-sheet header [data-attention]');
       await page.until('the menu to close', () => !document.querySelector('[popover="auto"]:popover-open'));
-      await sleep(100);
-      assert.deepEqual(await page.eval(layers), { menu: false, sheet: true, path: '/s/s-invoice/overview' });
+      await holds('the sheet to stay', 400, stays);
       await page.key('Escape');
       await page.until('Esc to close the sheet', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
 
@@ -32,8 +31,7 @@ export const dock: Check[] = [
       await page.until('the sheet again', sheetOpen);
       await page.until('the sheet to settle', settled);
       await page.pointAt(12, 12, true);
-      await sleep(400);
-      assert.deepEqual(await page.eval(layers), { menu: false, sheet: true, path: '/s/s-invoice/overview' });
+      await holds('the sheet to stay', 400, stays);
     },
   },
   {
@@ -62,7 +60,7 @@ export const dock: Check[] = [
   {
     name: 'P6.1 the dock under the queue: "3 working", then the three working agents in board order, each with its name, a mono step and a clock that ticks; Fix invoice PDF rounding has a breathing PR dot and a Worth-knowing dot, Typo-tolerant search a Worth-knowing dot; "2 ended" names them and opens the Wall',
     clock: 'fast',
-    async run({ wait, page, mock, shot }) {
+    async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the dock', docked, 3);
       const dock = (await page.eval(dockState))!;
@@ -77,9 +75,7 @@ export const dock: Check[] = [
       assert.equal(dock.box!.bottom, await page.eval(() => innerHeight), 'the dock is not at the bottom of the window');
       assert.ok(dock.capsules.every((c) => c.box!.top === dock.capsules[0].box!.top && c.box!.height === 50), 'the capsules are not one row of 50 px');
       for (const c of dock.capsules) assert.match(c.clock ?? '', /^\d+:\d\d$/, c.session);
-      await wait(1100);
-      const ticked = (await page.eval(dockState))!.capsules;
-      for (const [i, c] of ticked.entries()) assert.notEqual(c.clock, dock.capsules[i].clock, `the clock of ${c.session} did not tick`);
+      await until('every clock to tick', async () => (await page.eval(dockState))!.capsules.every((c, i) => c.clock !== dock.capsules[i].clock));
       await shot('dock');
 
       await page.click('[data-dock] a[href="/wall"]');
@@ -216,7 +212,7 @@ export const dock: Check[] = [
   {
     name: 'P6.5 narrow window: the dock is one row of 250 px capsules that scrolls sideways while the page does not, no hover card opens, and a click on a capsule opens its sheet',
     narrow: true,
-    async run({ page, mock, shot }) {
+    async run({ holds, page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the dock', docked, 3);
       const row = await page.eval(() => {
@@ -227,8 +223,7 @@ export const dock: Check[] = [
       assert.deepEqual(row, { rows: 1, widths: [250, 250, 250], scrolls: true });
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await page.hover('[data-capsule][data-session="s-thumbs"] button');
-      await sleep(400);
-      assert.deepEqual(await page.eval(openCards), []);
+      await holds('no hover card past its delay', 400, async () => !(await page.eval(openCards)).length);
       await shot('narrow-dock');
       await page.click('[data-capsule][data-session="s-thumbs"] button');
       await page.until('the sheet of s-thumbs', () => location.pathname === '/s/s-thumbs/overview' && !!document.querySelector('#task-sheet'));
@@ -236,12 +231,12 @@ export const dock: Check[] = [
   },
   {
     name: 'P6.hover-under-sheet a hover card never stays over the sheet: not when the sheet opens while the card shows, nor when it opens before the hover delay runs out, nor from Enter on a capsule the keyboard opened a card for',
-    async run({ page, mock }) {
+    async run({ holds, page, mock }) {
       const open = (path: string) => window.navigation.navigate(path, { state: { base: '/' } }).finished?.catch(() => {});
       const cleared = async () => {
         await page.until('the sheet', sheetOpen);
-        await sleep(400);
-        assert.deepEqual(await page.eval(openCards), []);
+        await page.until('no hover card', () => !document.querySelector('[data-hovercard]:popover-open'));
+        await holds('no hover card past its delay', 400, async () => !(await page.eval(openCards)).length);
         await page.key('Escape');
         await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       };
@@ -271,12 +266,11 @@ export const dock: Check[] = [
     name: 'P6.resting with nothing in the queue / shows the empty queue with the dock of working agents under it, and it stays; the first card that arrives keeps it',
     clock: 'fast',
     scenario: 'zero',
-    async run({ wait, page, mock }) {
+    async run({ holds, page, mock }) {
       await page.goto(`${mock.url}/`);
       await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await page.until('the dock', docked, 3);
-      await wait(2000);
-      assert.equal(await page.eval(docked, 3), true, 'the dock stayed');
+      await holds('the dock to stay', 2000, () => page.eval(docked, 3));
       await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 1 });
       await page.until('the new card at the front', frontIs, 's-new');
       assert.equal(await page.eval(docked, 3), true);
