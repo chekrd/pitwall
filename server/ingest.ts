@@ -168,33 +168,41 @@ async function syncLive() {
   const livePids = new Set([...live.values()].map((p) => p.pid));
   let changed = false;
   const liveIds = new Set(live.keys());
+  // Read once a pass, and again only after this loop wrote a row or waited, when a request may have written one.
+  let rows: Session[] | undefined;
+  const update: typeof sessions.update = (id, patch) => {
+    sessions.update(id, patch);
+    rows = undefined;
+  };
   for (const [conversation, p] of live) {
-    let s = taskOf(sessions.all(), conversation, liveIds);
+    rows ??= sessions.all();
+    let s = taskOf(rows, conversation, liveIds);
     if (!s) {
-      const left = leftBy(sessions.all(), p.pid, liveIds);
+      const left = leftBy(rows, p.pid, liveIds);
+      rows = undefined;
       if (!left || !(await startedByClear(p.cwd, conversation))) {
         changed = (await adopt(conversation, p)) || changed;
         continue;
       }
-      sessions.update(left.id, handOver(left, conversation, Date.now()));
+      update(left.id, handOver(left, conversation, Date.now()));
       s = sessions.get(left.id)!;
       changed = true;
     } else if (s.conversation !== conversation) {
-      sessions.update(s.id, handOver(s, conversation, Date.now()));
+      update(s.id, handOver(s, conversation, Date.now()));
       changed = true;
     }
     // A conversation that left its task by /resume and came back brings the task back.
     if (s.status === 'exited' && s.archived && !s.resolution) {
-      sessions.update(s.id, { archived: false });
+      update(s.id, { archived: false });
       changed = true;
     }
     const status = statusOf(p, s.activity?.background?.length);
     if (s.interrupted && pickedUp(s.interrupted, status)) {
-      sessions.update(s.id, { interrupted: null });
+      update(s.id, { interrupted: null });
       changed = true;
     }
     if (s.pid !== p.pid || s.status !== status || s.waitingFor !== p.waitingFor) {
-      sessions.update(s.id, { pid: p.pid, tty: s.pid === p.pid ? s.tty : await ttyOf(p.pid), status, waitingFor: p.waitingFor, ...(status === 'idle' && { menu: null }) });
+      update(s.id, { pid: p.pid, tty: s.pid === p.pid ? s.tty : await ttyOf(p.pid), status, waitingFor: p.waitingFor, ...(status === 'idle' && { menu: null }) });
       if (s.status === 'working' && status !== 'working') void refreshDiffstat(s.id);
       changed = true;
     }
