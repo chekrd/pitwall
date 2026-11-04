@@ -10,7 +10,7 @@ export const restart: Check[] = [
       await openQueue(page, mock);
       await page.key('ArrowRight');
       await page.key('q');
-      const label = await page.eval(() => document.querySelector('[data-card] [data-option]')!.textContent!.trim());
+      const label = await page.eval(() => document.querySelector('[data-card] [data-option]')!.textContent.trim());
       await page.click('[data-card] [data-option]');
       await page.goto(`${mock.url}/wall`);
       const events = await until('the recorded events', async () => {
@@ -174,7 +174,7 @@ export const restart: Check[] = [
       await page.click('dialog#new-task [data-more]');
       await page.goto(`${mock.url}/wall`);
       await page.click('header button[aria-label="New task"]');
-      assert.equal((await page.until('New task after the reload', form))!.mode, 'Current checkout');
+      assert.equal((await page.until('New task after the reload', form)).mode, 'Current checkout');
       await page.until('the repository focused', () => document.activeElement === document.querySelector('dialog#new-task button[aria-haspopup="listbox"]'));
       await page.eval(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true })));
       const [made] = await logged(mock, 'the task made', (e) => e.method === 'POST' && e.path === '/api/worktrees');
@@ -263,7 +263,7 @@ export const restart: Check[] = [
       assert.equal(state.filter((s) => s.interrupted).length, midTurn.length, 'the ones that only waited for you are as they were');
       await shot('restart-cut-short');
 
-      await page.click('[data-restart="recover"] button', cut[0]!);
+      await page.click('[data-restart="recover"] button', cut[0]);
       const id = await page.until('its page', () => location.pathname.match(/^\/s\/([^/]+)/)?.[1] ?? null);
       assert.ok(midTurn.some((s) => s.id === id));
       await page.click('#task-sheet [data-interrupted="cut-short"] button', 'Continue the turn');

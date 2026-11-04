@@ -46,6 +46,12 @@ export interface Check {
 
 export const NEW_TASK_MORE = `try { localStorage.getItem('pitwall:new-task-choices') || localStorage.setItem('pitwall:new-task-choices', '{"existing":false,"more":true}'); } catch {}`;
 
+// The order sort() gives with no compare: by the text of each value.
+export const byText = (a: unknown, b: unknown) => {
+  const [x, y] = [String(a), String(b)];
+  return x < y ? -1 : x > y ? 1 : 0;
+};
+
 // For holds(): true while `actual` deep-equals `expected`, and a failure that says how once it does not.
 export const matches = (actual: unknown, expected: unknown) => {
   assert.deepEqual(actual, expected);
@@ -101,7 +107,7 @@ export const sidewaysScroll = () => {
   for (const el of document.querySelectorAll('body *')) {
     const { overflowX } = getComputedStyle(el);
     if ((overflowX === 'auto' || overflowX === 'scroll') && wide(el) && !el.closest('pre, code, textarea, [data-dock]')) {
-      out.push(`${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`);
+      out.push(`${el.tagName.toLowerCase()}.${(el.getAttribute('class') ?? '').split(' ')[0]}`);
     }
   }
   return out;
@@ -144,7 +150,7 @@ export const received = (title: string | null) => {
 
 // Whether the check's socket got a message that shows `title` and names `entry`.
 export const named = (entry: string, title: string) =>
-  !!(window as unknown as Probe).e2eMessages?.some((m) => m.uiEntry === entry && m.sessions.some((s) => s.title === title));
+  (window as unknown as Probe).e2eMessages?.some((m) => m.uiEntry === entry && m.sessions.some((s) => s.title === title));
 
 export const navigation = () => ({
   marker: (window as unknown as Probe).e2eMarker ?? null,
@@ -167,14 +173,15 @@ const TYPES: Record<string, string> = {
 
 // The build with no board behind it: the page loads, and its socket never opens, so no snapshot ever arrives.
 export async function withoutBoard(run: (url: string) => Promise<void>) {
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://board').pathname;
     if (path === '/favicon.ico') return void res.writeHead(204).end();
     const root = underTest();
     const file = extname(path) ? join(root, path) : join(root, 'index.html');
-    const body = file.startsWith(root) ? await readFile(file).catch(() => null) : null;
-    res.writeHead(body ? 200 : 404, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
-    res.end(body);
+    void (file.startsWith(root) ? readFile(file).catch(() => null) : Promise.resolve(null)).then((body) => {
+      res.writeHead(body ? 200 : 404, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
+      res.end(body);
+    });
   });
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   try {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { approveLoss, frontIs, logged, luminance, menuItems, openFromWall, openNewTask, openQueue, openSheetOf, ready, stateOf, still, tiles, toastsOf, whole, type Check } from '../helpers.ts';
+import { approveLoss, byText, frontIs, logged, luminance, menuItems, openFromWall, openNewTask, openQueue, openSheetOf, ready, stateOf, still, tiles, toastsOf, whole, type Check } from '../helpers.ts';
 
 export const usageFindings: Check[] = [
   {
@@ -92,7 +92,7 @@ export const usageFindings: Check[] = [
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       const id = await page.eval(() => {
-        const tile = [...document.querySelectorAll<HTMLElement>('[data-tile][data-attention="working"]')].filter((t) => !t.closest('details')).at(-1);
+        const tile = [...document.querySelectorAll<HTMLElement>('[data-tile][data-attention="working"]')].findLast((t) => !t.closest('details'));
         tile?.scrollIntoView({ block: 'center' });
         return tile?.dataset.session ?? null;
       });
@@ -247,7 +247,7 @@ export const usageFindings: Check[] = [
         const found = (await mock.log()).filter((e) => e.action === 'resolve' && e.status !== null);
         return found.length === 2 && found;
       });
-      assert.deepEqual(resolved.map((e) => [e.sessionId, e.body.state]).toSorted(), [['s-review-1', 'solved'], ['s-review-2', 'solved']]);
+      assert.deepEqual(resolved.map((e) => [e.sessionId, e.body.state]).toSorted(byText), [['s-review-1', 'solved'], ['s-review-2', 'solved']]);
       assert.equal(await page.eval(() => document.querySelector('[data-settled-findings] [data-finding="1"] [class*="rejected"] span')!.textContent), 'Solved in its 2 subtasks');
       assert.equal(await page.eval(() => !!document.querySelector('[data-segment][data-session="s-review-2"]')), false, 'the subtask\'s decision left the queue');
 
@@ -264,7 +264,7 @@ export const usageFindings: Check[] = [
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-settled-count]')!.textContent), '· all 3 settled');
 
       const reopened = '#task-sheet [data-finding="3"]:not([data-settled-findings] *) [data-response="solve"]';
-      const toastKey = () => [...document.querySelectorAll('[data-toast][data-kind="undo"]')].find((t) => t.textContent!.startsWith('Solved #3 '))?.querySelector('kbd')?.textContent ?? null;
+      const toastKey = () => [...document.querySelectorAll('[data-toast][data-kind="undo"]')].find((t) => t.textContent.startsWith('Solved #3 '))?.querySelector('kbd')?.textContent ?? null;
       assert.equal(await page.until('the Undo toast', toastKey), '⌘Z');
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.key('z', { meta: true });
@@ -408,7 +408,7 @@ export const usageFindings: Check[] = [
       await page.click(':popover-open button', 'Clear task');
       const cleared = await page.until('the clear dialog', () => {
         const d = document.querySelector<HTMLElement>('dialog#delete-worktree[open]');
-        return d && !d.textContent!.includes('Checking') && d.innerText;
+        return d && !d.textContent.includes('Checking') && d.innerText;
       });
       assert.match(cleared, /Its 4 subtasks go with it, their Claudes too\./);
       await approveLoss(page);
@@ -420,7 +420,7 @@ export const usageFindings: Check[] = [
     name: 'P8.clear /clear in a subtask with a name, a parent, a subtask of its own and an artifact keeps it one task: the Wall gains no tile, the open page stays on it with its name, its task, its subtask and its artifact, the Session fact names the new conversation and Earlier conversations the old one; a /resume into a conversation another task ran brings that task back and merges nothing',
     scenario: 'findings',
     async run({ page, mock, shot }) {
-      const wallTiles = () => [...document.querySelectorAll<HTMLElement>('[data-tile]')].map((t) => t.dataset.session).sort();
+      const wallTiles = () => [...document.querySelectorAll<HTMLElement>('[data-tile]')].map((t) => t.dataset.session ?? '').sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       const before = await page.eval(wallTiles);

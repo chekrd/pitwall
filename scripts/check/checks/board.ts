@@ -68,7 +68,7 @@ export const board: Check[] = [
           type: s.querySelector('diffs-container')?.shadowRoot?.querySelector('pre[data-diff-type]')?.getAttribute('data-diff-type'),
         }));
         const modified = [...document.querySelectorAll('nav[aria-label="Changed files"] a:has([data-type="change"])')].map((a) => a.getAttribute('data-explain'));
-        return rendered.length === 12 && rendered.every((r) => r.type) && { modified: modified.toSorted(), split: rendered.filter((r) => r.type === 'split').map((r) => r.file).toSorted() };
+        return rendered.length === 12 && rendered.every((r) => r.type) && { modified: modified.toSorted((a, b) => (a! < b! ? -1 : a! > b! ? 1 : 0)), split: rendered.filter((r) => r.type === 'split').map((r) => r.file).toSorted((a, b) => (a! < b! ? -1 : a! > b! ? 1 : 0)) };
       });
       await themes(async (scheme) => {
         const view = await page.eval(() => ({

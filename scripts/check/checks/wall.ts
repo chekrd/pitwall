@@ -342,7 +342,7 @@ export const wall: Check[] = [
       const folder = await page.eval(view);
       assert.deepEqual(folder.sections, ['web/src/components/MenuCard.tsx', 'web/src/types.ts']);
       assert.match(folder.toolbar, /← All filesweb\/src\/2 files · \+2 −6/);
-      assert.ok(folder.current.includes('web/src'), `the folder is not current: ${folder.current}`);
+      assert.ok(folder.current.includes('web/src'), `the folder is not current: ${folder.current.join(', ')}`);
       assert.ok(!folder.current.some((c) => c?.startsWith('All files')), 'All files is still pressed');
       await shot('diff-folder');
 
@@ -478,7 +478,7 @@ export const wall: Check[] = [
     name: 'P4.5d Diff: a large diff, 120 files, draws only the files near the part in view and the rest as it scrolls to them; a file opened from far down goes back to all files drawn where it was',
     async run({ page, mock }) {
       // The page's own fetch gives ten copies of the fixture's diff, each under a folder of its own.
-      await page.initScript(`(${() => {
+      await page.initScript(`(${(() => {
         const real = window.fetch.bind(window);
         window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           const res = await real(input, init);
@@ -489,7 +489,7 @@ export const wall: Check[] = [
           const patch = Array.from({ length: 10 }, (_, n) => copy(n)).join('');
           return new Response(JSON.stringify({ ...d, patch, stat: { ...d.stat, files: d.stat.files * 10 } }), { headers: { 'content-type': 'application/json' } });
         };
-      }})()`);
+      }).toString()})()`);
       await openFromWall(page, mock, 's-invoice');
       await page.key('3');
       await page.until('every file listed', () => document.querySelectorAll('section[data-file]').length === 120);

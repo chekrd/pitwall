@@ -41,7 +41,7 @@ export const replies: Check[] = [
       };
       const shown = await page.until('the queue box', box);
       assert.deepEqual(shown.text, ['In your queue · Decision', 'What should happen to a guest cart when the shopper logs in?']);
-      for (const label of ['Merge both carts', 'Keep the account cart']) assert.ok(shown.options.some((o) => o.includes(label)), `${label} in ${shown.options}`);
+      for (const label of ['Merge both carts', 'Keep the account cart']) assert.ok(shown.options.some((o) => o.includes(label)), `${label} in ${shown.options.join(', ')}`);
       assert.deepEqual([shown.suggested, shown.reply, shown.actions], [true, true, ['Dismiss', 'Open its card']]);
       await page.until('the sheet to settle', settled);
       await shot('sheet-in-your-queue');

@@ -102,7 +102,7 @@ export const newTask: Check[] = [
         let release!: () => void;
         const held = new Promise<void>((r) => (release = r));
         (window as unknown as { release: () => void }).release = release;
-        window.fetch = (input, init) => (String(input).includes('/api/uploads') ? held.then(() => fetched(input, init)) : fetched(input, init));
+        window.fetch = (input, init) => ((input instanceof Request ? input.url : String(input)).includes('/api/uploads') ? held.then(() => fetched(input, init)) : fetched(input, init));
         const data = new DataTransfer();
         data.items.add(new File(['tail -f'], 'server.log', { type: 'text/plain' }));
         document.querySelector('dialog#new-task form')!.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));

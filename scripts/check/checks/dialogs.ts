@@ -327,7 +327,7 @@ export const dialogs: Check[] = [
         w.e2eRelease = () => {};
         w.fetch = (input, init) => {
           const response = real(input, init);
-          if (!String(input).endsWith('/delete-worktree') || init?.method !== 'GET') return response;
+          if (!(input instanceof Request ? input.url : String(input)).endsWith('/delete-worktree') || init?.method !== 'GET') return response;
           return new Promise((resolve) => (w.e2eRelease = () => resolve(response)));
         };
       });

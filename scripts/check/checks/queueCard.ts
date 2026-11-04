@@ -271,7 +271,7 @@ export const queueCard: Check[] = [
       const bar = await page.eval(() => {
         const foot = document.querySelector('[data-card] footer')!;
         const row = (e: Element | null) => e && Math.round(e.getBoundingClientRect().top + e.getBoundingClientRect().height / 2);
-        const [box, archive] = [foot.querySelector('textarea'), [...foot.querySelectorAll('button')].find((b) => b.textContent!.startsWith('Archive')) ?? null];
+        const [box, archive] = [foot.querySelector('textarea'), [...foot.querySelectorAll('button')].find((b) => b.textContent.startsWith('Archive')) ?? null];
         const x = (e: Element | null) => e?.getBoundingClientRect().left;
         return { label: box?.getAttribute('aria-label'), oneRow: row(box) === row(archive), order: x(box)! < x(archive)! };
       });

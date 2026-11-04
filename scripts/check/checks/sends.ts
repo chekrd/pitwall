@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sleep, until } from '../cdp.ts';
-import { actions, card, dealt, frontIs, HELD_MS, logged, matches, openQueue, pastePng, pillAt, POSTED_MS, pressEnter, ready, replyIn, sent, stateOf, still, toastsOf, unguarded, watchDeals, type Check } from '../helpers.ts';
+import { actions, byText, card, dealt, frontIs, HELD_MS, logged, matches, openQueue, pastePng, pillAt, POSTED_MS, pressEnter, ready, replyIn, sent, stateOf, still, toastsOf, unguarded, watchDeals, type Check } from '../helpers.ts';
 
 export const sends: Check[] = [
   {
@@ -170,7 +170,7 @@ export const sends: Check[] = [
       await page.dblclick('[data-card] [data-option="2"]');
       await page.until('s-astro at the front', frontIs, 's-astro');
       await until('the three held sends', async () => (await actions(mock)).length >= 3, POSTED_MS);
-      assert.deepEqual((await actions(mock)).map((e) => [e.sessionId, e.action, e.body.choice ?? null]).toSorted(), [
+      assert.deepEqual((await actions(mock)).map((e) => [e.sessionId, e.action, e.body.choice ?? null]).toSorted(byText), [
         ['s-cart', 'accept-advice', null], ['s-group', 'answer', 'By repo'], ['s-hooks', 'answer-menu', null],
       ]);
     },

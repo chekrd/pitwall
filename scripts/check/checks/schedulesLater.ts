@@ -29,7 +29,7 @@ export const schedulesLater: Check[] = [
       await typeInPrompt(page);
       await page.type('Review the open PRs and summarise what needs me');
       await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
-      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent!), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
+      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
       await shot('new-task-repeat');
       const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div')].map((row) =>
         [...row.querySelectorAll(':scope > label, :scope > [data-when] > label, :scope > [data-when] > fieldset:not([data-days]), :scope > div > label')].map((el) => el.querySelector('span')?.textContent ?? 'Start'));
@@ -47,14 +47,14 @@ export const schedulesLater: Check[] = [
         kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Review the open PRs and summarise what needs me', files: [], model: '', effort: '', name: 'nightly-review',
       });
       await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#new-task')!.open);
-      await page.until('the toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => /Scheduled nightly-review: weekdays at 09:00/.test(t.textContent!)));
+      await page.until('the toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => /Scheduled nightly-review: weekdays at 09:00/.test(t.textContent)));
       const row = await page.until('the schedule on the Wall', () => {
         const r = document.querySelector<HTMLElement>('[data-schedules] [data-schedule="nightly-review"]');
         return r && { text: r.innerText, next: r.querySelector('[data-next]')!.textContent };
       });
       assert.match(row.text, /storefront · weekdays at 09:00/);
-      assert.match(row.next!, /^Next .+ at 09:00$/);
-      assert.match(await page.eval(() => document.querySelector('[data-scheduled-link]')!.textContent!), /^1 scheduled, next .+ at 09:00$/);
+      assert.match(row.next, /^Next .+ at 09:00$/);
+      assert.match(await page.eval(() => document.querySelector('[data-scheduled-link]')!.textContent), /^1 scheduled, next .+ at 09:00$/);
       await page.click('[data-scheduled-link]');
       await page.until('the list scrolled into view', () => {
         const r = document.querySelector('[data-schedules]')!.getBoundingClientRect();
@@ -136,7 +136,7 @@ export const schedulesLater: Check[] = [
       await shot('wall-scheduled-done');
       await page.click('[data-schedule="after-lunch"] [data-last="ran"]');
       const note = await page.until('the schedule fact', () => document.querySelector('#task-sheet [data-scheduled]')?.textContent);
-      assert.match(note!, /^after-lunch, due (today|tomorrow) at \d\d:\d\d; started (today|tomorrow) at \d\d:\d\d, as the Mac was asleep or Pitwall was not running then$/);
+      assert.match(note, /^after-lunch, due (today|tomorrow) at \d\d:\d\d; started (today|tomorrow) at \d\d:\d\d, as the Mac was asleep or Pitwall was not running then$/);
     },
   },
   {
@@ -155,7 +155,7 @@ export const schedulesLater: Check[] = [
         return { scroll: document.documentElement.scrollWidth <= innerWidth, row: row.left >= 0 && row.right <= innerWidth, buttons: buttons.every((b) => b.left >= 0 && b.right <= innerWidth) };
       });
       assert.deepEqual(fit, { scroll: true, row: true, buttons: true });
-      assert.match(await page.eval(() => document.querySelector('[data-schedule="weekly-dependency-bump"]')!.textContent!), /on main · Mondays at 07:30/);
+      assert.match(await page.eval(() => document.querySelector('[data-schedule="weekly-dependency-bump"]')!.textContent), /on main · Mondays at 07:30/);
       await page.eval(() => document.querySelector('[data-schedules]')!.scrollIntoView({ block: 'center' }));
       await shot('wall-scheduled-narrow');
     },
@@ -221,7 +221,7 @@ export const schedulesLater: Check[] = [
       await page.until('the hold toast', () => [...document.querySelectorAll('[role="status"], [data-toast]')].some((t) => t.textContent?.includes('Kept for a press.')));
       const pressed = await until('the pressed draft sent', (s) => s.parked.length === 0);
       assert.equal(pressed.answered?.text, 'Kept for a press.');
-      const posted = (await mock.log()).filter((e) => e.action === 'answer' && e.sessionId === 's-invoice').at(-1)!;
+      const posted = (await mock.log()).findLast((e) => e.action === 'answer' && e.sessionId === 's-invoice')!;
       assert.deepEqual((posted.body as { drafts: string[] }).drafts.length, 1);
     },
   },
@@ -266,7 +266,7 @@ export const schedulesLater: Check[] = [
       await openSheetOf(page, mock, 's-invoice');
       await page.until('the Later box', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
       const tips = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] [data-explain]')]
-        .map((e) => [e.textContent!.trim(), e.dataset.explain!.split('\n\n').map((l) => l.split(':')[0])]));
+        .map((e) => [e.textContent.trim(), e.dataset.explain!.split('\n\n').map((l) => l.split(':')[0])]));
       const byName = Object.fromEntries(tips as [string, string[]][]);
       assert.deepEqual(byName['Send now'], ['Sends this draft as your next message, with 5 s to undo. While Claude works it reads it at its next step, which can change what it is doing.', 'What Claude has', 'Session']);
       assert.deepEqual(byName['Keep for later ↵'].slice(1), ['What Claude has', 'Session']);
@@ -281,7 +281,7 @@ export const schedulesLater: Check[] = [
       assert.equal(await page.eval(tip), null, 'none until hovered');
       await page.hover('#task-sheet [data-later] li[data-parked] button', 'Send now');
       const shown = await page.until('the tip of Send now', tip);
-      assert.match(shown.text!, /^Sends this draft as your next message[^]*What Claude has: the whole conversation[^]*Session: the task's own session/);
+      assert.match(shown.text, /^Sends this draft as your next message[^]*What Claude has: the whole conversation[^]*Session: the task's own session/);
       assert.deepEqual([shown.side, shown.inside], ['above', true]);
       const button = await page.eval(() => Math.round([...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] li[data-parked] button')].find((b) => b.textContent === 'Send now')!.getBoundingClientRect().top));
       assert.ok(shown.bottom <= button, 'above the button, not over it');
@@ -293,7 +293,7 @@ export const schedulesLater: Check[] = [
       assert.equal(await page.eval(sheetOpen), true, 'that Escape only took the tooltip away');
 
       await page.hover('#task-sheet [data-later] button', 'Ask on the side');
-      assert.match((await page.until('a disabled button explains itself too', tip)).text!, /^Asks the text as a question/);
+      assert.match((await page.until('a disabled button explains itself too', tip)).text, /^Asks the text as a question/);
 
       await page.hover('#task-sheet [data-explain="Claude Code\'s session id; claude --resume takes it"]');
       const plain = await page.until('a plain title as a tooltip', tip);
@@ -303,7 +303,7 @@ export const schedulesLater: Check[] = [
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-later] li[data-parked] button')!.focus());
       await page.key('Tab');
-      await page.until('a tip on keyboard focus', () => document.getElementById('tooltip')?.matches(':popover-open') && document.getElementById('tooltip')!.textContent!.startsWith('Changes the draft'));
+      await page.until('a tip on keyboard focus', () => document.getElementById('tooltip')?.matches(':popover-open') && document.getElementById('tooltip')!.textContent.startsWith('Changes the draft'));
 
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);

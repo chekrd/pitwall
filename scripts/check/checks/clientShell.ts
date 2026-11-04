@@ -188,7 +188,7 @@ export const clientShell: Check[] = [
         const w = window as unknown as { e2eUploads: () => void };
         const up = new Promise<void>((done) => (w.e2eUploads = done));
         const fetched = window.fetch;
-        window.fetch = (input, init) => (String(input).includes('/api/uploads') ? up.then(() => fetched(input, init)) : fetched(input, init));
+        window.fetch = (input, init) => ((input instanceof Request ? input.url : String(input)).includes('/api/uploads') ? up.then(() => fetched(input, init)) : fetched(input, init));
       });
       await page.key('w');
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
@@ -292,7 +292,7 @@ export const clientShell: Check[] = [
       await page.type('see the screenshot');
       const pressed = await page.eval(() => {
         const fetched = window.fetch;
-        window.fetch = (input, init) => (String(input).includes('/api/uploads')
+        window.fetch = (input, init) => ((input instanceof Request ? input.url : String(input)).includes('/api/uploads')
           ? Promise.resolve(new Response(JSON.stringify({ path: '/uploads/late/shot.png' }), { headers: { 'content-type': 'application/json' } }))
           : fetched(input, init));
         const section = document.querySelector('[data-card] textarea')!.closest('section')!;
