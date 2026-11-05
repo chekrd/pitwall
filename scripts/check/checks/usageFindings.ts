@@ -324,7 +324,7 @@ export const usageFindings: Check[] = [
       await page.until('the subtask page', () => location.pathname === '/s/s-review-1/overview' && !!document.querySelector('#task-sheet [aria-label="Subtask of"]'));
       await shot('subtask');
       await page.click('#task-sheet header button[aria-label="Session actions"]');
-      assert.deepEqual(await page.until('the subtask menu', menuItems), ['Terminal', 'Open in Finder', 'Open in VS Code', 'Quit Claude', 'Mark solved', 'Drop']);
+      assert.deepEqual(await page.until('the subtask menu', menuItems), ['Terminal', 'Open in Finder', 'Open in VS Code', 'Open in Ghostty', 'Quit Claude', 'Mark solved', 'Drop']);
       await page.key('Escape');
       await page.until('the menu to close', () => !document.querySelector(':popover-open:not([popover="manual"])'));
       const text = (sel: string) => page.eval((q) => document.querySelector<HTMLElement>(q)!.innerText.replace(/\s+/g, ' ').trim(), sel);

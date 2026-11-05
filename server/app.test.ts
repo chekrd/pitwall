@@ -123,6 +123,12 @@ test('a refusal is a 400 with its code; a fault here is a 500', async () => {
   }
 });
 
+test('a shell in a folder that is gone fails and opens no tab', async () => {
+  const res = await post('/api/shell', { worktree: '/nonexistent/pitwall-shell' });
+  assert.equal(res.status, 500);
+  assert.match(await res.text(), /no longer exists/);
+});
+
 test('an unknown action is a 404, whatever its body', async () => {
   const id = addSession();
   assert.equal((await post(`/api/sessions/${id}/explode`, {})).status, 404);

@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { sessionAction } from '../api.ts';
+import { api, sessionAction } from '../api.ts';
 import { queue } from '../queue.ts';
 import { closeSheetOf, moveSheetOf } from '../router.ts';
 import { sends } from '../sends.ts';
@@ -73,7 +73,8 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
   const id = useId();
   const exited = session.status === 'exited';
   const clearing = !!session.clearing;
-  const path = tilde(session.worktree, useStore().home);
+  const { home } = useStore();
+  const path = tilde(session.worktree, home);
   const pick = (run: () => unknown) => () => {
     document.getElementById(id)?.hidePopover();
     run();
@@ -93,6 +94,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         )}
         <Item label="Open in Finder" note={path} onClick={act('finder', {})} />
         <Item label="Open in VS Code" note={path} onClick={act('vscode', {})} />
+        <Item label="Open in Ghostty" note={`New shell in ${tilde(session.cwd, home)}`} onClick={pick(() => api('POST', '/api/shell', { worktree: session.cwd }).catch(reportError))} />
         {!exited && !clearing && (
           <Item
             label="Quit Claude"

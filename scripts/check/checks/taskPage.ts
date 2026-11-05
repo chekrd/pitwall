@@ -80,11 +80,15 @@ export const taskPage: Check[] = [
         await page.click(`[data-tile][data-session="${id}"] button[aria-label="Session actions"]`);
         return page.until(`the menu of ${id}`, menuItems);
       };
-      assert.deepEqual(await open('s-stripe'), ['Continue', 'Open in Finder', 'Open in VS Code', 'Archive', 'Remove from list', 'Clear task…']);
+      assert.deepEqual(await open('s-stripe'), ['Continue', 'Open in Finder', 'Open in VS Code', 'Open in Ghostty', 'Archive', 'Remove from list', 'Clear task…']);
       await page.key('Escape');
       await page.until('the menu to close', () => !document.querySelector(':popover-open'));
-      assert.deepEqual(await open('s-invoice'), ['Terminal', 'Open in Finder', 'Open in VS Code', 'Quit Claude', 'Archive', 'Clear task…']);
+      assert.deepEqual(await open('s-invoice'), ['Terminal', 'Open in Finder', 'Open in VS Code', 'Open in Ghostty', 'Quit Claude', 'Archive', 'Clear task…']);
       await shot('session-menu');
+      await page.click(':popover-open button', 'Open in Ghostty');
+      const [shell] = await logged(mock, 'the shell', (e) => e.path === '/api/shell');
+      assert.deepEqual(shell.body, { worktree: `${await mock.home()}/code/worktrees/invoice-rounding/billing-api/services/pdf` }, 'the shell opens where Claude runs, not at the worktree root');
+      await open('s-invoice');
 
       const asked = () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
@@ -253,7 +257,7 @@ export const taskPage: Check[] = [
       assert.match(page1, /Clearing the task.*the worktree is being removed/);
       assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-ux-section="message box"]')), false, 'no message box while clearing');
       await page.click('#task-sheet header button[aria-label="Session actions"]');
-      assert.deepEqual(await page.until('the menu', menuItems), ['Open in Finder', 'Open in VS Code']);
+      assert.deepEqual(await page.until('the menu', menuItems), ['Open in Finder', 'Open in VS Code', 'Open in Ghostty']);
       await page.key('Escape');
       await shot('clearing-page');
 

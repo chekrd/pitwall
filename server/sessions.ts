@@ -156,6 +156,7 @@ export async function resumePaused(only?: string) {
 }
 
 export async function openShell(worktree: string) {
+  if (!existsSync(worktree)) throw new Error(`${worktree} no longer exists`);
   await ghostty.newTab(worktree, '');
 }
 

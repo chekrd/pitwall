@@ -224,7 +224,7 @@ export function queue(now: number): Session[] {
       lastTurn: 't-anchors-4', diffstat: { files: 9, insertions: 41, deletions: 41 },
     }),
     session({
-      id: 's-invoice', repoId: 2, worktree: `${HOME}/code/worktrees/invoice-rounding/billing-api`, tty: '/dev/ttys006', pid: 77031,
+      id: 's-invoice', repoId: 2, worktree: `${HOME}/code/worktrees/invoice-rounding/billing-api`, cwd: `${HOME}/code/worktrees/invoice-rounding/billing-api/services/pdf`, tty: '/dev/ttys006', pid: 77031,
       title: 'Fix invoice PDF rounding',
       firstPrompt: 'Invoice PDFs are sometimes off by a cent (BILL-91). Find out why, fix it, and get the PR green.',
       status: 'working', createdAt: now - 80 * MIN, updatedAt: now - MIN,
