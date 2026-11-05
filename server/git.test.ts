@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { changedFiles, fullDiff, pullRequestUrlOf, unpushedCommits, upstreamOf } from './git.ts';
+import { changedFiles, detectBase, fullDiff, pullRequestUrlOf, unpushedCommits, upstreamOf } from './git.ts';
 
 const GIT_WT = join(import.meta.dirname, '..', 'scripts', 'git-wt');
 const env = {
@@ -108,6 +108,95 @@ test('git wt lays out task folders, copies .worktreeinclude files and removes cl
   wt(main, 'rm', path, '--force', '--delete-branch');
   assert.equal(existsSync(join(root, 'worktrees', 'task-1')), false, 'the empty task folder goes too');
   assert.equal(git(main, 'branch', '--list', 'feat/x'), '');
+});
+
+function withOrigin(defaultBranch: string) {
+  const { root, main } = repo();
+  const origin = join(root, 'origin.git');
+  git(main, 'branch', '-m', defaultBranch);
+  git(root, 'init', '-q', '--bare', '-b', defaultBranch, origin);
+  git(main, 'remote', 'add', 'origin', origin);
+  git(main, 'push', '-q', '-u', 'origin', defaultBranch);
+  const other = join(root, 'other');
+  git(root, 'clone', '-q', origin, other);
+  const land = (branch: string) => {
+    git(other, 'switch', '-qC', branch);
+    write(other, `${branch}.txt`, 'x\n');
+    git(other, 'add', '-A');
+    git(other, 'commit', '-qm', branch);
+    git(other, 'push', '-q', 'origin', branch);
+    return git(other, 'rev-parse', 'HEAD');
+  };
+  return { root, main, origin, land };
+}
+
+test('a new worktree starts from what origin has now, whatever its default branch is called, not from the local one', () => {
+  const { main, land } = withOrigin('trunk');
+  const latest = land('trunk');
+  write(main, 'local.txt', 'unpushed\n');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-qm', 'unpushed');
+
+  const path = wt(main, 'add', 'feat');
+
+  assert.equal(git(path, 'rev-parse', 'HEAD'), latest);
+  assert.equal(git(main, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'), 'origin/trunk', 'noted for later reads');
+  assert.throws(() => git(path, 'rev-parse', '--verify', '--quiet', '@{upstream}'), 'a new branch tracks nothing until pushed');
+});
+
+test('origin renaming its default branch moves new worktrees to it, past a stale origin/HEAD and a local branch of the old name', () => {
+  const { main, origin, land } = withOrigin('master');
+  git(main, 'remote', 'set-head', 'origin', 'master');
+  const latest = land('main');
+  git(origin, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+
+  assert.equal(git(wt(main, 'add', 'feat'), 'rev-parse', 'HEAD'), latest);
+});
+
+test('a branch only origin has, pushed after the last fetch, is picked up and tracked', () => {
+  const { main, land } = withOrigin('main');
+  const latest = land('shared');
+
+  const path = wt(main, 'add', 'shared');
+
+  assert.equal(git(path, 'rev-parse', 'HEAD'), latest);
+  assert.equal(git(path, 'rev-parse', '--abbrev-ref', '@{upstream}'), 'origin/shared');
+});
+
+test('a configured base starts from origin\'s latest copy, named with origin/ or without; one origin lacks is used as it is', () => {
+  const { main, land } = withOrigin('main');
+  const latest = land('develop');
+  git(main, 'branch', 'local-only');
+
+  assert.equal(git(wt(main, 'add', 'one', '--base', 'develop'), 'rev-parse', 'HEAD'), latest);
+  assert.equal(git(wt(main, 'add', 'two', '--base', 'origin/develop'), 'rev-parse', 'HEAD'), latest);
+  assert.equal(git(wt(main, 'add', 'three', '--base', 'local-only'), 'rev-parse', 'HEAD'), git(main, 'rev-parse', 'local-only'));
+});
+
+test('a worktree is refused rather than started from a stale state when origin cannot be reached, and leaves nothing behind', () => {
+  const { root, main } = withOrigin('main');
+  git(main, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
+
+  assert.throws(() => wt(main, 'add', 'feat'), /origin cannot be reached/);
+  assert.equal(git(main, 'branch', '--list', 'feat'), '');
+  assert.equal(existsSync(join(root, 'worktrees', 'feat')), false);
+  assert.equal(git(wt(main, 'add', 'chosen', '--from', 'main'), 'rev-parse', 'HEAD'), git(main, 'rev-parse', 'main'), 'an explicit ref needs no origin');
+});
+
+test('with no origin a new worktree starts from the main checkout\'s branch, under any name', async () => {
+  const { main } = repo();
+  git(main, 'branch', '-m', 'trunk');
+
+  assert.equal(git(wt(main, 'add', 'feat'), 'rev-parse', 'HEAD'), git(main, 'rev-parse', 'trunk'));
+  assert.equal(await detectBase(main), 'trunk');
+});
+
+test('the detected base is origin\'s default branch, ahead of the branch the main checkout is on', async () => {
+  const { main } = withOrigin('release-line');
+  git(main, 'remote', 'set-head', 'origin', 'release-line');
+  git(main, 'switch', '-qc', 'feature');
+
+  assert.equal(await detectBase(main), 'origin/release-line');
 });
 
 test('a commit counts as unpushed until a remote has it, though another local branch does', async () => {

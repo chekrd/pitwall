@@ -63,7 +63,7 @@ async function startTask(req: NewTask) {
     const wanted = req.path?.trim().replace(/^~(?=\/|$)/, homedir()) || undefined;
     if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
     path = await addWorktree(repo.path, {
-      branch: branch || name, task: name, base: repo.base, root: repo.defaultWorktreeRoot, path: wanted,
+      branch: branch || name, task: name, base: repo.baseBranch, root: repo.defaultWorktreeRoot, path: wanted,
     });
   }
   await refreshWorkspace();

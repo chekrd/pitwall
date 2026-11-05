@@ -24,12 +24,13 @@ export async function repoRoot(path: string) {
   return resolve(common, '..');
 }
 
+// Local on purpose, as every workspace refresh reads it; git wt add corrects origin/HEAD from origin itself.
 export async function detectBase(repo: string) {
-  for (const candidate of ['master', 'main']) {
-    if (await ok(git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${candidate}`]))) return candidate;
+  for (const ref of ['refs/remotes/origin/HEAD', 'HEAD']) {
+    const branch = (await git(repo, ['symbolic-ref', '--quiet', '--short', ref]).catch(() => '')).trim();
+    if (branch) return branch;
   }
-  const head = await git(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(() => '');
-  return head.trim() || 'HEAD';
+  return 'HEAD';
 }
 
 export interface Worktree {
@@ -59,14 +60,14 @@ export async function listWorktrees(repo: string): Promise<Worktree[]> {
 const GIT_WT = join(import.meta.dirname, '..', 'scripts', 'git-wt');
 
 async function gitWt(repo: string, args: string[]) {
-  const { stdout } = await run(GIT_WT, args, { cwd: repo, env: { ...loginEnv, GIT_OPTIONAL_LOCKS: '0' } }).catch((err) => {
+  const { stdout } = await run(GIT_WT, args, { cwd: repo, env: { ...loginEnv, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } }).catch((err) => {
     throw new Error(String(err.stderr || err.message).trim());
   });
   return stdout.trim();
 }
 
-export async function addWorktree(repo: string, opts: { branch: string; task: string; base: string; root: string; path?: string | undefined }) {
-  return gitWt(repo, ['add', opts.branch, '--task', opts.task, '--base', opts.base, '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]);
+export async function addWorktree(repo: string, opts: { branch: string; task: string; base: string | null; root: string; path?: string | undefined }) {
+  return gitWt(repo, ['add', opts.branch, '--task', opts.task, ...(opts.base ? ['--base', opts.base] : []), '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]);
 }
 
 export const validBranch = (name: string) => ok(run('git', ['check-ref-format', '--branch', name]));

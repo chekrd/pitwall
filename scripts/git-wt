@@ -10,8 +10,10 @@ usage: git wt add <branch> [--task <name>] [--from <ref>] [--base <ref>] [--root
 
 add  Creates (or reuses) the worktree for <branch> and prints its path. The task folder
      defaults to the branch, with / turned into -. A new branch starts from <ref>, else
-     origin/<branch> when that exists, else --base or the base branch (master, main or
-     origin/HEAD).
+     origin/<branch> when that exists, else --base, else the default branch origin reports;
+     --base and the default start from origin's copy, fetched first. Without --from it
+     refuses when origin cannot be reached. A repository with no origin starts from the
+     main checkout's branch.
      Files matched by the main checkout's .worktreeinclude are copied in.
 rm   Removes the worktree of <branch>, the one at <path>, or the current one, and the
      task folder once it is empty.
@@ -47,14 +49,49 @@ has_ref() {
   git -C "$main" show-ref --verify --quiet "$1"
 }
 
-base_branch() {
-  for b in master main; do
-    if has_ref "refs/heads/$b"; then
-      echo "$b"
-      return
-    fi
-  done
-  git -C "$main" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo HEAD
+default_branch() {
+  git -C "$main" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null ||
+    git -C "$main" symbolic-ref --quiet --short HEAD 2>/dev/null ||
+    echo HEAD
+}
+
+start_point() {
+  if [ -z "$base" ]; then
+    default_branch
+  elif has_ref "refs/remotes/origin/${base#origin/}"; then
+    echo "origin/${base#origin/}"
+  else
+    echo "$base"
+  fi
+}
+
+# macOS has no timeout(1). The watchdog must not hold our stdout: a caller reading it would wait out the sleep.
+within() {
+  seconds=$1
+  shift
+  "$@" &
+  work=$!
+  (sleep "$seconds"; kill "$work") </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  status=0
+  wait "$work" || status=$?
+  kill "$watchdog" 2>/dev/null || true
+  return "$status"
+}
+
+# Asks origin itself: refs/remotes/origin/HEAD only remembers the clone, so it can be missing or name a renamed branch.
+refresh_from_origin() {
+  git -C "$main" remote get-url origin >/dev/null 2>&1 || return 0
+  stale="origin cannot be reached, so the worktree would not start from its latest state"
+  heads=$(within 30 git -C "$main" ls-remote --symref origin HEAD "refs/heads/$branch" ${base:+"refs/heads/${base#origin/}"}) || die "$stale"
+  refspecs=$(printf '%s\n' "$heads" | awk '$2 ~ /^refs\/heads\// { print "+" $2 ":refs/remotes/origin/" substr($2, 12) }' | sort -u)
+  if [ -n "$refspecs" ]; then
+    within 60 git -C "$main" fetch --quiet --no-tags origin $refspecs || die "$stale"
+  fi
+  default=$(printf '%s\n' "$heads" | awk '$1 == "ref:" && $3 == "HEAD" { print substr($2, 12) }')
+  if [ -n "$default" ]; then
+    git -C "$main" remote set-head origin "$default" >/dev/null
+  fi
 }
 
 worktree_of_branch() {
@@ -107,12 +144,14 @@ add() {
     return
   fi
 
+  has_ref "refs/heads/$branch" || [ -n "$from" ] || refresh_from_origin
+
   if has_ref "refs/heads/$branch"; then
     git -C "$main" worktree add --quiet "$path" "$branch" >&2
   elif [ -z "$from" ] && has_ref "refs/remotes/origin/$branch"; then
     git -C "$main" worktree add --quiet --track -b "$branch" "$path" "origin/$branch" >&2
   else
-    git -C "$main" worktree add --quiet --no-track -b "$branch" "$path" "${from:-${base:-$(base_branch)}}" >&2
+    git -C "$main" worktree add --quiet --no-track -b "$branch" "$path" "${from:-$(start_point)}" >&2
   fi
 
   if has_ref "refs/remotes/origin/$branch" && ! git -C "$path" rev-parse --quiet --verify '@{upstream}' >/dev/null 2>&1; then

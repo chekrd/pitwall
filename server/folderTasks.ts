@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { OPEN_WORKTREE_TOOL_NAME } from './config.ts';
 import { addWorktree, fullDiff, validBranch, type DiffStat, type FullDiff } from './git.ts';
-import { folders, refreshWorkspace, taskFolderOf, taskWorktrees } from './workspace.ts';
+import { folders, refreshWorkspace, repoView, taskFolderOf, taskWorktrees } from './workspace.ts';
 
 export async function makeTaskFolder(folderPath: string, name: string) {
   const folder = folders().find((f) => f.path === folderPath);
@@ -36,10 +36,10 @@ export async function openWorktree(input: { repo: string; task_folder: string })
   const repo = task.repos.find((r) => r.name.toLowerCase() === wanted.toLowerCase() || r.path === wanted);
   if (!repo) throw new Error(`${task.folder.path} has no repository ${wanted}; pick one of ${task.repos.map((r) => r.name).join(', ')}`);
   const path = await addWorktree(repo.path, {
-    branch: task.name, task: task.name, base: repo.base, root: join(task.folder.path, 'worktrees'), path: join(task.path, repo.name),
+    branch: task.name, task: task.name, base: repo.baseBranch, root: join(task.folder.path, 'worktrees'), path: join(task.path, repo.name),
   });
   await refreshWorkspace();
-  return { path, branch: task.name, base: repo.base, setup: repo.setupCommand };
+  return { path, branch: task.name, base: repoView(repo.id)?.base ?? repo.base, setup: repo.setupCommand };
 }
 
 const NO_CHANGES: DiffStat = { files: 0, insertions: 0, deletions: 0 };

@@ -67,7 +67,7 @@ export async function refreshWorkspace({ scan = false } = {}) {
       worktrees.sort((a, b) => Number(b.isMain) - Number(a.isMain) || byName(a.branch ?? a.path, b.branch ?? b.path));
       return { ...view, base: repo.baseBranch ?? await detectBase(repo.path), worktrees };
     } catch (err) {
-      return { ...view, base: repo.baseBranch ?? 'master', worktrees: [], error: String(err) };
+      return { ...view, base: repo.baseBranch ?? 'HEAD', worktrees: [], error: String(err) };
     }
   }));
   next.sort((a, b) => byName(a.name, b.name) || byName(a.path, b.path));
