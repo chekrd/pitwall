@@ -66,8 +66,15 @@ async function gitWt(repo: string, args: string[]) {
   return stdout.trim();
 }
 
-export async function addWorktree(repo: string, opts: { branch: string; task: string; base: string | null; root: string; path?: string | undefined }) {
-  return gitWt(repo, ['add', opts.branch, '--task', opts.task, ...(opts.base ? ['--base', opts.base] : []), '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]);
+const adding = new Map<string, Promise<unknown>>();
+
+// One at a time in a repository: tasks now start without waiting for each other, and two fetches of the same branch
+// can fail on its ref lock, which git wt would report as origin being out of reach.
+export function addWorktree(repo: string, opts: { branch: string; task: string; base: string | null; root: string; path?: string | undefined }) {
+  const add = () => gitWt(repo, ['add', opts.branch, '--task', opts.task, ...(opts.base ? ['--base', opts.base] : []), '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]);
+  const turn = (adding.get(repo) ?? Promise.resolve()).then(add, add);
+  adding.set(repo, turn);
+  return turn;
 }
 
 export const validBranch = (name: string) => ok(run('git', ['check-ref-format', '--branch', name]));

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { changedFiles, detectBase, fullDiff, pullRequestUrlOf, unpushedCommits, upstreamOf } from './git.ts';
+import { addWorktree, changedFiles, detectBase, fullDiff, pullRequestUrlOf, unpushedCommits, upstreamOf } from './git.ts';
 
 const GIT_WT = join(import.meta.dirname, '..', 'scripts', 'git-wt');
 const env = {
@@ -81,6 +81,17 @@ test('a same-size edit made in the second the index was written is in the diff',
 
   const diff = await fullDiff(main, 'master');
   assert.match(diff.patch, / one\n-two\n\+TWO\n three/);
+});
+
+test('worktrees added at once in a repository each come, at the path asked for, one fetch after the other', async () => {
+  const { root, main } = repo();
+  git(root, 'init', '--quiet', '--bare', 'origin.git');
+  git(main, 'remote', 'add', 'origin', join(root, 'origin.git'));
+  git(main, 'push', '--quiet', 'origin', 'HEAD:refs/heads/main');
+  git(join(root, 'origin.git'), 'symbolic-ref', 'HEAD', 'refs/heads/main');
+  const paths = ['one', 'two', 'three'].map((name) => join(root, 'worktrees', name, 'app'));
+  const added = await Promise.all(['one', 'two', 'three'].map((name, i) => addWorktree(main, { branch: name, task: name, base: null, root: join(root, 'worktrees'), path: paths[i] })));
+  assert.deepEqual(added, paths);
 });
 
 test('git wt lays out task folders, copies .worktreeinclude files and removes cleanly', async () => {

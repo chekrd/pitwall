@@ -116,6 +116,8 @@ const log: Entry[] = [];
 const uxEvents: (UxEvent & { page: string })[] = [];
 let failNext: { error: string; code?: string } | null = null;
 let delayMs = 0;
+// While held, a new worktree waits as a fetch from origin would, until /mock/worktree-release lets it finish or fail.
+let worktreeHold: { done: Promise<void>; release: (error?: string) => void } | null = null;
 // While held, a Clear task waits as a large worktree's removal would, until /mock/clear-release lets it finish or fail.
 let clearHold: { done: Promise<void>; release: (error?: string) => void } | null = null;
 let dropUntil = 0;
@@ -532,6 +534,7 @@ async function sessionAction(id: string, action: string, raw: Buffer) {
   const body = input(raw, actionBodies[action]);
   const s = must(id);
   if (onDecision.has(action)) checkDecision(s, (body as { key?: string | null }).key);
+  if (s.starting && action !== 'forget') throw new Error('this task has no Claude yet');
   return (actions[action] as (s: Session, body: unknown) => unknown)(s, body);
 }
 
@@ -590,7 +593,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
     firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, rank: null, rankReason: null, priority: null, diffstat: null,
     lastMessage: null, lastPrompt: null, lastTurn: null, waitingFor: null, dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null,
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null,
-    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, parked: [], asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,
+    model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, starting: null, parked: [], asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,
   });
   push();
   return id;
@@ -608,11 +611,8 @@ function addWorktree(repo: RepoView, body: { name?: string; branch?: string; pat
     main.branch = branch;
     return main.path;
   }
-  if (!name) throw new Error('name is required');
   if (name === 'fail') throw new Error(`git wt: a branch named '${branch || name}' cannot be created here`);
-  const wanted = body.path?.trim().replace(/^~(?=\/|$)/, HOME);
-  if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
-  const path = wanted || `${repo.defaultWorktreeRoot}/${name.replaceAll('/', '-')}/${repo.name}`;
+  const path = body.path?.trim().replace(/^~(?=\/|$)/, HOME) || `${repo.defaultWorktreeRoot}/${name.replaceAll('/', '-')}/${repo.name}`;
   if (!repo.worktrees.some((w) => w.path === path)) {
     repo.worktrees.push({ path, branch: branch || name, head: randomUUID().replaceAll('-', '').padEnd(40, '0'), isMain: false, conversations: [] });
   }
@@ -789,9 +789,39 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
     return { path, sessionId: startSession(null, path, { title: name, prompt, model, effort, scheduled: req.scheduled }) };
   }
   const repo = mustRepo(req.repoId);
-  const path = addWorktree(repo, req);
-  push();
-  return { path, sessionId: startSession(repo.id, path, { title: req.scheduled || !req.existingBranch ? name : '', prompt, model, effort, scheduled: req.scheduled }) };
+  const claude = { prompt, model, effort, scheduled: req.scheduled };
+  if (req.existingBranch) {
+    const path = addWorktree(repo, req);
+    push();
+    return { path, sessionId: startSession(repo.id, path, { ...claude, title: req.scheduled ? name : '' }) };
+  }
+  if (!name) throw new Error('name is required');
+  const wanted = req.path?.trim().replace(/^~(?=\/|$)/, HOME);
+  if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
+  const branch = req.branch?.trim() || name;
+  if (branch.includes('..')) throw new Error(`${branch} cannot name a branch`);
+  const path = wanted || `${repo.defaultWorktreeRoot}/${name.replaceAll('/', '-')}/${repo.name}`;
+  const sessionId = startSession(repo.id, path, { ...claude, title: name });
+  const { status, activity } = find(sessionId)!;
+  const request = { repoId: repo.id, name, branch: req.branch?.trim() ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files: req.files ?? [], model: req.model ?? '', effort: req.effort ?? '' };
+  const finish = () => {
+    addWorktree(repo, req);
+    update(sessionId, { starting: null, status, activity });
+  };
+  const fail = (err: unknown) => {
+    update(sessionId, { status: 'exited', activity: null, starting: { request, error: (err as Error).message } });
+  };
+  if (worktreeHold) {
+    update(sessionId, { status: 'working', activity: { step: 'Creating the worktree', since: Date.now() }, starting: { request, error: null } });
+    void worktreeHold.done.then(finish).catch(fail);
+    return { path, sessionId };
+  }
+  try {
+    finish();
+  } catch (err) {
+    fail(err);
+  }
+  return { path, sessionId };
 }
 
 api('POST /api/worktrees', ({ body: { branch = '', path = '', prompt = '', model = '', effort = '', existingBranch = false, ...body } }) =>
@@ -810,7 +840,14 @@ const plan = scheduler({
     schedules = schedules.map((x) => (x.id === s.id ? s : x));
     push();
   },
-  start: async (s, name, scheduled) => startTask({ ...s.task, name, scheduled }).sessionId,
+  start: async (s, name, scheduled) => {
+    const { sessionId } = startTask({ ...s.task, name, scheduled });
+    const failed = find(sessionId)?.starting?.error;
+    if (!failed) return sessionId;
+    state.sessions = state.sessions.filter((o) => o.id !== sessionId);
+    push();
+    throw new Error(failed);
+  },
   taken: () => new Set([
     ...state.sessions.flatMap((s) => [s.title ?? '', s.worktree.split('/').at(-1)!]),
     ...state.repos.flatMap((r) => r.worktrees.flatMap((w) => [w.branch ?? '', w.path.split('/').at(-2)!])),
@@ -1066,6 +1103,18 @@ route('POST', '/mock/advice', ({ body }) => {
 route('POST', '/mock/fail', ({ body }) => {
   failNext = { error: String(body.error ?? 'mock failure'), ...(body.code && { code: String(body.code) }) };
   return failNext;
+});
+route('POST', '/mock/worktree-hold', () => {
+  let release!: (error?: string) => void;
+  const done = new Promise<void>((resolve, reject) => (release = (error) => (error ? reject(new Error(error)) : resolve())));
+  done.catch(() => {});
+  worktreeHold = { done, release };
+  return {};
+});
+route('POST', '/mock/worktree-release', ({ body }) => {
+  worktreeHold?.release(body.error ? String(body.error) : undefined);
+  worktreeHold = null;
+  return {};
 });
 route('POST', '/mock/clear-hold', () => {
   let release!: (error?: string) => void;

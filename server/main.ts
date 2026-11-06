@@ -31,6 +31,7 @@ setInterval(pruneUx, 86_400_000).unref();
 await refreshWorkspace({ scan: true });
 await sync();
 S.settleAsides();
+S.settleStarting();
 settleExplanations();
 setInterval(() => void sync().then(() => {
   S.pauseStep();

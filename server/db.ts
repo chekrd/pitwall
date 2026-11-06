@@ -196,6 +196,13 @@ export interface Interrupted {
   menu: Menu | null;
 }
 
+// A task whose worktree is being made behind its card, Claude not yet started; `request` is what New task sent, kept so
+// that a task that failed to start can go back to the form.
+export interface Starting {
+  request: { repoId: number; name: string; branch: string; path: string; prompt: string; files: string[]; model: string; effort: string };
+  error: string | null;
+}
+
 // A task keeps its id for good; `conversation` is the Claude Code conversation it runs now, which /clear replaces.
 export type Priority = 'high' | 'low';
 
@@ -241,6 +248,7 @@ export interface Session {
   interrupted: Interrupted | null;
   turnError: TurnError | null;
   scheduled: Scheduled | null;
+  starting: Starting | null;
   parked: Parked[];
   asides: Aside[];
   // When the sync last saw the task's Claude alive, written about once a minute while it runs; null for a row it has
@@ -304,6 +312,7 @@ const toSession = (r: Row): Session => ({
   interrupted: r.interrupted ? JSON.parse(r.interrupted) : null,
   turnError: r.turn_error ? JSON.parse(r.turn_error) : null,
   scheduled: r.scheduled ? JSON.parse(r.scheduled) : null,
+  starting: r.starting ? JSON.parse(r.starting) : null,
   parked: r.parked ? JSON.parse(r.parked) : [],
   asides: r.asides ? JSON.parse(r.asides) : [],
   aliveAt: r.alive_at ?? null,
@@ -386,6 +395,7 @@ const columns: Record<string, string> = {
   interrupted: 'interrupted',
   turnError: 'turn_error',
   scheduled: 'scheduled',
+  starting: 'starting',
   parked: 'parked',
   asides: 'asides',
   archived: 'archived',
@@ -413,7 +423,7 @@ export const sessions = {
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
     parsed.delete(s.id);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');

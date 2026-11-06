@@ -90,6 +90,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN alive_at INTEGER');
   },
+  // 6: a task whose worktree is still being made behind its card, or could not be.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN starting TEXT');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

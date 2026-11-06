@@ -323,6 +323,7 @@ export function createApp({ usage, ui }: AppDeps) {
     const name = c.req.param('action');
     if (!isAction(name)) return c.text('unknown action', 404);
     const body: Data = await input(c, actionBodies[name]);
+    if (sessions.get(id)?.starting && name !== 'forget') throw new Invalid('this task has no Claude yet');
     if (onDecision.has(name)) S.expectDecision(id, body.key as string | null | undefined);
     const before = sessions.get(id);
     const answered = before && answering.has(name) ? boardAnswer(before, name, body) : null;

@@ -3,7 +3,7 @@ import { sessionAction } from '../api.ts';
 import { acceptance, choose, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
 import type { Request } from '../outbox.ts';
 import { queue } from '../queue.ts';
-import { closeSheet, closeSheetToQueue, showTab } from '../router.ts';
+import { closeSheet, closeSheetOf, closeSheetToQueue, showTab } from '../router.ts';
 import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { RepoView, Session } from '../types.ts';
@@ -22,7 +22,8 @@ import { interruptedAs, resumePaused } from './RestartBanner.tsx';
 import styles from './Overview.module.css';
 import { scheduledNote } from '../schedules.ts';
 import { SecondOpinion } from './SecondOpinion.tsx';
-import { STATE_LABELS, stoppedOnError } from './Status.tsx';
+import { editFailedTask } from './NewTaskForm.tsx';
+import { failedToStart, STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { FocusButton } from './SessionMenu.tsx';
 import { explain, SENDS } from './explain.ts';
@@ -197,6 +198,23 @@ function ClearFailed({ session }: { session: Session }) {
   );
 }
 
+function StartFailed({ session }: { session: Session }) {
+  const leave = () => {
+    closeSheetOf(session.id);
+    sessionAction(session.id, 'forget').catch(reportError);
+  };
+  return (
+    <section className={styles.blocked} data-start-failed data-ux-section="start failed">
+      <div className={styles.errorText}>
+        <p><strong>The task did not start.</strong> Claude never ran.</p>
+        <blockquote>{session.starting!.error}</blockquote>
+      </div>
+      <button type="button" data-variant="primary" data-explain="Open New task with what you sent, to change it or try again; this task makes way" onClick={() => { leave(); editFailedTask(session); }}>Back to New task</button>
+      <button type="button" data-explain="Remove this task from the board" onClick={leave}>Remove</button>
+    </section>
+  );
+}
+
 function TurnError({ session, name }: { session: Session; name: string }) {
   const { kind, text } = session.turnError!;
   const said = text.split(/\n\s*\n/)[0].replace(/^API Error:\s*/, '');
@@ -223,7 +241,8 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const { archived } = session;
   const { clearing } = session;
   const working = session.status === 'working' && !clearing;
-  const message = !archived && (attention === 'working' || attention === 'idle');
+  const starting = !!session.starting;
+  const message = !archived && !starting && (attention === 'working' || attention === 'idle');
   // Message Claude stays while focus is in it, also with the window away, whatever the state turns to: a dictation app
   // inserts into the field it started on, and a new box would not be that field. The server refuses a message while
   // Claude shows a prompt, and the text comes back.
@@ -249,11 +268,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {session.clearError && !clearing && <ClearFailed session={session} />}
           {session.interrupted && !archived && !clearing && <Interrupted session={session} name={name} />}
           {stoppedOnError(session, attention) && <TurnError session={session} name={name} />}
+          {failedToStart(session) && <StartFailed session={session} />}
           {working && (
             <section className={styles.working} data-ux-section="working">
               <span className={styles.spinner} aria-hidden />
               <div className={styles.step}>
-                <strong>{activity?.between ? 'Waiting on background work' : 'Claude is working'}</strong>
+                <strong>{starting ? 'Setting up the task' : activity?.between ? 'Waiting on background work' : 'Claude is working'}</strong>
                 {!activity?.between && <code>{activity?.step ?? 'Starting'}</code>}
                 {!!activity?.background?.length && (
                   <ul className={styles.background} aria-label="In the background" data-between={activity.between}>
@@ -296,7 +316,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               />
             </div>
           )}
-          {(!archived || session.parked.length > 0 || session.asides.length > 0) && <Later session={session} name={name} />}
+          {!starting && (!archived || session.parked.length > 0 || session.asides.length > 0) && <Later session={session} name={name} />}
           {learnings.length > 0 && (
             <section className={styles.know} data-ux-section="worth knowing">
               <h3 className={styles.label} data-explain="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>

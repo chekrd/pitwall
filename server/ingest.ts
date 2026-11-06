@@ -216,6 +216,7 @@ async function syncLive() {
   const known = new Set(all.flatMap((s) => [s.conversation, ...s.history.map((h) => h.id)]));
   forgetHooked((id) => live.has(id) || known.has(id));
   for (const s of all) {
+    if (s.starting) continue;
     if (s.status === 'exited' || live.has(s.conversation)) {
       if (s.status !== 'exited') changed = (await readTranscript(s, live.get(s.conversation))) || changed;
       continue;

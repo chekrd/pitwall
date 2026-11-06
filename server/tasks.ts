@@ -1,9 +1,9 @@
 import { homedir } from 'node:os';
-import { isAbsolute } from 'node:path';
+import { basename, isAbsolute, join, resolve as pathResolve } from 'node:path';
 import type { RouteInput } from './contract.ts';
 import { schedules, sessions } from './db.ts';
 import { makeTaskFolder } from './folderTasks.ts';
-import { addWorktree } from './git.ts';
+import { addWorktree, validBranch } from './git.ts';
 import { ALIASES, EFFORTS, resolver, settingsFor } from './models.ts';
 import { scheduler, taskPrompt, type Scheduled, type TaskRequest } from './schedule.ts';
 import * as S from './sessions.ts';
@@ -31,16 +31,25 @@ const chosenModel = (body: { model?: string; effort?: string }) => {
 
 type NewTask = TaskRequest & { name: string; scheduled?: Scheduled };
 
-export const startRepoTask = ({ branch = '', path = '', prompt = '', model = '', effort = '', existingBranch = false, ...body }: RouteInput<'POST /api/worktrees'>) =>
-  startTask({ kind: 'repo', ...body, branch, path, prompt, model, effort, existingBranch });
+const inBackground = ({ path, sessionId, ready }: Awaited<ReturnType<typeof startTask>>) => {
+  void ready.catch((err: unknown) => S.startFailed(sessionId, err instanceof Error ? err.message : String(err)));
+  return { path, sessionId };
+};
 
-export const startFolderTask = ({ prompt = '', model = '', effort = '', ...body }: RouteInput<'POST /api/folder-tasks'>) => startTask({ kind: 'folder', ...body, prompt, model, effort });
+export const startRepoTask = async ({ branch = '', path = '', prompt = '', model = '', effort = '', existingBranch = false, ...body }: RouteInput<'POST /api/worktrees'>) =>
+  inBackground(await startTask({ kind: 'repo', ...body, branch, path, prompt, model, effort, existingBranch }));
+
+export const startFolderTask = async ({ prompt = '', model = '', effort = '', ...body }: RouteInput<'POST /api/folder-tasks'>) =>
+  inBackground(await startTask({ kind: 'folder', ...body, prompt, model, effort }));
 
 // A task across a folder of repos starts in an empty task folder; Claude opens a worktree in each repo it changes.
+// A new worktree fetches from origin, which takes seconds, so that task starts with its card up and `ready` still to
+// come. What New task can be told right away it is told here, in the form.
 async function startTask(req: NewTask) {
   const { model, effort } = chosenModel(req);
   const name = req.name.trim();
-  const prompt = taskPrompt(req.prompt ?? '', await checkUploads(req.files)) || undefined;
+  const files = await checkUploads(req.files);
+  const prompt = taskPrompt(req.prompt ?? '', files) || undefined;
   if (req.kind === 'folder') {
     if (!name) throw new Error('name is required');
     const path = await makeTaskFolder(req.folder, name);
@@ -49,32 +58,33 @@ async function startTask(req: NewTask) {
     const sessionId = await S.startClaude({
       repoId: null, worktree: path, prompt, title: name, model, effort, running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled,
     });
-    return { path, sessionId };
+    return { path, sessionId, ready: Promise.resolve() };
   }
   const repo = repoView(req.repoId);
   if (!repo) throw new Error('unknown repo');
   const branch = req.branch?.trim();
-  let path: string;
-  if (req.existingBranch) {
-    if (!branch) throw new Error('pick a branch');
-    path = await S.checkoutExistingBranch(repo, branch);
-  } else {
-    if (!name) throw new Error('name is required');
-    const wanted = req.path?.trim().replace(/^~(?=\/|$)/, homedir()) || undefined;
-    if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
-    path = await addWorktree(repo.path, {
-      branch: branch || name, task: name, base: repo.baseBranch, root: repo.defaultWorktreeRoot, path: wanted,
-    });
-  }
-  await refreshWorkspace();
-  const setup = req.existingBranch ? null : repo.setupCommand;
   const { model: fallback, real, effortOf } = await resolve(repo.path);
   const running = model ? real(model) : fallback;
-  const sessionId = await S.startClaude({
-    repoId: repo.id, worktree: path, prompt, title: req.scheduled || !req.existingBranch ? name : '', setup, model, effort,
-    running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled,
+  const claude = { repoId: repo.id, prompt, model, effort, running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled };
+  if (req.existingBranch) {
+    if (!branch) throw new Error('pick a branch');
+    const path = await S.checkoutExistingBranch(repo, branch);
+    await refreshWorkspace();
+    const sessionId = await S.startClaude({ ...claude, worktree: path, title: req.scheduled ? name : '' });
+    return { path, sessionId, ready: Promise.resolve() };
+  }
+  if (!name) throw new Error('name is required');
+  const wanted = req.path?.trim().replace(/^~(?=\/|$)/, homedir()) || undefined;
+  if (wanted && !isAbsolute(wanted)) throw new Error('the worktree path must be absolute');
+  const newBranch = branch || name;
+  if (!(await validBranch(newBranch))) throw new Error(`${newBranch} cannot name a branch`);
+  const path = wanted ? pathResolve(wanted) : join(repo.defaultWorktreeRoot, name.replaceAll('/', '-'), basename(repo.path));
+  const request = { repoId: repo.id, name, branch: branch ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files, model: req.model ?? '', effort: req.effort ?? '' };
+  const { id, ready } = S.startAfter({ ...claude, worktree: path, title: name, setup: repo.setupCommand }, request, 'Creating the worktree', async () => {
+    await addWorktree(repo.path, { branch: newBranch, task: name, base: repo.baseBranch, root: repo.defaultWorktreeRoot, path });
+    await refreshWorkspace();
   });
-  return { path, sessionId };
+  return { path, sessionId: id, ready };
 }
 
 // Every name a run could clash with: tasks, their worktree folders and the branches checked out.
@@ -89,6 +99,15 @@ export const plan = scheduler({
     schedules.save(s);
     notify();
   },
-  start: async (s, name, scheduled) => (await startTask({ ...s.task, name, scheduled })).sessionId,
+  // A run that fails is the schedule's to report, on its last run.
+  start: async (s, name, scheduled) => {
+    const { sessionId, ready } = await startTask({ ...s.task, name, scheduled });
+    await ready.catch((err: unknown) => {
+      sessions.remove(sessionId);
+      notify();
+      throw err;
+    });
+    return sessionId;
+  },
   taken: takenNames,
 });

@@ -5,6 +5,7 @@ import { keepUnderLayer } from '../layers.ts';
 import { openSheet } from '../router.ts';
 import type { FolderView, RepoView } from '../types.ts';
 import { useStore } from '../store.ts';
+import type { Session } from '../types.ts';
 import { DAYS, describeWhen } from '../schedules.ts';
 import type { When } from '../types.ts';
 import { toast } from './Toasts.tsx';
@@ -164,16 +165,24 @@ function clearAttached() {
   editDraft(ATTACHED, () => ({ text: '', files: [] }));
 }
 
-export function openNewTask(preset?: { repoId: number; name: string; prompt: string }) {
+export function openNewTask(preset?: { repoId: number; name: string; prompt: string; branch?: string; path?: string; model?: string; effort?: string }) {
   const dialog = document.getElementById(DIALOG) as HTMLDialogElement | null;
   if (!dialog) return;
-  if (preset) edit({ ...preset, folder: null, existing: false, branch: '', path: '' });
+  if (preset) edit({ folder: null, existing: false, branch: '', path: '', ...preset, more: fields.more || !!preset.branch || !!preset.path });
   if (!dialog.open) {
     opened++;
     edit({ ...(!preset && { name: '' }), start: 'now', at: '' });
     dialog.showModal();
   }
   dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+}
+
+// A task that failed to start goes back to the form as it was sent, its card making way.
+export function editFailedTask(session: Session) {
+  const { files, ...request } = session.starting!.request;
+  openNewTask(request);
+  clearAttached();
+  editDraft(ATTACHED, (d) => ({ ...d, files: files.map((path) => ({ id: crypto.randomUUID(), name: path.split('/').at(-1)!, preview: null, path, error: null })) }));
 }
 
 // Typing on the closed button opens the list with that letter already in the filter.
@@ -674,8 +683,21 @@ function wrapTab(e: KeyboardEvent<HTMLDialogElement>) {
   (e.shiftKey ? stops.at(-1) : stops[0])!.focus();
 }
 
+// The task may have been left behind by the time its worktree fails, so the failure comes to wherever you are.
+function useStartFailures() {
+  const { sessions } = useStore();
+  const starting = useRef(new Set<string>());
+  useEffect(() => {
+    for (const s of sessions) {
+      if (s.starting && !s.starting.error) starting.current.add(s.id);
+      else if (starting.current.delete(s.id) && s.starting?.error) toast('error', `${s.title} did not start: ${s.starting.error}`, { session: s.id });
+    }
+  }, [sessions]);
+}
+
 export function NewTaskDialog({ repos }: { repos: RepoView[] }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  useStartFailures();
   return (
     <dialog id={DIALOG} ref={dialog} closedby="any" aria-label="New task" className={styles.dialog} onCancel={keepUnderLayer} onKeyDown={wrapTab}>
       {repos.length > 0 && <NewTaskForm repos={repos} done={() => dialog.current?.close()} />}

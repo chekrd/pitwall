@@ -80,6 +80,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
     run();
   };
   const act = <A extends ActionName>(action: A, body: ActionBody<A>) => pick(() => sessionAction(session.id, action, body).catch(reportError));
+  if (session.starting) return null;
 
   return (
     <>
@@ -171,7 +172,7 @@ function Item({ label, note, danger = false, onClick }: { label: string; note: s
 
 // The same ask as the menu's Clear task…, a click closer; the dialog still says what would be lost.
 export function ClearButton({ session }: { session: Session }) {
-  if (session.parent || session.clearing) return null;
+  if (session.parent || session.clearing || session.starting) return null;
   return (
     <button type="button" className={styles.more} aria-label="Clear task" data-tip="Clear task…" data-clear onClick={() => askDeleteWorktree(session)}>
       <Icon name="trash" size={17} />

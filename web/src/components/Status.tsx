@@ -25,7 +25,9 @@ export const STATE_HINTS: Record<Shown, string> = {
 // A turn that ended on an API error waits for you like any other, but no reply came.
 export const stoppedOnError = (s: Session, shown: Shown) => shown === 'idle' && !!s.turnError && !s.archived;
 
-export const labelOf = (s: Session, shown: Shown) => (stoppedOnError(s, shown) ? 'Stopped on an error' : STATE_LABELS[shown]);
+export const failedToStart = (s: Session) => !!s.starting?.error;
+
+export const labelOf = (s: Session, shown: Shown) => (failedToStart(s) ? 'Did not start' : stoppedOnError(s, shown) ? 'Stopped on an error' : STATE_LABELS[shown]);
 
 export const ERROR_LINES = {
   refusal: "The model's safeguards flagged your last message; rephrase it",
@@ -35,7 +37,9 @@ export const ERROR_LINES = {
 } as const;
 
 export const hintOf = (s: Session, shown: Shown) =>
-  stoppedOnError(s, shown) ? "Claude's turn ended on an API error instead of a reply; the task's page says what to do" : STATE_HINTS[shown];
+  failedToStart(s) ? 'Claude never started; the task\'s page says why and takes you back to New task'
+  : s.starting ? 'Pitwall is fetching from origin and making the worktree; Claude starts as soon as it is there'
+  : stoppedOnError(s, shown) ? "Claude's turn ended on an API error instead of a reply; the task's page says what to do" : STATE_HINTS[shown];
 
 const prLabels: Record<string, string> = {
   RUNNING: 'checks running',

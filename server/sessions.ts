@@ -12,7 +12,7 @@ import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { checkDecision } from './decision.ts';
 import { handOver, taskOf } from './handover.ts';
-import { sessions, type Parent, type Session } from './db.ts';
+import { sessions, type Parent, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
 import { isClean, listBranches, switchBranch } from './git.ts';
 import { CLAUDE, headless } from './headless.ts';
@@ -40,23 +40,77 @@ async function launch(id: string, cwd: string, args: string[], setup?: string | 
   await terminal.start(id, cwd, `/bin/sh ${quote(script)}`);
 }
 
+interface NewClaude {
+  repoId: number | null;
+  worktree: string;
+  prompt?: string | undefined;
+  title?: string;
+  setup?: string | null | undefined;
+  parent?: Parent;
+  model?: string | undefined;
+  effort?: string | undefined;
+  running?: { model: string | null; effort: string | null };
+  scheduled?: Scheduled | undefined;
+}
+
 // With a prompt, Claude starts on it at once; until it registers, idle would show a finished turn that never was.
-export async function startClaude(opts: { repoId: number | null; worktree: string; prompt?: string | undefined; title?: string; setup?: string | null; parent?: Parent; model?: string | undefined; effort?: string | undefined; running?: { model: string | null; effort: string | null }; scheduled?: Scheduled | undefined }) {
+const firstStatus = (opts: NewClaude) => (opts.prompt ? 'working' : 'idle');
+
+function addTask(opts: NewClaude, status: Session['status']) {
   const id = randomUUID();
   sessions.insert({
     id, repoId: opts.repoId, worktree: opts.worktree, cwd: opts.worktree, pid: null, tty: null,
-    title: opts.title || null, firstPrompt: opts.prompt || null, status: opts.prompt ? 'working' : 'idle',
+    title: opts.title || null, firstPrompt: opts.prompt || null, status,
   });
   sessions.update(id, { parent: opts.parent ?? null, scheduled: opts.scheduled ?? null, ...opts.running });
+  return id;
+}
+
+function launchClaude(id: string, opts: NewClaude) {
   const chosen = [...(opts.model ? ['--model', opts.model] : []), ...(opts.effort ? ['--effort', opts.effort] : [])];
+  return launch(id, opts.worktree, [...chosen, '--session-id', id, ...(opts.prompt ? ['--', opts.prompt] : [])], opts.setup);
+}
+
+export async function startClaude(opts: NewClaude) {
+  const id = addTask(opts, firstStatus(opts));
   try {
-    await launch(id, opts.worktree, [...chosen, '--session-id', id, ...(opts.prompt ? ['--', opts.prompt] : [])], opts.setup);
+    await launchClaude(id, opts);
   } catch (err) {
     sessions.remove(id);
     throw err;
   }
   notify();
   return id;
+}
+
+// The task is on the board at once, working on its first step; Claude starts when `prepare` is done. `ready` settles
+// then, and it is up to the caller what a failure comes to.
+export function startAfter(opts: NewClaude, request: Starting['request'], step: string, prepare: () => Promise<unknown>) {
+  const id = addTask(opts, 'working');
+  sessions.update(id, { starting: { request, error: null }, activity: { step, since: Date.now() } });
+  notify();
+  const ready = prepare().then(async () => {
+    if (!sessions.get(id)) return;
+    await launchClaude(id, opts);
+    sessions.update(id, { starting: null, activity: null, status: firstStatus(opts) });
+    notify();
+  });
+  return { id, ready };
+}
+
+// Exited, so that nothing takes it for a Claude to look after; it stays on the board with why until it is removed.
+export function startFailed(id: string, error: string) {
+  const s = sessions.get(id);
+  if (!s?.starting) return;
+  sessions.update(id, { status: 'exited', activity: null, starting: { ...s.starting, error } });
+  notify();
+}
+
+// What was being prepared when Pitwall stopped never finished.
+export function settleStarting() {
+  for (const s of sessions.all()) {
+    if (s.starting && !s.starting.error) startFailed(s.id, 'Pitwall restarted before the worktree was ready');
+  }
 }
 
 // `continueId` names a conversation; a task that ran it, now or before a /clear, picks it up again.
@@ -122,14 +176,17 @@ export function dismissInterrupted(which: 'restart' | 'pause' | 'both') {
   notify();
 }
 
+// A task with no Claude yet has nothing to stop; once it starts, the pause takes it up as any other.
+const withClaude = () => sessions.all().filter((s) => !s.starting);
+
 export function pause() {
-  const result = pausing.start(sessions.all());
+  const result = pausing.start(withClaude());
   notify();
   return result;
 }
 
 export async function hurryPause() {
-  const result = await pausing.hurry(sessions.all());
+  const result = await pausing.hurry(withClaude());
   notify();
   return result;
 }
@@ -137,7 +194,7 @@ export async function hurryPause() {
 export const pauseState = () => ({ stopping: pausing.stopping(), finishing: pausing.finishing() });
 
 export function pauseStep() {
-  if (pausing.step(sessions.all())) notify();
+  if (pausing.step(withClaude())) notify();
 }
 
 // Each paused task is asked to carry on; one whose Claude ended meanwhile, by a restart too, comes back on that prompt.

@@ -57,11 +57,11 @@ export const newTask: Check[] = [
       assert.equal(await page.eval(() => document.querySelector<HTMLInputElement>('dialog#new-task input[placeholder="fix-login-redirect"]')!.value), '', 'the name starts empty each time');
       await page.type('Try a refused name');
       await page.click('dialog#new-task input[placeholder="fix-login-redirect"]');
-      await page.type('fail');
+      await page.type('bad..name');
       await page.eval(submit);
       const error = await page.until('the inline error', () => document.querySelector('dialog#new-task [role="alert"]')?.textContent);
-      assert.match(error, /cannot be created here/);
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('dialog#new-task textarea, dialog#new-task input:not([data-repo-picker] *, [type="radio"], [type="file"])')].map((f) => f.value)), ['fail', 'Try a refused name', '', '']);
+      assert.match(error, /cannot name a branch/);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('dialog#new-task textarea, dialog#new-task input:not([data-repo-picker] *, [type="radio"], [type="file"])')].map((f) => f.value)), ['bad..name', 'Try a refused name', '', '']);
 
       const extra = () => [...document.querySelectorAll('dialog#new-task label > span')].map((c) => c.textContent).filter((t) => t === 'Branch' || t === 'Worktree path');
       assert.deepEqual(await page.eval(extra), ['Branch', 'Worktree path'], 'New worktree shows its branch and path');
@@ -84,6 +84,56 @@ export const newTask: Check[] = [
       await page.until('the hint for a branch with its own worktree', () =>
         document.querySelector('dialog#new-task [data-hint]')?.textContent === 'Starts Claude in ~/code/worktrees/guest-cart-merge/storefront, where it is checked out.');
       await shot('new-task-existing-branch');
+    },
+  },
+  {
+    name: 'P4.10.background Create on a new worktree closes New task and opens the task at once, its worktree being made behind the card with nothing to press; Claude takes over when it is there. A worktree that fails tells so in a toast and on the task, whose Back to New task brings back all that was sent and takes the task away',
+    expectedErrors: [/did not start/],
+    async run({ page, mock, shot }) {
+      const create = async (name: string, prompt: string, file = false) => {
+        await openNewTask(page);
+        await page.type(prompt);
+        if (file) {
+          await page.eval(pastePng, 'dialog#new-task textarea');
+          await page.until('the chip', () => !!document.querySelector('dialog#new-task [data-state="ready"]'));
+        }
+        await page.click('dialog#new-task label', 'New worktree');
+        await page.click('dialog#new-task input[placeholder="fix-login-redirect"]');
+        await page.type(name);
+        await page.eval(() => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+      };
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+
+      await mock.post('/mock/worktree-hold', {});
+      await create('behind-card', 'Work behind the card');
+      await page.until('New task closed and the task open while the worktree is held', () => !document.querySelector('#new-task[open]') && document.querySelector('#task-sheet h2')?.textContent === 'behind-card');
+      const held = await page.until('the first step', () => document.querySelector('#task-sheet [data-ux-section="working"]')?.textContent);
+      assert.match(held, /Setting up the task.*Creating the worktree/);
+      assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-ux-section="message box"], #task-sheet [aria-label="Session actions"], #task-sheet [data-clear]')), false, 'nothing to press until Claude is there');
+      await shot('new-task-behind-card');
+      await mock.post('/mock/worktree-release', {});
+      await page.until('Claude at work', () => /Claude is working/.test(document.querySelector('#task-sheet [data-ux-section="working"]')?.textContent ?? ''));
+      await page.until('the box and the menu back', () => !!document.querySelector('#task-sheet [data-ux-section="message box"]') && !!document.querySelector('#task-sheet [aria-label="Session actions"]'));
+      await page.click('#task-sheet button[aria-label^="Back to"]');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+
+      await mock.post('/mock/worktree-hold', {});
+      await create('wont-come', 'Keep this prompt', true);
+      await page.until('its sheet', () => document.querySelector('#task-sheet h2')?.textContent === 'wont-come');
+      await mock.post('/mock/worktree-release', { error: 'git wt: origin cannot be reached' });
+      const told = await page.until('the failure on the task', () => document.querySelector('#task-sheet [data-start-failed]')?.textContent);
+      assert.match(told, /did not start.*origin cannot be reached/);
+      assert.match((await page.eval(toastsOf, 'error'))![0].text, /wont-come did not start: git wt: origin cannot be reached/);
+      await shot('new-task-start-failed');
+      await page.click('#task-sheet [data-start-failed] button', 'Back to New task');
+      await page.until('New task again', () => !!document.querySelector('#new-task[open]') && !document.querySelector('#task-sheet'));
+      assert.deepEqual(await page.eval(() => [document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')!.value, document.querySelector<HTMLInputElement>('dialog#new-task input[placeholder="fix-login-redirect"]')!.value]), ['Keep this prompt', 'wont-come']);
+      assert.equal(await page.eval(() => document.querySelectorAll('dialog#new-task [data-state="ready"]').length), 1, 'its file came back too');
+      await logged(mock, 'the failed task removed', (e) => e.method === 'POST' && e.path.endsWith('/forget'));
+      assert.equal((await mock.get('/api/state')).sessions.some((s: { title: string | null }) => s.title === 'wont-come'), false);
+      await page.eval(() => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+      await page.until('the same task, this time at work', () => document.querySelector('#task-sheet h2')?.textContent === 'wont-come' && /Claude is working/.test(document.querySelector('#task-sheet [data-ux-section="working"]')?.textContent ?? ''));
     },
   },
   {

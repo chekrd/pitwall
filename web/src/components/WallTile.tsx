@@ -10,12 +10,13 @@ import { ParentCrumb } from './Findings.tsx';
 import { ClearButton, SessionMenu } from './SessionMenu.tsx';
 import { BranchMark } from './Parts.tsx';
 import { StateMark } from './StateMark.tsx';
-import { ERROR_LINES, hintOf, labelOf, PrChips, stoppedOnError } from './Status.tsx';
+import { ERROR_LINES, failedToStart, hintOf, labelOf, PrChips, stoppedOnError } from './Status.tsx';
 import styles from './WallTile.module.css';
 
 function textOf(s: Session, attention: Attention) {
   if (attention === 'clearing') return 'Clear task is removing it; it leaves the board once its worktree is gone';
   if (s.clearError) return `Clear task did not finish: ${s.clearError}`;
+  if (failedToStart(s)) return s.starting!.error;
   if (attention === 'decide') return decisionOf(s)?.problem ?? s.menu!.questions.map((q) => q.question).join(' · ');
   if (attention === 'focus') return promptOf(s).headline;
   if (stoppedOnError(s, attention)) return ERROR_LINES[s.turnError!.kind];
@@ -76,7 +77,7 @@ export function WallTile({ session, repos, unsettled }: { session: Session; repo
     >
       <header className={styles.head}>
         <StateMark state={archived ? 'archived' : shown} />
-        <span className={styles.state} data-error={clearFailed || stoppedOnError(session, shown) || undefined} data-explain={archived ? undefined : hintOf(session, shown)}>{label}</span>
+        <span className={styles.state} data-error={clearFailed || failedToStart(session) || stoppedOnError(session, shown) || undefined} data-explain={archived ? undefined : hintOf(session, shown)}>{label}</span>
         <span className={styles.age} data-age data-explain={asked !== undefined ? undefined : session.summary ? 'When the status was last updated' : 'When the session last changed'}>
           {asked !== undefined ? `asked ${ago(asked)}` : ago(session.summary?.at ?? session.updatedAt)}
         </span>
