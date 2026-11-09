@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { KEYS } from '../../../web/src/keys.ts';
-import { until } from '../cdp.ts';
+import { sleep, until } from '../cdp.ts';
 import { card, logged, matches, openFromWall, openNewTask, openQueue, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
 
 export const newTask: Check[] = [
@@ -31,6 +31,12 @@ export const newTask: Check[] = [
       };
       await page.click('dialog#new-task label:has(select) span', 'Model');
       await page.until("a click on the selector's caption opens its list", listOpen);
+      await page.click('dialog#new-task label:has(select) span', 'Model');
+      await page.until('a second click on the caption closes the list', () => !document.querySelector('dialog#new-task select:open'));
+      await sleep(300);
+      assert.equal(await page.eval(listOpen), false, 'and it stays closed');
+      await page.click('dialog#new-task label:has(select) span', 'Model');
+      await page.until('a third click opens it again', listOpen);
       await closeList();
       const arrow = await page.eval(() => {
         const r = document.querySelector('dialog#new-task label:has(select) svg')!.getBoundingClientRect();

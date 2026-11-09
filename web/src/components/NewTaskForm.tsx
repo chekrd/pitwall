@@ -1,4 +1,4 @@
-import { useActionState, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type ToggleEvent } from 'react';
+import { useActionState, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent, type ToggleEvent } from 'react';
 import { api } from '../api.ts';
 import { track } from '../ux.ts';
 import { keepUnderLayer } from '../layers.ts';
@@ -511,22 +511,27 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const chosen = [when && describeWhen(when), f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
   // A click on a label only focuses its select; the options of an open list are inside the select and must pick as usual.
+  // The press of a click outside an open list closes it, so the click that follows must not open it again.
+  const listWasOpen = useRef(false);
+  const noteList = (e: PointerEvent<HTMLLabelElement>) => {
+    listWasOpen.current = !!e.currentTarget.querySelector('select:open');
+  };
   const openList = (e: MouseEvent<HTMLLabelElement>) => {
     if ((e.target as Element).closest('select')) return;
     e.preventDefault();
-    e.currentTarget.querySelector('select')?.showPicker();
+    if (!listWasOpen.current) e.currentTarget.querySelector('select')?.showPicker();
   };
 
   const modelControl = (
     <div className={styles.models}>
-      <label className={styles.select} onClick={openList} data-explain="The model Claude starts with; the first is the one your Claude Code settings pick">
+      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain="The model Claude starts with; the first is the one your Claude Code settings pick">
         <span className={styles.caption}>Model</span>
         <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
           {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <Icon name="chevron-down" size={14} />
       </label>
-      <label className={styles.select} onClick={openList} data-explain="How hard Claude thinks; the first is the one your Claude Code settings give that model">
+      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain="How hard Claude thinks; the first is the one your Claude Code settings give that model">
         <span className={styles.caption}>Effort</span>
         <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
           {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
