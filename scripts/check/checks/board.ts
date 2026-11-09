@@ -118,6 +118,33 @@ export const board: Check[] = [
       await page.until('line 1 at the top of server/git.ts', edgeLine, 'top', 1);
       await page.until('line 181 at the bottom of server/git.ts', edgeLine, 'bottom', 181);
       assert.equal(await page.eval(() => document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('pre')?.getAttribute('data-diff-type')), 'split');
+
+      // The whole file swaps its scrollbar for one marking its changed lines; a click on the last mark brings that change into view.
+      const ruler = await page.until('the change ruler', () => {
+        const track = document.querySelector<HTMLElement>('[data-ruler]');
+        const marks = [...(track?.querySelectorAll<HTMLElement>('[data-side]') ?? [])];
+        const pane = document.querySelector<HTMLElement>('section[data-file]')!.parentElement!;
+        if (!track || !marks.length) return null;
+        const box = track.getBoundingClientRect();
+        const last = marks.at(-1)!.getBoundingClientRect();
+        return {
+          sides: [...new Set(marks.map((m) => m.dataset.side))].sort(),
+          inside: marks.every((m) => { const r = m.getBoundingClientRect(); return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5; }),
+          scrollbar: getComputedStyle(pane).scrollbarWidth,
+          x: box.left + box.width / 2,
+          y: last.top + last.height / 2,
+        };
+      });
+      assert.deepEqual([ruler.sides, ruler.inside, ruler.scrollbar], [['add', 'del'], true, 'none']);
+      await page.eval(() => { document.querySelector('section[data-file]')!.parentElement!.scrollTop = 0; });
+      await page.pointAt(ruler.x, ruler.y, true);
+      await page.until('the last change in view', () => {
+        const pane = document.querySelector<HTMLElement>('section[data-file]')!.parentElement!.getBoundingClientRect();
+        const changes = [...(document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelectorAll('[data-line][data-line-type^="change-"]') ?? [])];
+        const last = changes.at(-1)?.getBoundingClientRect();
+        return !!last && last.top >= pane.top && last.bottom <= pane.bottom;
+      });
+      await shot('diff-whole-file-ruler');
       const [file] = await logged(mock, 'the whole-file request', (e) => e.path === '/api/diff/file');
       assert.equal(new URLSearchParams(file.query).get('path'), 'server/git.ts');
     },

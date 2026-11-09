@@ -62,7 +62,9 @@
     &:focus-visible { outline: 2px solid #e6e6e6; outline-offset: -2px; }
   }
 
-  .diffs { min-width: 0; overflow: auto; padding-bottom: 45vh; }
+  .pane { min-width: 0; min-height: 0; display: flex; }
+  .diffs { flex: 1; min-width: 0; overflow: auto; padding-bottom: 45vh; }
+  .diffs[data-ruled] { scrollbar-width: none; }
   .diffs[data-seeking] > section { visibility: hidden; }
 
   .file {
@@ -82,6 +84,6 @@
     .hint { display: none; }
     .content { display: flex; flex-direction: column; }
     .resizer { display: none; }
-    .diffs { flex: 1; }
+    .pane { flex: 1; }
   }
 }

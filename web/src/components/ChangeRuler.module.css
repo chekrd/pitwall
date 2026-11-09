@@ -1,0 +1,29 @@
+@layer components {
+  .ruler {
+    position: relative;
+    flex: none;
+    width: 14px;
+    border-left: 1px solid #383838;
+    background: #262626;
+    cursor: default;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .mark {
+    position: absolute;
+    width: 5px;
+    pointer-events: none;
+    &[data-side="del"] { left: 1px; background: #ff7b6b; }
+    &[data-side="add"] { right: 1px; background: #5fc271; }
+  }
+
+  .thumb {
+    position: absolute;
+    inset-inline: 0;
+    min-height: 12px;
+    background: rgb(255 255 255 / 0.14);
+    border-block: 1px solid rgb(255 255 255 / 0.22);
+    pointer-events: none;
+  }
+}

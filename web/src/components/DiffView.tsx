@@ -4,6 +4,7 @@ import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diff
 import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent, type RefObject } from 'react';
 import { api } from '../api.ts';
 import type { FullDiff } from '../types.ts';
+import { ChangeRuler } from './ChangeRuler.tsx';
 import styles from './DiffView.module.css';
 import { counts, fileAnchor, FileTree, inDir, matching, treeOrder } from './FileTree.tsx';
 import { Icon } from './Icon.tsx';
@@ -260,6 +261,7 @@ function Diffs({ worktree }: { worktree: string }) {
     () => (focused ? [whole?.name === focused ? whole : files.find((f) => f.name === focused)].filter((f) => !!f) : listed),
     [focused, whole, files, listed],
   );
+  const rulerFile = focused && whole?.name === focused ? whole : null;
   const dirStat = listed.map(counts).reduce((sum, c) => ({ add: sum.add + c.add, del: sum.del + c.del }), { add: 0, del: 0 });
 
   // From all files, J opens the file in view and K the one before it.
@@ -367,12 +369,15 @@ function Diffs({ worktree }: { worktree: string }) {
               />
             </>
           )}
-          <div className={styles.diffs} ref={diffsRef} data-seeking={seeking ?? undefined}>
-            {diff && !files.length && <p className={styles.empty}>No changes against {diff.base}.</p>}
-            {files.length > 0 && !listed.length && (
-              <p className={styles.empty}>{shownQuery ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${shownQuery.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
-            )}
-            <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} />
+          <div className={styles.pane}>
+            <div className={styles.diffs} ref={diffsRef} data-seeking={seeking ?? undefined} data-ruled={rulerFile ? '' : undefined}>
+              {diff && !files.length && <p className={styles.empty}>No changes against {diff.base}.</p>}
+              {files.length > 0 && !listed.length && (
+                <p className={styles.empty}>{shownQuery ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${shownQuery.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
+              )}
+              <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} />
+            </div>
+            {rulerFile && <ChangeRuler file={rulerFile} pane={diffsRef} />}
           </div>
         </div>
       </div>
