@@ -115,10 +115,11 @@ test('a link reads as its host and path', () => {
 
 test('a model id reads as its family and version', () => {
   assert.equal(modelName('claude-opus-5-5'), 'Opus 5.5');
-  assert.equal(modelName('claude-sonnet-5-5[1m]'), 'Sonnet 5.5 (1M context)');
+  assert.equal(modelName('claude-sonnet-5-5[1m]'), 'Sonnet 5.5');
   assert.equal(modelName('claude-haiku-4-5-20251001'), 'Haiku 4.5');
+  assert.deepEqual([modelName('sonnet'), modelName('opus[1m]')], ['Sonnet', 'Opus'], 'an alias not yet seen running');
   assert.equal(modelName('claude-fable-5'), 'Fable 5');
-  assert.equal(modelName('opus'), 'opus');
+  assert.equal(modelName('gpt-5.1'), 'gpt-5.1');
 });
 
 test('a task is placed in its repository on its branch; a removed worktree reads as its task folder, not the repository folder git-wt ends it with', () => {

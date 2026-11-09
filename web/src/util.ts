@@ -35,12 +35,13 @@ export function folderTaskOf(repos: RepoView[], session: Session) {
 export const tilde = (path: string, home: string) => (home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path);
 export const untilde = (path: string, home: string) => (home && (path === '~' || path.startsWith('~/')) ? `${home}${path.slice(1)}` : path);
 
-// claude-opus-5-5 reads Opus 5.5; an alias or a name of another shape shows as given.
+// claude-opus-5-5 reads Opus 5.5 and the alias opus reads Opus, with or without the [1m] of a 1M context; a name of
+// another shape shows as given.
 export function modelName(model: string) {
-  const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/.exec(model);
+  const m = /^(?:claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?|([a-z]+))(?:\[1m\])?$/.exec(model);
   if (!m) return model;
-  const [, family, major, minor, long] = m;
-  return `${family[0].toUpperCase()}${family.slice(1)} ${major}${minor ? `.${minor}` : ''}${long ? ' (1M context)' : ''}`;
+  const [, family = m[4], major, minor] = m;
+  return `${family[0].toUpperCase()}${family.slice(1)}${major ? ` ${major}` : ''}${minor ? `.${minor}` : ''}`;
 }
 
 export const EFFORTS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };

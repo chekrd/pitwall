@@ -23,7 +23,22 @@ export const newTask: Check[] = [
       assert.deepEqual(await page.until('the real defaults', () => {
         const shown = [...document.querySelectorAll('dialog#new-task select')].map((s) => s.querySelector('option')?.textContent);
         return !shown.includes('Default') && shown;
-      }), ['Opus 5.5 (1M context)', 'Medium']);
+      }), ['Opus 5.5', 'Medium']);
+      const listOpen = () => !!document.querySelector('dialog#new-task select:open');
+      const closeList = async () => {
+        await page.key('Escape');
+        await page.until('Esc closes the list and leaves New task open', () => !document.querySelector('dialog#new-task select:open') && !!document.querySelector('dialog#new-task[open]'));
+      };
+      await page.click('dialog#new-task label:has(select) span', 'Model');
+      await page.until("a click on the selector's caption opens its list", listOpen);
+      await closeList();
+      const arrow = await page.eval(() => {
+        const r = document.querySelector('dialog#new-task label:has(select) svg')!.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.pointAt(arrow.x, arrow.y, true);
+      await page.until("a click on the selector's arrow opens its list", listOpen);
+      await closeList();
       await page.eval(() => {
         for (const [label, value] of [['Model', 'sonnet'], ['Effort', 'xhigh']]) {
           const select = [...document.querySelectorAll('dialog#new-task label')].find((l) => l.querySelector('span')?.textContent === label)!.querySelector('select')!;
@@ -44,7 +59,7 @@ export const newTask: Check[] = [
         const dl = document.querySelector('#task-sheet dl');
         return dl && Object.fromEntries([...dl.querySelectorAll('dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]));
       });
-      assert.equal(facts.Model, 'Sonnet 5.5 @ extra high');
+      assert.equal(facts.Model, 'Sonnet 5.5 extra high');
       await page.click('#task-sheet button[aria-label^="Back to"]');
       await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
       await openNewTask(page);

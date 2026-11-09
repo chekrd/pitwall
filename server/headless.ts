@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { loginEnv, which } from './env.ts';
+import { noteRan } from './models.ts';
 
 // Missing only where Claude Code is not installed, as in tests; a run then fails when it spawns.
 export const CLAUDE = await which('claude').catch(() => 'claude');
@@ -78,7 +79,9 @@ const runs = limiter(MAX_RUNS);
 export async function headless(prompt: string, opts: HeadlessOptions): Promise<Record<string, any>> {
   const release = await runs.slot(!!opts.urgent, opts.signal);
   try {
-    return await runCommand(CLAUDE, prompt, opts);
+    const result = await runCommand(CLAUDE, prompt, opts);
+    noteRan(Object.keys(result.modelUsage ?? {}));
+    return result;
   } finally {
     release();
   }

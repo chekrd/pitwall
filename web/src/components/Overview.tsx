@@ -400,7 +400,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
                 </>
               )}
               <dt data-explain="The model Claude runs on now and its effort, as its last request named them; /model and /effort change them">Model</dt>
-              <dd>{session.model ? modelName(session.model) : '—'}{session.effort && ` @ ${effortName(session.effort).toLowerCase()}`}</dd>
+              <dd>{session.model ? modelName(session.model) : '—'}{session.effort && ` ${effortName(session.effort).toLowerCase()}`}</dd>
               <dt data-explain="The terminal device Claude runs on">Terminal</dt>
               <dd data-explain="The terminal device Claude runs on">{session.tty ? <code>{session.tty}</code> : '—'}</dd>
               <dt data-explain="Claude Code's session id; claude --resume takes it">Session</dt>

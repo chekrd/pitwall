@@ -4,7 +4,7 @@ import type { RouteInput } from './contract.ts';
 import { schedules, sessions } from './db.ts';
 import { makeTaskFolder } from './folderTasks.ts';
 import { addWorktree, validBranch } from './git.ts';
-import { ALIASES, EFFORTS, resolver, settingsFor } from './models.ts';
+import { ALIASES, EFFORTS, ranHeadless, resolver, settingsFor } from './models.ts';
 import { scheduler, taskPrompt, type Scheduled, type TaskRequest } from './schedule.ts';
 import * as S from './sessions.ts';
 import { checkUploads } from './uploads.ts';
@@ -13,7 +13,7 @@ import { notify, refreshWorkspace, repoView, workspace } from './workspace.ts';
 const MODEL = /^[A-Za-z0-9._-]+(\[1m\])?$/;
 
 const resolve = async (repoPath: string) =>
-  resolver(await settingsFor(repoPath), sessions.all().toSorted((a, b) => b.updatedAt - a.updatedAt));
+  resolver(await settingsFor(repoPath), [...sessions.all(), ...ranHeadless()].toSorted((a, b) => b.updatedAt - a.updatedAt));
 
 export async function modelChoices(path: string) {
   const { model, real, effortOf } = await resolve(path);

@@ -22,3 +22,9 @@ test('without a model in the settings, the default is the one the newest session
   assert.equal(r.effortOf(r.model), 'xhigh');
   assert.deepEqual([resolver({}, []).model, resolver({}, []).effortOf(null)], [null, null]);
 });
+
+test('a claude -p run of the board tells what an alias comes to, and is never the default', () => {
+  const r = resolver({}, [{ model: 'claude-haiku-5-5', effort: null, headless: true }, ...seen]);
+  assert.equal(r.real('haiku'), 'claude-haiku-5-5');
+  assert.equal(r.model, 'claude-sonnet-5-5');
+});
