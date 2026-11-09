@@ -116,6 +116,7 @@ export function boardAnswer(s: Session, action: string, body: Data, now = Date.n
   const base = { task: s.id, decision: d.key, kind: kindOf(d.key), waitMs: now - d.askedAt, confidence: advice?.confidence ?? null };
   const indexOf = (label: unknown) => (typeof label === 'string' ? d.options.findIndex((o) => o.label === label) : null);
   if (action === 'dismiss') return { ...base, how: 'dismiss' };
+  if (action === 'decline-menu') return { ...base, how: 'decline' };
   if (action === 'accept-advice') return { ...base, how: 'advice', option: indexOf(advice?.choice), followed: 'as-is' };
   if (action === 'answer-menu') {
     const picks = ((body.answers ?? []) as MenuAnswer[]).map((a, i) => ({

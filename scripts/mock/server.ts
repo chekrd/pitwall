@@ -16,7 +16,7 @@ import {
 } from '../../server/contract.ts';
 import type { FullDiff, Upstream } from '../../server/git.ts';
 import type { Session, SubtaskKind } from '../../server/db.ts';
-import { checkDecision, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
+import { checkDecision, DECLINED, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { archivePatch, pickedUp } from '../../server/restart.ts';
@@ -276,6 +276,11 @@ function claudeWorks(id: string) {
   });
 }
 
+// Esc on a menu: Claude Code records the tool use as rejected and ends its turn.
+function declined(id: string) {
+  later(600, () => update(id, { status: 'idle', menu: null, waitingFor: null, activity: null }));
+}
+
 function checkUploads(paths: unknown) {
   if (paths === undefined) return [];
   if (!Array.isArray(paths)) throw new Error('files must be a list');
@@ -305,7 +310,7 @@ function answeringFor(scenario: Scenario) {
     send: () => pause(TYPING_MS),
     keys: () => pause(TYPING_MS),
     notify: push,
-    decided: claudeWorks,
+    decided: (id) => (find(id)?.answered?.text === DECLINED ? declined(id) : claudeWorks(id)),
     isCommand: async (s, text) => isCommand(s, text),
     checkUploads: async (files) => checkUploads(files),
   });
@@ -462,6 +467,7 @@ const actions: ActionHandlers<Session> = {
   'close-aside': (s, body) => asides.close(s.id, body.aside),
   dismiss: (s, body) => closeQuestion({ get: find, update }, s.id, body.key ?? null),
   rename: (s, body) => rename(s, body.title),
+  'decline-menu': (s, body) => answers.declineMenu(s.id, body),
   'answer-menu': (s, body) => (args.legacy ? legacyAnswerMenu(s, body) : answers.answerMenu(s.id, body)),
   'accept-advice': (s, body) =>
     args.legacy ? legacyAcceptAdvice(s) : answers.acceptAdvice(s.id, typeof body.adviceAt === 'number' ? body.adviceAt : undefined),

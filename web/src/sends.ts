@@ -78,6 +78,7 @@ const quote = (text: string) => `“${short(text)}”`;
 function heldText(i: Item<Restore>) {
   if (i.command) return `Sending: ${short(i.label)}`;
   if (i.action === 'dismiss') return `Dismissing ${quote(i.label)}`;
+  if (i.action === 'decline-menu') return `Declining ${quote(i.label)}`;
   return `Sending: ${quote(i.label)}`;
 }
 

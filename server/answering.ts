@@ -1,5 +1,5 @@
 import type { Session } from './db.ts';
-import { adviceToSend, answerText, checkDecision, claim, menuAnswerText, type AnswerStore } from './decision.ts';
+import { adviceToSend, answerText, checkDecision, claim, DECLINED, menuAnswerText, type AnswerStore } from './decision.ts';
 import { Unsent, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
 import { menuKeystrokes, type MenuAnswer } from './menu.ts';
@@ -135,6 +135,17 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     });
   }
 
+  // Esc, as pressed in the terminal: Claude Code takes the menu as declined and ends the turn.
+  async function declineMenu(id: string, body: { toolUseId: string }) {
+    await inTurn(id, () => {
+      const s = must(id);
+      const to = liveTarget(s, true);
+      const key = `m:${body.toolUseId}`;
+      checkDecision(s, key);
+      return { claim: { seen: key, typed: false, text: DECLINED }, type: () => keys(to, [{ key: 'escape' }]) };
+    });
+  }
+
   async function acceptAdvice(id: string, seenAt?: number) {
     const { advice: a, decision } = adviceToSend(must(id), seenAt);
     if (decision.menu) await answerMenu(id, { toolUseId: decision.menu.toolUseId, answers: a.answers ?? [] });
@@ -179,5 +190,5 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     }
   }
 
-  return { answer, answerMenu, acceptAdvice, dismiss, type, press, settled };
+  return { answer, answerMenu, declineMenu, acceptAdvice, dismiss, type, press, settled };
 }

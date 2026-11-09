@@ -291,6 +291,11 @@ export function typed(key: string | null, text: string, files: readonly string[]
   return { action: 'answer', body, label: t || (files.length === 1 ? '1 file' : `${files.length} files`) };
 }
 
+export function declining(s: Session): Request {
+  const menu = s.menu!;
+  return { action: 'decline-menu', body: { toolUseId: menu.toolUseId }, label: menu.questions.map((q) => q.question).join(' · ') };
+}
+
 export function dismissal(s: Session): Request {
   const d = decisionOf(s)!;
   return { action: 'dismiss', body: { key: d.key }, label: d.problem };

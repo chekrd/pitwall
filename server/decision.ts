@@ -114,6 +114,8 @@ export function answerText(choice: string | undefined, text: string, files: numb
   return files ? `${said} (+${files} ${files === 1 ? 'file' : 'files'})`.trimStart() : said;
 }
 
+export const DECLINED = 'Declined the question';
+
 export const menuAnswerText = (menu: Menu, answers: MenuAnswer[]) =>
   menu.questions.map((q, i) => `${q.header || q.question}: ${answers[i]?.other?.replace(/\s+/g, ' ').trim() || [...new Set(answers[i]?.labels)].join(', ')}`).join(' · ');
 

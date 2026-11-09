@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { sessionAction } from '../api.ts';
-import { acceptance, choose, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
+import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
 import type { Request } from '../outbox.ts';
 import { queue } from '../queue.ts';
 import { closeSheet, closeSheetOf, closeSheetToQueue, showTab } from '../router.ts';
@@ -26,7 +26,7 @@ import { editFailedTask } from './NewTaskForm.tsx';
 import { failedToStart, STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { FocusButton } from './SessionMenu.tsx';
-import { explain, SENDS } from './explain.ts';
+import { explain, SENDS, TIPS } from './explain.ts';
 
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
   const { copied, copy } = useCopy(value, what);
@@ -127,6 +127,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
         {kindOf(session) === 'ask' && (
           <button type="button" data-explain="Clear the question without answering it" onClick={() => send(dismissal(session))}>Dismiss</button>
         )}
+        {menu && <button type="button" {...explain(TIPS.decline)} onClick={() => send(declining(session))}>Decline</button>}
         <button type="button" data-explain="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>
       </div>
     </section>

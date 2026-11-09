@@ -2,7 +2,7 @@ import { checkDecision, decisionKey, Refusal } from '../../server/decision.ts';
 import type { MenuAnswer, Session, SessionStatus } from './types.ts';
 import { menuStuck } from './util.ts';
 
-export type Action = 'answer' | 'answer-menu' | 'accept-advice' | 'dismiss';
+export type Action = 'answer' | 'answer-menu' | 'decline-menu' | 'accept-advice' | 'dismiss';
 
 // `key` is the decision the card showed, null for a plain message. It is always sent, since the server takes a
 // missing key for a page from before that check.
@@ -244,7 +244,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     if (s.lastTurn !== i.lastTurn) return true;
     const open = decisionKey(s);
     if (i.action === 'dismiss') return open !== i.key;
-    if (i.action === 'answer-menu') return s.menu?.toolUseId !== i.body.toolUseId || menuStuck(s, now());
+    if (i.action === 'answer-menu' || i.action === 'decline-menu') return s.menu?.toolUseId !== i.body.toolUseId || menuStuck(s, now());
     return open !== null && open !== i.key;
   }
 
@@ -285,7 +285,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
       const body = structuredClone(request.body);
       const item: Item<R> = {
         ...request, body, id, sessionId: s.id,
-        key: request.action === 'answer-menu' ? `m:${body.toolUseId}` : (body.key ?? null),
+        key: request.action === 'answer-menu' || request.action === 'decline-menu' ? `m:${body.toolUseId}` : (body.key ?? null),
         typed: request.action === 'answer' && !body.choice,
         command: !!request.command, status: s.status, lastTurn: s.lastTurn, answeredAt: s.answered?.at ?? null, restore, dueAt: now() + holdMs, state: 'held',
       };

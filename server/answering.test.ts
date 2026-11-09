@@ -204,6 +204,18 @@ test('a menu answer is checked before it is claimed, and two at once press the k
   assert.deepEqual(w.decided, ['s']);
 });
 
+test('a decline presses Esc only while the menu it names is still open, and once for two at once', async () => {
+  const w = world(session({ menu, status: 'waiting' }));
+  await assert.rejects(w.answers.declineMenu('s', { toolUseId: 'm0' }), { code: 'stale' });
+  assert.deepEqual(w.pressed, []);
+  const results = await Promise.allSettled([w.answers.declineMenu('s', { toolUseId: 'm1' }), w.answers.declineMenu('s', { toolUseId: 'm1' })]);
+  assert.deepEqual(results.map((r) => r.status), ['fulfilled', 'rejected']);
+  assert.deepEqual(w.pressed, [[{ key: 'escape' }]]);
+  assert.deepEqual([w.row().answered?.key, w.row().answered?.text], ['m:m1', 'Declined the question']);
+  assert.equal(w.targets[0].prompt, true);
+  assert.deepEqual(w.decided, ['s']);
+});
+
 test('a menu answer whose keys stopped part way stays answered, since the same keys again would pick from the wrong place; one that typed none is given back', async () => {
   const blue = { toolUseId: 'm1', answers: [{ labels: ['Blue'], other: '' }] };
   const w = world(session({ menu, status: 'waiting' }), { pressFails: new PartlyTyped('tmux failed after 1 of 2 keys') });

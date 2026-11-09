@@ -243,7 +243,7 @@ function decided() {
 
 const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided, isCommand, checkUploads });
 
-export const { answerMenu, acceptAdvice, dismiss } = answers;
+export const { answerMenu, declineMenu, acceptAdvice, dismiss } = answers;
 
 // A send from the board may carry drafts, which leave the task once it went out.
 export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: unknown }) {

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { acceptance, choose, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, type Composer as Note, type Intent } from '../deck.ts';
+import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, type Composer as Note, type Intent } from '../deck.ts';
 import type { Action, Card as Keys } from '../keys.ts';
 import type { Request } from '../outbox.ts';
 import { queue, useQueue } from '../queue.ts';
@@ -26,7 +26,7 @@ import { labelOf, stoppedOnError } from './Status.tsx';
 import { TaskRail } from './TaskRail.tsx';
 import { TurnBody } from './TurnBody.tsx';
 import { elaborate, explanationFor } from './WhyPanel.tsx';
-import { explain, SENDS } from './explain.ts';
+import { explain, SENDS, TIPS } from './explain.ts';
 
 // The guard as the card draws it, redrawn when it ends.
 function useGuarded(until: number) {
@@ -135,7 +135,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
       return;
     }
     if (article.current?.contains(document.activeElement)) focusCard();
-    queue.deal(r.action === 'dismiss' ? 'side' : 'down', () => void hold(session, r, name, { dealt: true }));
+    queue.deal(r.action === 'dismiss' || r.action === 'decline-menu' ? 'side' : 'down', () => void hold(session, r, name, { dealt: true }));
   };
   const press = (p: Request | Intent | null) => {
     if (!p) return;
@@ -174,6 +174,9 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   };
   const dismiss = () => {
     if (!queue.guarded()) send(dismissal(session));
+  };
+  const decline = () => {
+    if (!queue.guarded()) send(declining(session));
   };
   const accept = () => {
     const r = acceptance(session);
@@ -361,6 +364,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
             <button type="button" className={styles.secondary} onClick={archiveIt}>Archive <kbd>X</kbd></button>
           )}
           {kind === 'ask' && <button type="button" className={styles.dismiss} data-explain="Clear the question without answering it" onClick={dismiss}>Dismiss</button>}
+          {kind === 'menu' && session.menu && <button type="button" className={styles.dismiss} {...explain(TIPS.decline)} onClick={decline}>Decline</button>}
         </div>
       </footer>
     </article>

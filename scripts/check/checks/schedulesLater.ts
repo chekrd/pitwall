@@ -260,7 +260,7 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: "L5 while Claude shows a question in its terminal, Send now on a draft under Later is off and says to answer the question first, as the send would be refused; once it is answered Send now is on again, and a question that opens during the hold calls the send off with a toast that says the draft is still under Later, where it is",
+    name: "L5 while Claude shows a question in its terminal, Send now on a draft under Later is off and says to answer or decline the question first, as the send would be refused; once it is answered Send now is on again, and a question that opens during the hold calls the send off with a toast that says the draft is still under Later, where it is",
     async run({ page, mock }) {
       type Snap = { sessions: { id: string; parked: { id: string }[]; answered: { text: string } | null }[] };
       const hooks = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-hooks')!;
@@ -272,7 +272,7 @@ export const schedulesLater: Check[] = [
         return b ? { disabled: b.disabled, does: b.dataset.explain!.split('\n\n')[0] } : null;
       };
       const off = await page.until('the draft under Later', sendNow);
-      assert.deepEqual(off, { disabled: true, does: 'Claude is showing a question in its terminal, which a message would answer by accident: answer it first. The draft waits here.' });
+      assert.deepEqual(off, { disabled: true, does: 'Claude is showing a question in its terminal, which a message would answer by accident: answer or decline it first. The draft waits here.' });
 
       await mock.post('/mock/patch', { id: 's-hooks', patch: { status: 'idle', menu: null, waitingFor: null } });
       await page.until('Send now on again', () => [...document.querySelectorAll<HTMLButtonElement>('#task-sheet [data-later] li[data-parked] button')].some((b) => b.textContent === 'Send now' && !b.disabled));
@@ -286,6 +286,35 @@ export const schedulesLater: Check[] = [
       const after = await hooks();
       assert.equal(after.parked.length, 1, 'the draft stays on the task');
       assert.equal(after.answered, null, 'nothing reached Claude');
+    },
+  },
+  {
+    name: "L6 Decline on a question Claude shows in its terminal presses Esc there after its 5 s Undo; once it is gone Send now under Later is on again with no reload and sends the draft",
+    async run({ page, mock }) {
+      type Snap = { sessions: { id: string; status: string; menu: unknown; parked: { id: string }[]; answered: { text: string } | null }[] };
+      const hooks = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-hooks')!;
+      const draft = 'Skip that, first look at the retries table.';
+      await mock.post('/mock/patch', { id: 's-hooks', patch: { parked: [{ id: 'k1', text: draft, auto: false, armedAt: null, at: Date.now() }] } });
+      await openSheetOf(page, mock, 's-hooks');
+      const sendNowOn = () => [...document.querySelectorAll<HTMLButtonElement>('#task-sheet [data-later] li[data-parked] button')].some((b) => b.textContent === 'Send now' && !b.disabled);
+      await page.until('the draft under Later', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
+      assert.equal(await page.eval(sendNowOn), false, 'Send now is off while the question is open');
+
+      await page.click('#task-sheet [data-queued] button', 'Decline');
+      await page.until('the hold toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => t.textContent?.startsWith('Declining “Which retry schedule')));
+      await sleep(3000);
+      await page.until('Send now on again once the question is gone', sendNowOn);
+      assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-queued]')), false, 'the question left the page');
+      const declined = (await mock.log()).filter((e) => e.sessionId === 's-hooks' && e.action === 'decline-menu');
+      assert.deepEqual(declined.map((e) => e.body), [{ toolUseId: 'toolu_01Hooks' }]);
+      const after = await hooks();
+      assert.deepEqual([after.status, after.menu, after.answered?.text], ['idle', null, 'Declined the question']);
+
+      await page.click('#task-sheet [data-later] li[data-parked] button', 'Send now');
+      for (const end = Date.now() + 9000; Date.now() < end && (await hooks()).parked.length; ) await sleep(200);
+      const sent = await hooks();
+      assert.equal(sent.parked.length, 0, 'the draft went out');
+      assert.equal(sent.answered?.text, draft);
     },
   },
   {

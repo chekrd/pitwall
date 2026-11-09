@@ -40,6 +40,7 @@ export const actionBodies = {
   answer: z.strictObject({ key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: z.array(z.string()).optional() }),
   dismiss: z.strictObject({ key }),
   rename: z.strictObject({ title: z.string() }),
+  'decline-menu': z.strictObject({ toolUseId: z.string() }),
   'answer-menu': z.strictObject({ toolUseId: z.string(), answers: z.array(z.strictObject({ labels: z.array(z.string()), other: z.string() })) }),
   'accept-advice': z.strictObject({ key, adviceAt: z.number().optional() }),
   'retry-advice': z.strictObject({ key }),
@@ -68,7 +69,7 @@ export const actionBodies = {
 export type ActionName = keyof typeof actionBodies;
 export const isAction = (name: string): name is ActionName => Object.hasOwn(actionBodies, name);
 
-// These act on the decision the page showed and name it in `key`; answer and answer-menu check their own.
+// These act on the decision the page showed and name it in `key`; answer, answer-menu and decline-menu check their own.
 export const onDecision: ReadonlySet<ActionName> = new Set(['dismiss', 'accept-advice', 'retry-advice', 'stop-advice', 'elaborate']);
 
 // What the page sends, and what the server reads from it.
