@@ -89,6 +89,8 @@ function show(id: string) {
   showQueue();
 }
 
+const stillLater = (n: number) => (n ? `. ${n === 1 ? 'The draft is' : 'The drafts are'} still under Later.` : '');
+
 function announce(i: Item<Restore>) {
   const { name } = i.restore;
   const session = i.sessionId;
@@ -96,7 +98,7 @@ function announce(i: Item<Restore>) {
     return toast('undo', heldText(i), { session, until: i.dueAt, lasts: HOLD_MS + 2000, action: { label: 'Undo', kbd: 'Esc', run: () => undo(i.id) } });
   }
   if (i.state === 'waiting') return toast('info', `Waiting for Pitwall to send ${quote(i.label)} to ${name}`, { session, lasts: NO_ANSWER_MS });
-  if (i.state === 'failed') return toast('error', `Not sent to ${name}: ${i.error}`, { session, action: { label: 'Show', run: () => show(session) } });
+  if (i.state === 'failed') return toast('error', `Not sent to ${name}: ${i.error}${stillLater(i.body.drafts?.length ?? 0)}`, { session, action: { label: 'Show', run: () => show(session) } });
   if (i.state === 'answered') return toast('info', `Already answered elsewhere; nothing was sent to ${name}`, { session });
   return null;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sleep } from '../cdp.ts';
-import { logged, matches, openNewTask, openQueue, openSheetOf, pickRepo, sheetOpen, tiles, typeInPrompt, type Check } from '../helpers.ts';
+import { logged, matches, openNewTask, openQueue, openSheetOf, pickRepo, sheetOpen, stateOf, tiles, typeInPrompt, type Check } from '../helpers.ts';
 
 export const schedulesLater: Check[] = [
   {
@@ -257,6 +257,35 @@ export const schedulesLater: Check[] = [
       const after = await invoice();
       assert.deepEqual([after.asides, after.answered], [[], null], "nothing reached the task's Claude");
       assert.equal((await mock.log()).filter((e) => e.sessionId === 's-invoice' && e.action === 'answer').length, 0);
+    },
+  },
+  {
+    name: "L5 while Claude shows a question in its terminal, Send now on a draft under Later is off and says to answer the question first, as the send would be refused; once it is answered Send now is on again, and a question that opens during the hold calls the send off with a toast that says the draft is still under Later, where it is",
+    async run({ page, mock }) {
+      type Snap = { sessions: { id: string; parked: { id: string }[]; answered: { text: string } | null }[] };
+      const hooks = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-hooks')!;
+      const { menu } = await stateOf(mock, 's-hooks');
+      await mock.post('/mock/patch', { id: 's-hooks', patch: { parked: [{ id: 'k1', text: 'Skip that, first look at the retries table.', auto: false, armedAt: null, at: Date.now() }] } });
+      await openSheetOf(page, mock, 's-hooks');
+      const sendNow = () => {
+        const b = [...document.querySelectorAll<HTMLButtonElement>('#task-sheet [data-later] li[data-parked] button')].find((e) => e.textContent === 'Send now');
+        return b ? { disabled: b.disabled, does: b.dataset.explain!.split('\n\n')[0] } : null;
+      };
+      const off = await page.until('the draft under Later', sendNow);
+      assert.deepEqual(off, { disabled: true, does: 'Claude is showing a question in its terminal, which a message would answer by accident: answer it first. The draft waits here.' });
+
+      await mock.post('/mock/patch', { id: 's-hooks', patch: { status: 'idle', menu: null, waitingFor: null } });
+      await page.until('Send now on again', () => [...document.querySelectorAll<HTMLButtonElement>('#task-sheet [data-later] li[data-parked] button')].some((b) => b.textContent === 'Send now' && !b.disabled));
+      await page.click('#task-sheet [data-later] li[data-parked] button', 'Send now');
+      await page.until('the draft out of the list while held', () => !document.querySelector('#task-sheet [data-later] li[data-parked]'));
+      await mock.post('/mock/patch', { id: 's-hooks', patch: { status: 'waiting', menu: { ...menu, toolUseId: 'toolu_03Hooks', at: Date.now() } } });
+      await sleep(3000);
+      await page.until('the refusal saying where the draft is', () => [...document.querySelectorAll('[data-toast]')]
+        .some((t) => t.textContent?.startsWith('Not sent to Retry failed webhooks:') && t.textContent.includes('The draft is still under Later.')));
+      await page.until('the draft back under Later', () => document.querySelector('#task-sheet [data-later] li[data-parked] p')?.textContent === 'Skip that, first look at the retries table.');
+      const after = await hooks();
+      assert.equal(after.parked.length, 1, 'the draft stays on the task');
+      assert.equal(after.answered, null, 'nothing reached Claude');
     },
   },
   {

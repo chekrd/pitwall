@@ -37,6 +37,7 @@ export const TIPS = {
     session: TASK,
   },
   sendAll: { does: 'Sends every draft as one message, with 5 s to undo.', sees: WHOLE, session: TASK },
+  sendAsked: { does: 'Claude is showing a question in its terminal, which a message would answer by accident: answer it first. The draft waits here.' },
   edit: { does: 'Changes the draft. Nothing is sent.' },
   delete: { does: 'Deletes the draft; the toast can undo it. Nothing is sent.' },
   followUp: { does: 'Asks another question in this same copy.', sees: COPY, session: `the same separate fork as this aside's first answer; the task's Claude never sees it` },

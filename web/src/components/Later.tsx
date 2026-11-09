@@ -4,7 +4,7 @@ import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
 import type { ActionBody, Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES } from './Asides.tsx';
-import { explain, TIPS } from './explain.ts';
+import { explain, TIPS, type Explanation } from './explain.ts';
 import styles from './Later.module.css';
 import { toast } from './Toasts.tsx';
 
@@ -37,7 +37,7 @@ const onEnter = (run: () => void, cancel?: () => void) => (e: KeyboardEvent<HTML
   run();
 };
 
-function Item({ session, draft, name, canSend }: { session: Session; draft: Parked; name: string; canSend: boolean }) {
+function Item({ session, draft, name, canSend, sendTip }: { session: Session; draft: Parked; name: string; canSend: boolean; sendTip: Explanation }) {
   const [editing, setEditing] = useState<string | null>(null);
   const save = () => {
     const text = editing?.trim();
@@ -74,7 +74,7 @@ function Item({ session, draft, name, canSend }: { session: Session; draft: Park
         <span className={styles.spacer} />
         {editing === null ? (
           <>
-            <button type="button" {...explain(TIPS.sendNow)} disabled={!canSend} onClick={() => sendNow(session, [draft], name)}>Send now</button>
+            <button type="button" {...explain(sendTip)} disabled={!canSend} onClick={() => sendNow(session, [draft], name)}>Send now</button>
             <button type="button" {...explain(TIPS.edit)} onClick={() => setEditing(draft.text)}>Edit</button>
             <button type="button" {...explain(TIPS.delete)} onClick={remove}>Delete</button>
           </>
@@ -96,7 +96,9 @@ export function Later({ session, name }: { session: Session; name: string }) {
   const [auto, setAuto] = useState(false);
   const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.drafts ?? [] : [])));
   const drafts = session.parked.filter((d) => !sending.has(d.id));
-  const canSend = session.status !== 'exited' && !session.archived;
+  // The server refuses typing while the terminal shows a question, which the message would answer.
+  const asked = session.status === 'waiting' || !!session.menu;
+  const canSend = session.status !== 'exited' && !session.archived && !asked;
   const take = (send: (t: string) => Promise<boolean>) => {
     const t = text.trim();
     if (!t) return;
@@ -117,14 +119,14 @@ export function Later({ session, name }: { session: Session; name: string }) {
       </h3>
       {drafts.length > 0 && (
         <ul className={styles.list}>
-          {drafts.map((d) => <Item key={d.id} session={session} draft={d} name={name} canSend={canSend} />)}
+          {drafts.map((d) => <Item key={d.id} session={session} draft={d} name={name} canSend={canSend} sendTip={asked ? TIPS.sendAsked : TIPS.sendNow} />)}
         </ul>
       )}
       {drafts.length > 1 && (
         <div className={styles.all}>
           {armed > 0 && <span className={styles.hint}>{armed === drafts.length ? 'All go' : `${armed} go`} as one message when Claude ends its turn.</span>}
           <span className={styles.spacer} />
-          <button type="button" {...explain(TIPS.sendAll)} disabled={!canSend} onClick={() => sendNow(session, drafts, name)}>Send all now, as one message</button>
+          <button type="button" {...explain(asked ? TIPS.sendAsked : TIPS.sendAll)} disabled={!canSend} onClick={() => sendNow(session, drafts, name)}>Send all now, as one message</button>
         </div>
       )}
       <AsideList session={session} />
