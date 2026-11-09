@@ -18,6 +18,19 @@ export const taskPage: Check[] = [
     },
   },
   {
+    name: 'P4.6.ended the page of a task whose Claude has ended says so in place of Message Claude, with Continue; once Claude is back, Message Claude is there',
+    async run({ page, mock, shot }) {
+      await openSheetOf(page, mock, 's-stripe');
+      const ended = await page.until('the ended note', () => document.querySelector<HTMLElement>('#task-sheet [data-ended]')?.innerText ?? null);
+      assert.match(ended, /Claude has ended/);
+      assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-ux-section="message box"]')), false, 'no message box while ended');
+      await shot('ended');
+      await page.click('#task-sheet [data-ended] button', 'Continue');
+      await logged(mock, 'the continue', (e) => e.action === 'focus' && e.sessionId === 's-stripe');
+      await page.until('Message Claude once Claude is back', () => !!document.querySelector('#task-sheet textarea[aria-label="Message Claude"]') && !document.querySelector('#task-sheet [data-ended]'));
+    },
+  },
+  {
     name: 'P4.7 Artifacts: 4 opens the list as a column beside a sandboxed frame of the newest artifact, with Open in new tab as a link; another artifact replaces the entry',
     async run({ page, mock, shot }) {
       await openSheetOf(page, mock, 's-cart');

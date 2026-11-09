@@ -243,6 +243,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const working = session.status === 'working' && !clearing;
   const starting = !!session.starting;
   const message = !archived && !starting && (attention === 'working' || attention === 'idle');
+  const ended = attention === 'exited' && !archived && !starting && !session.interrupted;
   // Message Claude stays while focus is in it, also with the window away, whatever the state turns to: a dictation app
   // inserts into the field it started on, and a new box would not be that field. The server refuses a message while
   // Claude shows a prompt, and the text comes back.
@@ -293,6 +294,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </section>
           )}
           {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} />}
+          {ended && !writing && (
+            <section className={styles.blocked} data-ended data-ux-section="ended">
+              <p>Claude has ended for this task. <strong>Continue</strong> resumes the conversation in a hidden terminal, and then you can message it here.</p>
+              <FocusButton session={session} />
+            </section>
+          )}
           {(message || (writing && !archived && !clearing)) && (
             <div
               data-ux-section="message box"
