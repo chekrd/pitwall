@@ -127,15 +127,25 @@ export const board: Check[] = [
         if (!track || !marks.length) return null;
         const box = track.getBoundingClientRect();
         const last = marks.at(-1)!.getBoundingClientRect();
+        // Each changed line, put on the ruler by where it is in the pane's content, lies on a mark of its side.
+        const origin = pane.getBoundingClientRect().top - pane.scrollTop;
+        const lines = [...pane.querySelector('diffs-container')!.shadowRoot!.querySelectorAll<HTMLElement>('[data-line][data-line-type^="change-"]')];
+        const off = lines.filter((line) => {
+          const side = line.dataset.lineType === 'change-deletion' ? 'del' : 'add';
+          const r = line.getBoundingClientRect();
+          const y = box.top + ((r.top + r.height / 2 - origin) / pane.scrollHeight) * box.height;
+          return !marks.some((m) => { const b = m.getBoundingClientRect(); return m.dataset.side === side && y >= b.top - 1 && y <= b.bottom + 1; });
+        });
         return {
-          sides: [...new Set(marks.map((m) => m.dataset.side))].sort(),
+          sides: [...new Set(marks.map((m) => m.dataset.side))].toSorted((a, b) => (a! < b! ? -1 : 1)),
           inside: marks.every((m) => { const r = m.getBoundingClientRect(); return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5; }),
+          off: off.map((line) => line.textContent?.trim().slice(0, 40)),
           scrollbar: getComputedStyle(pane).scrollbarWidth,
           x: box.left + box.width / 2,
           y: last.top + last.height / 2,
         };
       });
-      assert.deepEqual([ruler.sides, ruler.inside, ruler.scrollbar], [['add', 'del'], true, 'none']);
+      assert.deepEqual([ruler.sides, ruler.inside, ruler.scrollbar, ruler.off], [['add', 'del'], true, 'none', []]);
       await page.eval(() => { document.querySelector('section[data-file]')!.parentElement!.scrollTop = 0; });
       await page.pointAt(ruler.x, ruler.y, true);
       await page.until('the last change in view', () => {
