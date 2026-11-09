@@ -1,13 +1,5 @@
 @layer components {
-  .schedules {
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 26px 28px 0;
-    h2 { font-size: 13px; font-weight: 600; color: var(--text-2); }
-    ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-  }
+  .list { margin: 0; padding: 0 28px; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 
   .row {
     display: flex;
@@ -101,9 +93,7 @@
     svg { color: var(--muted); }
   }
 
-  .schedules { scroll-margin-top: 16px; }
-
   @media (max-width: 760px) {
-    .schedules { padding: 22px 16px 0; }
+    .list { padding: 0 16px; }
   }
 }

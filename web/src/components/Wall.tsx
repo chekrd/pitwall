@@ -1,6 +1,7 @@
 import { meter } from '../deck.ts';
 import { orderTiles } from '../order.ts';
 import { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useStore } from '../store.ts';
 import type { Session } from '../types.ts';
 import { attentionOf, openSubtasksOfAll } from '../util.ts';
@@ -12,6 +13,7 @@ import { ScheduledLink, Schedules } from './Schedules.tsx';
 export function Wall({ deck }: { deck: readonly Session[] }) {
   const { repos, sessions, schedules, link } = useStore();
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [scheduledOpen, setScheduledOpen] = useState(false);
   if (link === 'connecting') {
     return (
       <main className={styles.wall}>
@@ -34,7 +36,7 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
         <div className={styles.titles}>
           <h1>{title}</h1>
           {sub && <p>{sub}</p>}
-          {schedules.length > 0 && <ScheduledLink />}
+          {schedules.length > 0 && <ScheduledLink open={() => flushSync(() => setScheduledOpen(true))} />}
         </div>
         {deck.length > 0 && (
           <a className={styles.back} href="/">
@@ -51,9 +53,14 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
       <div className={styles.tiles}>
         {active.map((s) => <WallTile key={s.id} session={s} repos={repos} unsettled={subtasksOf(s.id)} />)}
       </div>
-      <Schedules />
+      {schedules.length > 0 && (
+        <details className={styles.fold} data-schedules open={scheduledOpen} onToggle={(e) => setScheduledOpen(e.currentTarget.open)}>
+          <summary><Icon name="chevron-right" size={14} />Scheduled ({schedules.length})</summary>
+          {scheduledOpen && <Schedules />}
+        </details>
+      )}
       {archived.length > 0 && (
-        <details className={styles.archived} open={archivedOpen} onToggle={(e) => setArchivedOpen(e.currentTarget.open)}>
+        <details className={styles.fold} open={archivedOpen} onToggle={(e) => setArchivedOpen(e.currentTarget.open)}>
           <summary><Icon name="chevron-right" size={14} />Archived ({archived.length})</summary>
           <div className={styles.tiles}>
             {archivedOpen && archived.map((s) => <WallTile key={s.id} session={s} repos={repos} unsettled={subtasksOf(s.id)} />)}

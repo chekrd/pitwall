@@ -70,12 +70,11 @@ function Row({ schedule: s }: { schedule: Schedule }) {
   );
 }
 
-// The list sits under the tiles; the Wall's heading counts the schedules and leads down to it.
-export function ScheduledLink() {
+export function ScheduledLink({ open }: { open: () => void }) {
   const { schedules } = useStore();
   const next = Math.min(...schedules.flatMap((s) => (s.paused || s.next === null ? [] : [s.next])));
   return (
-    <button type="button" className={styles.lead} data-scheduled-link onClick={() => document.querySelector('[data-schedules]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+    <button type="button" className={styles.lead} data-scheduled-link onClick={() => { open(); document.querySelector('[data-schedules]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
       <Icon name="clock" size={14} />
       {schedules.length} scheduled{Number.isFinite(next) && `, next ${day(next)}`}
     </button>
@@ -84,13 +83,9 @@ export function ScheduledLink() {
 
 export function Schedules() {
   const { schedules } = useStore();
-  if (!schedules.length) return null;
   return (
-    <section className={styles.schedules} aria-label="Scheduled" data-schedules>
-      <h2>Scheduled</h2>
-      <ul>
-        {schedules.map((s) => <Row key={s.id} schedule={s} />)}
-      </ul>
-    </section>
+    <ul className={styles.list}>
+      {schedules.map((s) => <Row key={s.id} schedule={s} />)}
+    </ul>
   );
 }

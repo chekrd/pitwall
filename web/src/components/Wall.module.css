@@ -74,7 +74,8 @@
     padding: 0 28px;
   }
 
-  .archived {
+  .fold {
+    scroll-margin-top: 16px;
     flex: none;
     display: flex;
     flex-direction: column;
@@ -106,6 +107,6 @@
     .wall { flex: none; overflow: visible; mask-image: none; }
     .head { padding: 16px 16px 12px; }
     .tiles { padding: 0 16px; }
-    .archived summary { margin-left: 6px; }
+    .fold summary { margin-left: 6px; }
   }
 }
