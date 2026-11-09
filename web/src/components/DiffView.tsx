@@ -120,7 +120,7 @@ function Diffs({ worktree }: { worktree: string }) {
     const paths = [file.name, ...(file.prevName ? [file.prevName] : [])].map((p) => `&path=${encodeURIComponent(p)}`).join('');
     const next = await api('GET', `/api/diff/file?worktree=${encodeURIComponent(worktree)}${paths}`);
     // Highlighted before it swaps in, so it never shows plain first; a fresh cache key keeps a refresh from showing the file as it was.
-    const whole = parsePatchFiles(next.patch, crypto.randomUUID()).flatMap((p) => p.files).find((f) => f.name === file.name) ?? null;
+    const whole = parsePatchFiles(next.patch, { cacheKeyPrefix: crypto.randomUUID() }).flatMap((p) => p.files).find((f) => f.name === file.name) ?? null;
     if (whole) await pool?.primeDiffHighlightCache(whole).catch(() => {});
     return whole;
   };
