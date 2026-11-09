@@ -64,3 +64,15 @@ test('steps already counted do not run again, and a failed step leaves the datab
   assert.deepEqual(runs, [1, 2, 2]);
   assert.throws(() => migrate(db, []), /more than the 0/);
 });
+
+test('step 7 forgets the restart on tasks archived before archiving did, and keeps it on the rest and a pause on any', () => {
+  const db = new DatabaseSync(':memory:');
+  migrate(db, migrations.slice(0, 6));
+  const restart = JSON.stringify({ at: 1, status: 'idle', waitingFor: null, menu: null });
+  const pause = JSON.stringify({ at: 1, cause: 'pause', status: 'working', waitingFor: null, menu: null });
+  const add = db.prepare("INSERT INTO sessions (id, worktree, cwd, status, archived, interrupted, created_at, updated_at, conversation) VALUES (?, '/r', '/r', 'exited', ?, ?, 1, 1, ?)");
+  for (const [id, archived, interrupted] of [['gone', 1, restart], ['paused', 1, pause], ['shown', 0, restart], ['plain', 1, null]] as const) add.run(id, archived, interrupted, id);
+  migrate(db);
+  const rows = Object.fromEntries(db.prepare('SELECT id, interrupted FROM sessions').all().map((r) => [r.id, r.interrupted]));
+  assert.deepEqual(rows, { gone: null, paused: pause, shown: restart, plain: null });
+});

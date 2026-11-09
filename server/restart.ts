@@ -26,3 +26,11 @@ export function interruption(s: Pick<Session, 'status' | 'aliveAt' | 'updatedAt'
 // Resumed, a task that was only waiting for you is as it was; one cut short mid-turn, or at a prompt the restart took
 // away, stays marked until Claude works again.
 export const pickedUp = (i: Interrupted, status: Session['status']) => status === 'working' || i.status === 'idle';
+
+// Archived, a task is done with, and the restart's claim on it goes: brought back later, it is ended as any other.
+// A pause's mark stays, since the pause still has the task to carry on.
+export const archivePatch = (s: Pick<Session, 'interrupted' | 'resolution'>, archived: boolean): Pick<Session, 'archived'> & Partial<Pick<Session, 'interrupted' | 'resolution'>> => ({
+  archived,
+  ...(archived && s.interrupted && s.interrupted.cause !== 'pause' && { interrupted: null }),
+  ...(!archived && s.resolution && { resolution: null }),
+});

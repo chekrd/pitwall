@@ -438,6 +438,36 @@ export const restart: Check[] = [
     },
   },
   {
+    name: 'R8 archiving a task the restart ended takes it off the banner for good: unarchived later, it is an ended task like any other and the banner does not come back for it',
+    scenario: 'restarted',
+    async run({ page, mock }) {
+      const all = (await mock.get('/api/state')).sessions as { id: string; parent: unknown; archived: boolean; interrupted: unknown }[];
+      const ended = all.filter((s) => s.interrupted && !s.archived);
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the recovery banner', () => !!document.querySelector('[data-restart="recover"]'));
+      for (const s of ended.filter((s) => s.parent)) await mock.post(`/api/sessions/${s.id}/archive`, { archived: true });
+      const tasks = ended.filter((s) => !s.parent);
+      for (const s of tasks) {
+        await page.click(`[data-tile][data-session="${s.id}"] button[aria-label="Session actions"]`);
+        await page.click(':popover-open button', 'Archive');
+        await logged(mock, 'the archive', (e) => e.action === 'archive' && e.sessionId === s.id && e.status === 204);
+      }
+      await page.until('the banner to go once each one is archived', () => !document.querySelector('[data-restart]'));
+      const last = tasks.at(-1)!;
+
+      await page.click('summary', 'Archived (');
+      await page.click(`[data-tile][data-session="${last.id}"] button[aria-label="Session actions"]`);
+      await page.click(':popover-open button', 'Unarchive');
+      await logged(mock, 'the unarchive', (e) => e.action === 'archive' && e.sessionId === last.id && e.body.archived === false);
+      const label = await page.until('the tile back on the Wall', (id: string) => {
+        const t = document.querySelector(`[data-tile][data-session="${id}"]:not([data-archived])`);
+        return t?.getAttribute('aria-label') ?? null;
+      }, last.id);
+      assert.match(label, /, Ended$/);
+      assert.equal(await page.eval(() => !!document.querySelector('[data-restart]')), false, 'no restart banner for it');
+    },
+  },
+  {
     name: 'E1 a turn that ended on an API error says Stopped on an error on its tile and page, with what to do for its kind and Try again unless it was refused, until Claude replies again',
     async run({ page, mock, shot }) {
       const all = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; question: unknown; menu: unknown; summary: { decision?: unknown } | null }[];

@@ -24,6 +24,7 @@ import { notify, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
 import { sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
+import { archivePatch } from './restart.ts';
 import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
@@ -447,7 +448,7 @@ export async function forget(id: string) {
 
 export function archive(id: string, archived: boolean) {
   const s = must(id);
-  sessions.update(id, { archived, ...(!archived && s.resolution && { resolution: null }) });
+  sessions.update(id, archivePatch(s, archived));
   notify();
 }
 
@@ -464,7 +465,7 @@ export function resolve(id: string, state: unknown) {
   const s = must(id);
   if (!s.parent) throw new Error('only a subtask is marked solved or dropped');
   if (state !== null && state !== 'solved' && state !== 'dropped') throw new Error('unknown resolution');
-  sessions.update(id, { resolution: state ? { state, at: Date.now() } : null, archived: !!state });
+  sessions.update(id, { ...archivePatch(s, !!state), resolution: state ? { state, at: Date.now() } : null });
   notify();
 }
 

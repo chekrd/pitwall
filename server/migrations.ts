@@ -94,6 +94,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN starting TEXT');
   },
+  // 7: archiving now forgets the restart that ended a task; tasks archived before then still carried it.
+  (db) => {
+    db.exec(`UPDATE sessions SET interrupted = NULL WHERE archived = 1 AND interrupted IS NOT NULL AND json_extract(interrupted, '$.cause') IS NOT 'pause'`);
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

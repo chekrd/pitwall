@@ -19,7 +19,7 @@ import type { Session, SubtaskKind } from '../../server/db.ts';
 import { checkDecision, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
-import { pickedUp } from '../../server/restart.ts';
+import { archivePatch, pickedUp } from '../../server/restart.ts';
 import { pauser } from '../../server/pause.ts';
 import { UPLOAD_DIR_NAME, UPLOAD_IMAGE_NAME, uploadsDir } from '../../server/uploadPaths.ts';
 import { addParked, editParked, removeParked, turnEnds } from '../../server/parked.ts';
@@ -478,11 +478,11 @@ const actions: ActionHandlers<Session> = {
     push();
   },
   priority: (s, body) => update(s.id, { priority: body.priority ?? null }),
-  archive: (s, body) => update(s.id, { archived: body.archived ?? true, ...(!(body.archived ?? true) && s.resolution && { resolution: null }) }),
+  archive: (s, body) => update(s.id, archivePatch(s, body.archived ?? true)),
   resolve: (s, body) => {
     if (!s.parent) throw new Error('only a subtask is marked solved or dropped');
     const state = body.state ?? null;
-    update(s.id, { resolution: state ? { state, at: Date.now() } : null, archived: !!state });
+    update(s.id, { ...archivePatch(s, !!state), resolution: state ? { state, at: Date.now() } : null });
   },
   'delete-worktree': (s, body) => {
     if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { interruption, parseBootTime, pickedUp } from './restart.ts';
+import { archivePatch, interruption, parseBootTime, pickedUp } from './restart.ts';
 
 test('the boot time is read from sysctl kern.boottime, in milliseconds', () => {
   assert.equal(parseBootTime('{ sec = 1793086205, usec = 497711 } Tue Oct 27 08:30:05 2026\n'), 1_793_086_205_000);
@@ -28,4 +28,13 @@ test('a resumed task is picked up at once when it only waited for you, and once 
   assert.equal(pickedUp(at('working'), 'idle'), false);
   assert.equal(pickedUp(at('waiting'), 'idle'), false);
   assert.equal(pickedUp(at('working'), 'working'), true);
+});
+
+test('archiving forgets the restart that ended a task but keeps a pause, and unarchiving reopens a resolved subtask', () => {
+  const restart = { at: 1, status: 'idle' as const, waitingFor: null, menu: null };
+  const pause = { ...restart, cause: 'pause' as const };
+  assert.deepEqual(archivePatch({ interrupted: restart, resolution: null }, true), { archived: true, interrupted: null });
+  assert.deepEqual(archivePatch({ interrupted: pause, resolution: null }, true), { archived: true });
+  assert.deepEqual(archivePatch({ interrupted: restart, resolution: null }, false), { archived: false });
+  assert.deepEqual(archivePatch({ interrupted: null, resolution: { state: 'solved', at: 1 } }, false), { archived: false, resolution: null });
 });
