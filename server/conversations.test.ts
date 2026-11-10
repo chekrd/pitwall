@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { exchanges, fileMeta, forgetHooked, hookedConversation, promptImage, startSource } from './conversations.ts';
+import { exchanges, fileMeta, forgetHooked, hookedConversation, liveStatus, promptImage, startSource } from './conversations.ts';
 import { mergeLinks } from './links.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'pitwall-test-'));
@@ -424,4 +424,26 @@ test("what the hooks said is forgotten for a conversation no task has and no Cla
   hookedConversation('recent', { transcript: '/t/recent.jsonl' }, 5 * minute);
   forgetHooked((id) => id === 'kept', 11 * minute);
   assert.deepEqual(['gone', 'kept', 'recent'].map(startSource), [null, 'clear', 'resume']);
+});
+
+test('a turn is over once Claude closes a message without a tool call, or the developer interrupts it', async () => {
+  const closed = (content: object[], stop_reason: string) => ({ ...assistant(content), message: { content, stop_reason } });
+  const call = closed([toolUse('t1', 'Bash', { command: 'pnpm dev' })], 'tool_use');
+  assert.equal((await meta([prompt('Start the dev server')])).turnOver, false);
+  assert.equal((await meta([prompt('Start the dev server'), call])).turnOver, false);
+  assert.equal((await meta([prompt('Start the dev server'), call, toolResult('t1', 'running in background')])).turnOver, false);
+  const done = [prompt('Start the dev server'), call, toolResult('t1', 'running in background'), closed([text('It runs on port 3000.')], 'end_turn')];
+  assert.equal((await meta([...done, { type: 'system', subtype: 'turn_duration' }])).turnOver, true);
+  assert.equal((await meta([...done, prompt('Now stop it')])).turnOver, false);
+  assert.equal((await meta([prompt('Start the dev server'), call, { type: 'user', message: { content: [text('[Request interrupted by user for tool use]')] } }])).turnOver, true);
+});
+
+test('the "shell" a session file reports is working in a turn and idle behind a finished one', async () => {
+  const info = { cwd: '/w', sessionId: 'c1' };
+  const turn = (turnOver: boolean) => async () => ({ turnOver }) as Awaited<ReturnType<typeof fileMeta>>;
+  assert.equal(await liveStatus({ ...info, status: 'shell' }, turn(false)), 'busy');
+  assert.equal(await liveStatus({ ...info, status: 'shell' }, turn(true)), 'idle');
+  assert.equal(await liveStatus({ ...info, status: 'shell' }, async () => null), 'busy');
+  assert.equal(await liveStatus({ ...info, status: 'busy' }, turn(true)), 'busy');
+  assert.equal(await liveStatus({ ...info, status: 'waiting' }, turn(true)), 'waiting');
 });
