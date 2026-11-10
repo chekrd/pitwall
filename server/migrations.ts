@@ -98,6 +98,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec(`UPDATE sessions SET interrupted = NULL WHERE archived = 1 AND interrupted IS NOT NULL AND json_extract(interrupted, '$.cause') IS NOT 'pause'`);
   },
+  // 8: each task's latest message that Claude has not replied to yet.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN unanswered TEXT');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

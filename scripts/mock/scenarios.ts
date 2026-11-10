@@ -59,7 +59,7 @@ function restarted(now: number, fails: boolean, paused = false): Scenario {
   // Two subtasks of one task, a fix cut off mid-turn and a review of it nested under the fix, which had finished.
   const parent = sessions.find((s) => s.interrupted && s.interrupted.status === 'idle' && !s.parent)!;
   const subtask = (id: string, of: Session, title: string, status: 'working' | 'idle'): Session => ({
-    ...of, id, conversation: id, title, firstPrompt: title, rank: null, question: null, summary: null, lastMessage: null, lastPrompt: null, findings: null, prs: [], links: [], artifacts: [],
+    ...of, id, conversation: id, title, firstPrompt: title, rank: null, question: null, summary: null, lastMessage: null, lastPrompt: null, unanswered: null, findings: null, prs: [], links: [], artifacts: [],
     parent: { id: of.id, basis: `t-${of.id}`, finding: 0, title, kind: status === 'working' ? 'accept' : 'second-look', text: '' },
     interrupted: { at: now - MIN, status, waitingFor: null, menu: null },
   });

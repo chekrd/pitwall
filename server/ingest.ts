@@ -111,6 +111,7 @@ async function readTranscript(s: Session, p?: LiveProcess) {
   // A reply whose prompt has left the part read keeps the prompt read with it before.
   const lastPrompt = meta.lastPrompt ?? (meta.lastMessage === s.lastMessage ? s.lastPrompt : null);
   if (lastPrompt !== s.lastPrompt) patch.lastPrompt = lastPrompt;
+  if (JSON.stringify(meta.unanswered) !== JSON.stringify(s.unanswered)) patch.unanswered = meta.unanswered;
   // A request names the model without the [1m] of a 1M context, which the model picked keeps.
   if (meta.model && meta.model !== s.model?.replace('[1m]', '')) patch.model = meta.model;
   if (meta.effort && meta.effort !== s.effort) patch.effort = meta.effort;

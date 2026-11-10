@@ -62,7 +62,7 @@ export function repos(now: number): RepoView[] {
 type Given = Pick<Session, 'id' | 'repoId' | 'worktree' | 'title' | 'firstPrompt' | 'status' | 'createdAt' | 'updatedAt'>;
 
 export const session = (fields: Given & Partial<Session>): Session => ({
-  conversation: fields.id, history: [], cwd: fields.worktree, pid: null, tty: null, question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, lastTurn: null,
+  conversation: fields.id, history: [], cwd: fields.worktree, pid: null, tty: null, question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null,
   waitingFor: null, dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, findings: null, parent: null, resolution: null,
   model: 'claude-opus-5-5', effort: 'high', interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null, artifacts: [], links: [], archived: false, ...fields,
 });

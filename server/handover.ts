@@ -20,7 +20,7 @@ export function handOver(s: Pick<Session, 'conversation' | 'history' | 'lastMess
   return {
     conversation,
     history: [...s.history.filter((h) => h.id !== conversation), { id: s.conversation, lastMessage: s.lastMessage, until: now }],
-    lastMessage: null, lastPrompt: null, lastTurn: null, question: null, menu: null, dismissedAsk: null, activity: null, turnError: null,
+    lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, question: null, menu: null, dismissedAsk: null, activity: null, turnError: null,
     summary: s.summary && { ...s.summary, text: '', progress: [], learnings: [] },
   } satisfies Partial<Session>;
 }

@@ -16,6 +16,7 @@ import { Findings, Subtasks, SubtaskOf } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
 import { Later } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
+import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
 import { MenuBody } from './MenuBody.tsx';
 import { Options } from './Options.tsx';
 import { interruptedAs, resumePaused } from './RestartBanner.tsx';
@@ -250,6 +251,10 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   // Claude shows a prompt, and the text comes back.
   const [writing, setWriting] = useState(false);
   if (archived && writing) setWriting(false);
+  const sending = useSending(session);
+  const waits = waitingText(session, sending) !== null;
+  // What the turn under way answers; a message still queued is not it.
+  const trigger = sending || session.unanswered?.queued ? null : session.unanswered?.text ?? session.lastPrompt;
   const learnings = summary?.learnings ?? [];
   const artifacts = session.artifacts.toReversed();
   const links = session.links.toReversed();
@@ -277,6 +282,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <div className={styles.step}>
                 <strong>{starting ? 'Setting up the task' : activity?.between ? 'Waiting on background work' : 'Claude is working'}</strong>
                 {!activity?.between && <code>{activity?.step ?? 'Starting'}</code>}
+                {!starting && trigger && <span className={styles.trigger} data-trigger><b>You</b> {trigger}</span>}
                 {!!activity?.background?.length && (
                   <ul className={styles.background} aria-label="In the background" data-between={activity.between}>
                     {activity.background.map((b, i) => <li key={i}><code>{b}</code></li>)}
@@ -294,7 +300,8 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <FocusButton session={session} />
             </section>
           )}
-          {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} />}
+          {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} previous={waits} />}
+          <YourMessage session={session} send={sending} />
           {ended && !writing && (
             <section className={styles.blocked} data-ended data-ux-section="ended">
               <p>Claude has ended for this task. <strong>Continue</strong> resumes the conversation in a hidden terminal, and then you can message it here.</p>

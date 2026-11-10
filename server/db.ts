@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, SESSIONS_DIR } from './config.ts';
-import type { Activity, Menu, TurnError } from './conversations.ts';
+import type { Activity, Menu, TurnError, Unanswered } from './conversations.ts';
 import type { DiffStat } from './git.ts';
 import type { MenuAnswer } from './menu.ts';
 import { migrate } from './migrations.ts';
@@ -227,6 +227,7 @@ export interface Session {
   diffstat: DiffStat | null;
   lastMessage: string | null;
   lastPrompt: string | null;
+  unanswered: Unanswered | null;
   lastTurn: string | null;
   waitingFor: string | null;
   dismissedAsk: string | null;
@@ -291,6 +292,7 @@ const toSession = (r: Row): Session => ({
   diffstat: r.diffstat ? JSON.parse(r.diffstat) : null,
   lastMessage: r.last_message,
   lastPrompt: r.last_prompt ?? null,
+  unanswered: r.unanswered ? JSON.parse(r.unanswered) : null,
   lastTurn: r.last_turn,
   waitingFor: r.waiting_for,
   dismissedAsk: r.dismissed_ask,
@@ -375,6 +377,7 @@ const columns: Record<string, string> = {
   diffstat: 'diffstat',
   lastMessage: 'last_message',
   lastPrompt: 'last_prompt',
+  unanswered: 'unanswered',
   lastTurn: 'last_turn',
   waitingFor: 'waiting_for',
   dismissedAsk: 'dismissed_ask',
@@ -423,7 +426,7 @@ export const sessions = {
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
     parsed.delete(s.id);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');

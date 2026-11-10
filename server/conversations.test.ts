@@ -125,6 +125,24 @@ test('the last message is what Claude wrote after its last tool call, or the tur
   assert.equal((await meta([assistant([text('Before any prompt.')])])).lastPrompt, null);
 });
 
+test('your latest message is unanswered until Claude writes a reply to it; one sent mid-turn is queued until Claude takes it in', async () => {
+  const queue = (operation: string, content: string | undefined, minute: number) => ({ type: 'queue-operation', operation, content, timestamp: at(minute) });
+  const entries = [
+    prompt('first', 0),
+    assistant([text('Old reply.')], 1),
+    prompt('second', 2),
+    assistant([text('Reading the code.'), toolUse('t1', 'Read', { file_path: '/repo/a.ts' })], 3),
+  ];
+  assert.equal((await meta(entries.slice(0, 2))).unanswered, null);
+  assert.deepEqual((await meta(entries)).unanswered, { text: 'second', at: Date.parse(at(2)) });
+  const midTurn = [...entries, queue('enqueue', '<task-notification>done</task-notification>', 4), queue('enqueue', 'Also the tests', 4)];
+  assert.deepEqual((await meta(midTurn)).unanswered, { text: 'Also the tests', at: Date.parse(at(4)), queued: true });
+  const absorbed = [...midTurn, queue('dequeue', undefined, 5), queue('remove', 'Also the tests', 5),
+    { type: 'attachment', uuid: 'q1', timestamp: at(4), attachment: { type: 'queued_command', commandMode: 'prompt', prompt: 'Also the tests' } }];
+  assert.deepEqual((await meta(absorbed)).unanswered, { text: 'Also the tests', at: Date.parse(at(4)) });
+  assert.equal((await meta([...absorbed, assistant([text('Both done.')], 6)])).unanswered, null);
+});
+
 test('the text before a question or a menu stays in the last message', async () => {
   const m = await meta([prompt('Fix it'), assistant([text('Two ways to fix it.'), toolUse('m1', 'AskUserQuestion', { questions: [] })])]);
   assert.equal(m.lastMessage, 'Two ways to fix it.');

@@ -41,6 +41,7 @@ interface Meta {
   lastMessage: string | null;
   // The prompt that reply answers, when the part read holds it.
   lastPrompt: string | null;
+  unanswered: Unanswered | null;
   activity: Activity | null;
   // Id and description of each background task still running.
   background: [string, string][];
@@ -77,6 +78,14 @@ export interface Activity {
   background?: string[];
   // Claude's turn has ended and only the background work runs.
   between?: true;
+}
+
+// The developer's latest message while Claude has written no reply to it. `queued` while it waits for Claude to take it
+// in, as one sent mid-turn does until Claude's current step ends.
+export interface Unanswered {
+  text: string;
+  at: number;
+  queued?: true;
 }
 
 // An API error that ended Claude's turn in place of a reply: the model's safeguards refused it, the usage limit was hit,
@@ -268,11 +277,33 @@ const transcriptLines = (file: string) => createInterface({ input: createReadStr
 
 const lastChars = (text: string, max: number) => (text.length > max ? `…${text.slice(-max)}` : text);
 
-// The latest turn's reply, or the turn before while the current one has none, with the prompt it answers.
+const timeOf = (entry: Record<string, any>) => Date.parse(entry.timestamp) || Date.now();
+
+// Claude Code logs a message typed while Claude works when it is typed, as an enqueue, and as a prompt only once Claude
+// takes it in; task notifications and messages from other sessions wait in the same queue, in tags.
+function queuedPrompt(entries: Record<string, any>[]): Unanswered | null {
+  const queue: { content: unknown; at: number }[] = [];
+  for (const e of entries) {
+    if (e.type !== 'queue-operation') continue;
+    if (e.operation === 'enqueue') queue.push({ content: e.content, at: timeOf(e) });
+    else if (e.operation === 'dequeue') queue.shift();
+    else if (queue.some((q) => q.content === e.content)) queue.splice(queue.findIndex((q) => q.content === e.content), 1);
+  }
+  const last = queue.findLast((q) => typeof q.content === 'string' && q.content.trim() && !q.content.startsWith('<'));
+  return last ? { text: String(last.content).trim().slice(0, MAX_PROMPT), at: last.at, queued: true } : null;
+}
+
+// The latest turn's reply, or the turn before while the current one has none, with the prompt it answers; and the
+// latest prompt while it has no reply.
 function lastReply(entries: Record<string, any>[]) {
-  const last = replies(entries, MAX_PROMPT).findLast((r) => r.reply.length);
-  if (!last) return { lastMessage: null, lastPrompt: null };
-  return { lastMessage: lastChars(last.reply.join('\n\n'), MAX_MESSAGE), lastPrompt: last.prompt || null };
+  const all = replies(entries, MAX_PROMPT);
+  const last = all.findLast((r) => r.reply.length);
+  const { entry, prompt, reply } = all.at(-1)!;
+  return {
+    lastMessage: last ? lastChars(last.reply.join('\n\n'), MAX_MESSAGE) : null,
+    lastPrompt: last?.prompt || null,
+    unanswered: queuedPrompt(entries) ?? (entry && prompt && !reply.length ? { text: prompt, at: timeOf(entry) } : null),
+  };
 }
 
 // The whole conversation, read only when asked for, as it can run to many megabytes.

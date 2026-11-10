@@ -277,6 +277,58 @@ export const wall: Check[] = [
     },
   },
   {
+    name: 'P4.4.3 a message sent from Overview shows at once as Your latest message, counting down, with an Undo that puts it back in the reply box; sent again it waits queued while Claude ends its step, then reads Claude is working with its step, the banner names it and the reply above it is headed Claude\'s previous reply; once Claude replies, the reply quotes it and the message is gone',
+    async run({ page, mock, shot }) {
+      const seen = () => {
+        const sheet = document.querySelector<HTMLElement>('#task-sheet')!;
+        const b = sheet.querySelector<HTMLElement>('[data-your-message]');
+        return {
+          state: b?.dataset.yourMessage ?? null,
+          text: b?.querySelector('blockquote p')?.textContent ?? null,
+          when: b?.querySelector('[data-when]')?.textContent ?? null,
+          undo: !!b?.querySelector('h3 button'),
+          claude: b?.querySelector('[data-claude]')?.textContent ?? null,
+          trigger: sheet.querySelector('[data-trigger]')?.textContent ?? null,
+          reply: sheet.querySelector('[data-ux-section="latest reply"] h3')?.textContent ?? null,
+          quoted: sheet.querySelector('[data-ux-section="latest reply"] [data-prompt] p')?.textContent ?? null,
+        };
+      };
+      const asked = 'Why is the total a cent off on some invoices? Fix it and push.';
+      const message = 'Also round the tax lines';
+      await openSheetOf(page, mock, 's-invoice');
+      await page.until('the latest reply', () => !!document.querySelector('#task-sheet [data-ux-section="latest reply"]'));
+      assert.deepEqual(await page.eval(seen), { state: null, text: null, when: null, undo: false, claude: null, trigger: `You ${asked}`, reply: "Claude's latest reply", quoted: asked });
+
+      await page.click('#task-sheet textarea');
+      await page.type(message);
+      await page.key('Enter');
+      const inState = (state: string, timeout = 5000) => until(`the message, ${state}`, async () => {
+        const now = await page.eval(seen);
+        return now.state === state ? now : null;
+      }, timeout);
+      const held = await inState('held');
+      assert.match(held.when!, /^Sending in [1-5] s$/);
+      assert.deepEqual({ ...held, when: null }, { state: 'held', text: message, when: null, undo: true, claude: null, trigger: null, reply: "Claude's previous reply", quoted: asked });
+      await shot('your-message-held');
+      await page.click('#task-sheet [data-your-message] h3 button', 'Undo');
+      await page.until('the message back in the reply box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')?.value === 'Also round the tax lines' && !document.querySelector('#task-sheet [data-your-message]'));
+      assert.equal((await page.eval(seen)).reply, "Claude's latest reply");
+
+      await page.click('#task-sheet textarea');
+      await page.key('Enter');
+      const queued = await inState('queued', 10_000);
+      assert.deepEqual([queued.text, queued.claude, queued.trigger], [message, 'Queued: Claude reads it once its current step ends', null]);
+      const working = await inState('unanswered');
+      assert.match(working.when!, /^Sent \d\d:\d\d$/);
+      assert.deepEqual({ ...working, when: null }, { state: 'unanswered', text: message, when: null, undo: false, claude: 'Claude is working · Bash: pnpm test', trigger: `You ${message}`, reply: "Claude's previous reply", quoted: asked });
+      await shot('your-message-working');
+
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: 'Rounded.', lastPrompt: message, unanswered: null } });
+      await page.until('the reply to the message', () => document.querySelector('#task-sheet [data-ux-section="latest reply"] [data-prompt] p')?.textContent === 'Also round the tax lines');
+      assert.deepEqual(await page.eval(seen), { state: null, text: null, when: null, undo: false, claude: null, trigger: `You ${message}`, reply: "Claude's latest reply", quoted: message });
+    },
+  },
+  {
     name: 'P4.5 Diff: 2 replaces the entry; the tree resizes by key and resets on a double click, kept in localStorage; a file opens whole, J and K step, All files in the tree goes back; Esc goes back to all files, a second Esc closes the sheet and focus returns to the tile\'s name',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
