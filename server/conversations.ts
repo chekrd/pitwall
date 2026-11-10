@@ -43,7 +43,6 @@ interface Meta {
   lastPrompt: string | null;
   unanswered: Unanswered | null;
   activity: Activity | null;
-  turnOver: boolean;
   // Id and description of each background task still running.
   background: [string, string][];
   toolResults: string[];
@@ -387,15 +386,6 @@ function activity(entries: Record<string, any>[]): Activity | null {
   return { step: step && step.split('\n')[0].slice(0, 140), since: Date.parse(entries[start].timestamp) || Date.now() };
 }
 
-// Claude's last message closed without a tool call, or the developer interrupted it.
-function turnOver(entries: Record<string, any>[]) {
-  const last = entries.findLast((e) => !e.isSidechain && (e.type === 'assistant' || e.type === 'user'));
-  if (last?.type === 'assistant') return !!last.message?.stop_reason && last.message.stop_reason !== 'tool_use';
-  const content = last?.message?.content;
-  const text = typeof content === 'string' ? content : Array.isArray(content) ? content.find((c) => c.type === 'text')?.text : null;
-  return typeof text === 'string' && text.startsWith('[Request interrupted');
-}
-
 // Background commands and agents Claude started and has not been told have ended, by what each was started to do. A
 // long wait can push the start out of the tail, so the tasks still open at the last read carry over.
 function background(entries: Record<string, any>[], carried: readonly [string, string][] = []): [string, string][] {
@@ -586,7 +576,6 @@ async function readMeta(file: string, mtime: number): Promise<Meta | null> {
     cleared: startedByClear(head),
     ...lastReply(tail),
     activity: activity(tail),
-    turnOver: turnOver(tail),
     background: background(tail, cached?.background),
     toolResults: toolResults(tail),
     ask: latestAsk(tail),
@@ -644,13 +633,6 @@ export interface LiveProcess {
   waitingFor: string | null;
 }
 
-// Claude Code 2.1.314 reports "shell" while a shell command runs. In a turn that is working like "busy"; a command
-// left running behind a finished turn, such as a dev server, keeps "shell" there with nothing for Claude to do.
-export async function liveStatus(info: { status?: string; cwd: string; sessionId: string }, meta = conversationMeta): Promise<LiveProcess['status']> {
-  if (info.status !== 'shell') return info.status as LiveProcess['status'];
-  return (await meta(info.cwd, info.sessionId))?.turnOver ? 'idle' : 'busy';
-}
-
 // Claude Code keeps one ~/.claude/sessions/<pid>.json per running process, with its live status.
 export async function liveConversations(): Promise<Map<string, LiveProcess>> {
   const dir = join(CLAUDE_DIR, 'sessions');
@@ -669,7 +651,9 @@ export async function liveConversations(): Promise<Map<string, LiveProcess>> {
   const live = new Map<string, LiveProcess>();
   for (const info of infos) {
     if (!started.has(info.pid) || !sameStart(info.procStart, started.get(info.pid))) continue;
-    live.set(info.sessionId, { pid: info.pid, cwd: info.cwd, status: await liveStatus(info), waitingFor: info.waitingFor ?? null });
+    // Since Claude Code 2.1.314 an idle session with a shell command still running in the background reports "shell".
+    const status = info.status === 'shell' ? 'idle' : info.status;
+    live.set(info.sessionId, { pid: info.pid, cwd: info.cwd, status, waitingFor: info.waitingFor ?? null });
   }
   return live;
 }
