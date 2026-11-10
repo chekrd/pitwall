@@ -55,7 +55,7 @@
     "service:install": "node scripts/service.ts install",
     "service:uninstall": "node scripts/service.ts uninstall",
     "service:restart": "node scripts/service.ts restart",
-    "open": "open -na 'Brave Browser' --args --app=http://127.0.0.1:7420",
+    "open": "open -na 'Brave Browser Beta' --args --user-data-dir=\"$HOME/Library/Application Support/pitwall/brave\" --app=http://127.0.0.1:7420",
     "check": "tsc && pnpm lint && pnpm test",
     "claude:connect": "node scripts/claude.ts connect",
     "claude:disconnect": "node scripts/claude.ts disconnect",

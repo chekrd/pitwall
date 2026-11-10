@@ -46,7 +46,7 @@ pnpm install
 pnpm build              # UI → web/dist
 pnpm service:install    # launchd agent: starts at login, restarts on crash
 pnpm claude:connect     # ask_human MCP server for all Claude sessions
-pnpm open               # Brave --app window on http://127.0.0.1:7420
+pnpm open               # Brave Beta --app window on http://127.0.0.1:7420
 ```
 
 Pitwall was called Agent Board. `pnpm service:install` removes the old `dev.agent-board` agent and moves its state and uploads to Pitwall's folders, and `pnpm claude:connect` replaces the old MCP server, keeping its tool permissions for the sessions that still use it (`pnpm claude:disconnect` removes them). Sessions started under the old name keep working: their `ask_human` and `create_artifact` calls still count, and hidden ones stay on the old tmux socket until they end. A status line script that copies the usage limits needs the new path above.
@@ -57,7 +57,9 @@ Development: `pnpm start` runs the server in the foreground (stop the launchd ag
 
 To try UI changes away from the live board (where one key answers a real session), `pnpm mock` serves the built UI against made-up sessions on :7421 (`--scenario volume`, `--port`; `GET /mock` lists the scenarios) and answers them by the server's own rules, and `PITWALL_API=http://127.0.0.1:7421 pnpm dev` points the dev server at it; without that variable `pnpm dev` talks to the live board. `pnpm mock --legacy` answers like a server from before the `answered` record (none in the snapshot, no refusal codes, `adviceAt` ignored) and names the UI build only when a socket opens, to check a UI against one with `pnpm e2e --port <its port>`. `pnpm e2e` drives the built UI through scripted checks in headless Brave windows of their own, each worker against a mock of its own (`--workers <n>`, by default half the cores, at most 6): every check runs once at 1440×900 or narrow at 390×844, in dark, and checks colours and contrast, and takes its screenshots, in light too by switching the system's scheme while it runs. Checks that only wait out the page's timers (the 5 s hold of a send, the 0.9 s guard) run on a clock four times faster; a few keep real time so the timers themselves stay covered. `--only <pattern>` picks checks, which is the way to work while changing something; `--matrix` runs every check in each scheme, adds 1100×900 and reduced motion; a failure leaves a screenshot in `.e2e/`. A check fails on an error in the page and on a request to any host but 127.0.0.1, and one that hangs fails after 60 s without holding up the others. `--dist <dir>` checks a build of your own (`pnpm exec vite build --outDir <dir> --emptyOutDir`); a build older than the UI's sources is refused (`--stale` checks it anyway). The mock runs with `HOME` set to a fresh temporary folder, and every path it shows lies in it.
 
-State lives in `~/Library/Application Support/pitwall/` (`state.db`, per-session hook/MCP config, `server.log`).
+State lives in `~/Library/Application Support/pitwall/` (`state.db`, per-session hook/MCP config, `server.log`, and `brave/`, the browser profile of the board's window).
+
+The board's window runs in Brave Beta, not Brave. Installed from Brave it shares Brave's process, so quitting Brave closes the board; with only a profile of its own it is still Brave to macOS, and opening Brave while the board alone runs lands in the board's profile.
 
 ## Notes
 
