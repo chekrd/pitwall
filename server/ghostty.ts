@@ -3,11 +3,17 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
-async function script(body: string, ...args: string[]) {
-  const source = `on run argv\ntell application "Ghostty"\n${body}\nend tell\nend run`;
-  const { stdout } = await run('/usr/bin/osascript', ['-e', source, ...args]);
-  return stdout.trim();
-}
+// What reaches Ghostty, which tests replace.
+export const io = {
+  osascript: async (source: string, args: string[]) => (await run('/usr/bin/osascript', ['-e', source, ...args])).stdout.trim(),
+};
+
+// Telling a Ghostty that is not running launches it, with an empty window.
+const script = (body: string, ...args: string[]) =>
+  io.osascript(`on run argv\ntell application "Ghostty"\n${body}\nend tell\nend run`, args);
+
+// Asked in a script of its own: one that also tells Ghostty launches it before the question runs.
+const running = async () => (await io.osascript('application "Ghostty" is running', [])) === 'true';
 
 const NOT_FOUND = 'NOT_FOUND';
 
@@ -15,7 +21,7 @@ class NoTab extends Error {}
 
 // Claude runs in a Ghostty terminal whose tty is the process's controlling tty.
 async function onTerminal(tty: string, body: string, ...args: string[]) {
-  const out = await script(`set matches to (terminals whose tty is item 1 of argv)
+  const out = !(await running()) ? NOT_FOUND : await script(`set matches to (terminals whose tty is item 1 of argv)
 if (count of matches) is 0 then return "${NOT_FOUND}"
 set t to item 1 of matches
 ${body}`, tty, ...args);
@@ -71,6 +77,7 @@ activate`, cwd, input);
 // Working directory comes from the shell's OSC 7 reports, so a tab whose shell has
 // no integration is only found through the tty of a process known to run in it.
 export async function closeTerminalsIn(dir: string | null, knownTtys: string[]) {
+  if (!(await running())) return 0;
   const out = await script(`set out to ""
 set sep to character id 9
 repeat with t in terminals
