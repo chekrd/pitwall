@@ -56,6 +56,14 @@ test('a review leaves the deck once each finding of its last turn is rejected, s
   assert.deepEqual(ids(deckOf([review({ summary: turn('t2'), lastTurn: 't2' }), fix, reply], none)), ['review']);
 });
 
+test('a subtask has no card, whatever it waits on; one whose task is gone or archived has', () => {
+  const sub = (id: string, of: string) => ask(id, { parent: { id: of, basis: 't1', finding: 0, title: 't', kind: 'accept', text: '' } });
+  const task = session('task', { status: 'working' });
+  assert.deepEqual(ids(deckOf([task, sub('fix', 'task'), sub('deeper', 'fix')], none)), []);
+  assert.deepEqual(ids(deckOf([sub('orphan', 'task')], none)), ['orphan']);
+  assert.deepEqual(ids(deckOf([{ ...task, archived: true }, sub('fix', 'task'), sub('deeper', 'fix')], none)), ['fix']);
+});
+
 test('a menu still open 10 s after the board answered it comes back as Needs focus: Claude still shows it in the terminal', () => {
   const stuck = answeredMenu(100_000);
   assert.deepEqual(ids(deckOf([stuck], none, 110_000)), ['hooks']);

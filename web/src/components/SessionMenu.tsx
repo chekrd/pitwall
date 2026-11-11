@@ -44,12 +44,11 @@ export function archive(session: Session, name: string) {
   }, failed(id));
 }
 
-// Solved and Dropped take the subtask out of the queue like Archive, and its page gives way to its task's; Undo opens it
-// again.
+// Solved and Dropped archive the subtask, and its page gives way to its task's; Undo opens it again.
 export function settleNote(session: Session, state: Resolution['state']) {
   const what = state === 'solved' ? 'Done with it' : 'Not going on with it';
   const left = session.status === 'exited' ? 'its changes stay in the worktree' : 'its Claude keeps running and its changes stay in the worktree; Quit Claude stops it';
-  return `${what}: it leaves the queue and stops counting as open on its task; ${left}`;
+  return `${what}: it stops counting as open on its task; ${left}`;
 }
 
 export function resolveSubtask(session: Session, state: Resolution['state'] | null, name: string) {
@@ -105,7 +104,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         )}
         <PriorityPicker session={session} />
         {clearing ? null : session.parent ? (session.resolution ? (
-          <Item label="Reopen" note={`Marked ${session.resolution.state}; back into the queue and its task's open count`} onClick={pick(() => resolveSubtask(session, null, name))} />
+          <Item label="Reopen" note={`Marked ${session.resolution.state}; back into its task's open count`} onClick={pick(() => resolveSubtask(session, null, name))} />
         ) : (
           <>
             <Item label="Mark solved" note={settleNote(session, 'solved')} onClick={pick(() => resolveSubtask(session, 'solved', name))} />

@@ -2,9 +2,10 @@ import { decisionKey, menuAnswerText, openDecision } from '../../server/decision
 import { compare } from './order.ts';
 import type { Body, Request } from './outbox.ts';
 import type { Advice, Command, MenuAnswer, Session } from './types.ts';
-import { adviceFor, attentionOf, decisionOf, menuStuck, type Attention } from './util.ts';
+import { adviceFor, attentionOf, decisionOf, menuStuck, underTask, type Attention } from './util.ts';
 
-// The queue's cards: what waits on the developer, in board order, and what each press on the card sends.
+// The queue's cards: the tasks that wait on the developer, in board order, and what each press on the card sends. A
+// subtask waits on its task's page and Wall tile.
 
 export type Kind = 'menu' | 'ask' | 'turn' | 'prompt' | 'idle';
 
@@ -13,7 +14,7 @@ const IN_DECK: readonly Attention[] = ['decide', 'focus', 'idle'];
 // `busy` are the sessions whose send is held or not yet confirmed: they have been answered on this page.
 export function deckOf(sessions: readonly Session[], busy: ReadonlySet<string>, now = Date.now()) {
   return sessions
-    .filter((s) => !s.archived && !s.resolution && s.status !== 'exited' && !busy.has(s.id) && IN_DECK.includes(attentionOf(s, now)) && !findingsTaken(s, sessions))
+    .filter((s) => !s.archived && !s.resolution && s.status !== 'exited' && !busy.has(s.id) && IN_DECK.includes(attentionOf(s, now)) && !underTask(sessions, s) && !findingsTaken(s, sessions))
     .sort(compare);
 }
 

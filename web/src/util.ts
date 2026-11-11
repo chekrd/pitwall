@@ -87,6 +87,10 @@ export function openSubtasks(sessions: readonly Session[], id: string) {
   return { open, total: descendantsOf(sessions, id).length };
 }
 
+// A subtask shows under its task, on the task's tile and page, not on its own on the Wall or in the queue; one whose
+// task is gone or archived shows on its own.
+export const underTask = (sessions: readonly Session[], s: Session) => !!s.parent && sessions.some((o) => o.id === s.parent!.id && !o.archived);
+
 const NO_SUBTASKS: readonly Session[] = [];
 
 // The open subtasks of every task at once, in openSubtasks' order, from one pass over the sessions; a task without

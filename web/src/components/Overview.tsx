@@ -8,7 +8,7 @@ import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { RepoView, Session } from '../types.ts';
 import { useDecision } from '../useDecision.ts';
-import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
+import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, underTask, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
@@ -49,6 +49,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
   const decision = menu ? null : decisionOf(session);
   const { frozen, picks, setPicks, toggle, answerOwn, lone } = useDecision(session, menu);
   const { sessions } = useStore();
+  const carded = !underTask(sessions, session);
   const advice = adviceFor(session);
   const done = advice?.state === 'done' ? advice : null;
   const draft = useDraft(session.id);
@@ -79,7 +80,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
   };
   return (
     <section className={styles.queued} data-queued data-ux-section="decision">
-      <span className={styles.kicker}>In your queue · {menu ? 'Asked in the terminal' : 'Decision'}</span>
+      <span className={styles.kicker}>{carded && 'In your queue · '}{menu ? 'Asked in the terminal' : 'Decision'}</span>
       {decision && (
         <>
           <h3>{decision.problem}</h3>
@@ -129,7 +130,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
           <button type="button" data-explain="Clear the question without answering it" onClick={() => send(dismissal(session))}>Dismiss</button>
         )}
         {menu && <button type="button" {...explain(TIPS.decline)} onClick={() => send(declining(session))}>Decline</button>}
-        <button type="button" data-explain="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>
+        {carded && <button type="button" data-explain="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>}
       </div>
     </section>
   );

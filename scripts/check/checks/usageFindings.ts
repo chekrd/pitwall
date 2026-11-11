@@ -230,7 +230,7 @@ export const usageFindings: Check[] = [
     },
   },
   {
-    name: 'P8.findings-solve Mark solved on a finding settles its open subtasks, out of the queue too, or marks one without subtasks solved, which the toast\'s Undo, ⌘Z and Reopen undo; nothing starts',
+    name: 'P8.findings-solve Mark solved on a finding settles its open subtasks, or marks one without subtasks solved, which the toast\'s Undo, ⌘Z and Reopen undo; nothing starts',
     scenario: 'findings',
     async run({ page, mock, shot }) {
       const state = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-finding]')].map((f) => ({
@@ -249,7 +249,6 @@ export const usageFindings: Check[] = [
       });
       assert.deepEqual(resolved.map((e) => [e.sessionId, e.body.state]).toSorted(byText), [['s-review-1', 'solved'], ['s-review-2', 'solved']]);
       assert.equal(await page.eval(() => document.querySelector('[data-settled-findings] [data-finding="1"] [class*="rejected"] span')!.textContent), 'Solved in its 2 subtasks');
-      assert.equal(await page.eval(() => !!document.querySelector('[data-segment][data-session="s-review-2"]')), false, 'the subtask\'s decision left the queue');
 
       await page.click('#task-sheet [data-finding="3"] [data-response="solve"]');
       await page.until('#3 marked solved', () => !!document.querySelector('[data-settled-findings] [data-finding="3"]'));
@@ -280,7 +279,7 @@ export const usageFindings: Check[] = [
     },
   },
   {
-    name: 'P8.findings a review lists its findings on the task page: #2 rejected, #1 with its subtask at work; Accept with a note on #3 starts a subtask under it, Reject and Reopen mark only; a subtask names its task above its title and atop its Overview, with the finding, the answer and its sibling, and leads back; the Your turn card lists them in place of the reply; on the Wall a subtask has no tile: its task\'s tile lists none and reads In progress while one works, and its page lists them all; Mark solved and Drop settle a subtask and open its task in its place, and the task counts the ones still open',
+    name: 'P8.findings a review lists its findings on the task page: #2 rejected, #1 with its subtask at work; Accept with a note on #3 starts a subtask under it, Reject and Reopen mark only; a subtask names its task above its title and atop its Overview, with the finding, the answer and its sibling, and leads back; the Your turn card lists them in place of the reply; on the Wall a subtask has no tile: its task\'s tile lists none and reads In progress while one works, and its page lists them all; a subtask has no card in the queue either, and its decision is answered on its page, which has no Open its card; Mark solved and Drop settle a subtask and open its task in its place, and the task counts the ones still open',
     scenario: 'findings',
     async run({ themes, page, mock, shot }) {
       const items = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-finding]')].map((f) => ({
@@ -356,6 +355,11 @@ export const usageFindings: Check[] = [
       await page.until('the review', () => location.pathname === '/s/s-review/overview');
       await page.click('#task-sheet [data-subtask-list] [data-subtask="s-review-2"]');
       await page.until('the subtask from its task page', () => location.pathname === '/s/s-review-2/overview');
+      assert.deepEqual(await page.until('its decision on its page', () => {
+        const box = document.querySelector<HTMLElement>('#task-sheet [data-queued]');
+        return box && { kicker: box.querySelector('span')!.textContent, toCard: [...box.querySelectorAll('button')].some((b) => b.textContent === 'Open its card'), options: box.querySelectorAll('[data-option]').length > 0 };
+      }), { kicker: 'Decision', toCard: false, options: true });
+      assert.equal(await page.eval(() => document.querySelectorAll('[data-segment][data-session^="s-review-"]').length), 0, 'no subtask has a card in the queue');
       await page.click('#task-sheet header [data-parent] button');
       await page.until('the review again', () => location.pathname === '/s/s-review/overview');
       const listed = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-subtask-list] [data-subtask]')].map((b) => `${b.dataset.subtask}:${b.dataset.attention}`));
