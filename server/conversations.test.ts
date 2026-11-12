@@ -172,6 +172,50 @@ test('the conversation pairs each prompt with what Claude wrote after its last t
   assert.deepEqual(await exchanges(join(dir, 'gone.jsonl')), []);
 });
 
+test('the developer wrote what Claude Code marks as theirs: a skill command and pasted text count, another session\'s message does not', async () => {
+  const human = (content: string, minute: number) => ({ ...prompt(content, minute), origin: { kind: 'human' } });
+  const teammate = (body: string, minute: number) => prompt(`Another Claude session sent a message:\n<teammate-message teammate_id="scout">\n${body}\n</teammate-message>`, minute);
+  const closing = (t: string, minute: number) => ({ ...assistant([text(t)], minute), message: { stop_reason: 'end_turn', content: [text(t)] } });
+  const entries = [
+    human('<command-message>grill-me</command-message>\n<command-name>/grill-me</command-name>\n<command-args>An events app</command-args>', 0),
+    { ...prompt('Base directory for this skill: /skills/grill-me', 0), isMeta: true },
+    assistant([text('Looking around.'), toolUse('t1', 'Agent', { description: 'Find sources' })], 1),
+    toolResult('t1', 'Spawned'),
+    closing('Round 1: who is it for?', 2),
+    teammate('Sources found.', 3),
+    assistant([text('Noting them.'), toolUse('t2', 'Edit', { file_path: '/notes.md' })], 4),
+    toolResult('t2', 'ok'),
+    closing('The sources are in. Round 1 still stands.', 5),
+    teammate('{"type":"idle_notification"}', 6),
+    closing('Nothing new.', 7),
+  ];
+  const m = await meta(entries);
+  assert.equal(m.firstPrompt, '/grill-me An events app');
+  assert.equal(m.lastPrompt, '/grill-me An events app');
+  assert.equal(m.lastMessage, 'Round 1: who is it for?\n\nThe sources are in. Round 1 still stands.\n\nNothing new.');
+  assert.equal(m.unanswered, null);
+  assert.deepEqual(m.turns.filter((t) => t.role === 'developer').map((t) => t.text), ['/grill-me An events app']);
+  assert.equal((await meta([...entries, assistant([toolUse('t3', 'Read')], 8)])).lastMessage, m.lastMessage);
+  const pasted = { type: 'queue-operation', operation: 'enqueue', content: '<pasted_content id="a1">\nThe log\n</pasted_content id="a1">\nSee this', timestamp: at(8) };
+  assert.deepEqual((await meta([...entries, pasted])).unanswered, { text: 'The log\nSee this', at: Date.parse(at(8)), queued: true });
+
+  const file = join(dir, `${n++}.jsonl`);
+  writeFileSync(file, [
+    ...entries,
+    human('<pasted_content id="1c53">\nThe plan, pasted.\n</pasted_content id="1c53">\n\nChallenge it', 8),
+    closing('It holds.', 9),
+    human('<command-message>doctor</command-message>\n<command-name>/doctor</command-name>', 10),
+    { ...prompt('Looks like a prompt', 11), origin: { kind: 'task-notification' } },
+    human('<czech> Co dál?', 12),
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  assert.deepEqual((await exchanges(file)).map((e) => [e.prompt, e.reply]), [
+    ['/grill-me An events app', m.lastMessage],
+    ['The plan, pasted.\n\nChallenge it', 'It holds.'],
+    ['/doctor', null],
+    ['<czech> Co dál?', null],
+  ]);
+});
+
 test('a message sent while Claude works is a prompt of its own, with its pictures; a peer message is not', async () => {
   const queued = (uuid: string, prompt: unknown, minute: number, extra: object = {}) => ({
     type: 'attachment', uuid, timestamp: at(minute),

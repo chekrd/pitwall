@@ -140,11 +140,29 @@ function promptContent(entry: Record<string, any>): unknown {
   return a?.type === 'queued_command' && a.commandMode === 'prompt' && !a.isMeta ? a.prompt : null;
 }
 
+// What Claude Code and other sessions put into the conversation comes in tags, a message from another session under
+// a line that introduces it. Pasted text is the one tag Claude Code puts at the start of the developer's own message.
+const fromElsewhere = (text: string) => /^<(?!pasted_content\b)/.test(text) || /^.*\n<teammate-message[\s>]/.test(text);
+
+const SLASH_COMMAND = /^<command-message>[^<]*<\/command-message>\s*<command-name>([^<]*)<\/command-name>\s*(?:<command-args>([\s\S]*)<\/command-args>)?\s*$/;
+
+// The message as the developer typed it: a skill's slash command with its arguments, pasted text without its tags.
+function typed(text: string) {
+  const command = text.match(SLASH_COMMAND);
+  if (command) return `${command[1]} ${command[2] ?? ''}`.trim();
+  return text.replace(/<\/?pasted_content[^>\n]*>\n?/g, '').trim();
+}
+
+// Claude Code names who wrote an entry in its origin, 'human' for the developer. An entry that has one goes by it, as
+// the developer's message may start with a tag and another session's starts with none. Headless runs and some of
+// Claude Code's own entries have none, and go by their tags.
 function promptText(entry: Record<string, any>, max = 500): string | null {
   const content = promptContent(entry);
   const text = typeof content === 'string' ? content : Array.isArray(content) ? content.find((c) => c.type === 'text')?.text : null;
-  if (!text || text.startsWith('<')) return null;
-  return text.trim().slice(0, max);
+  if (!text) return null;
+  const origin = (entry.type === 'attachment' ? entry.attachment.origin : entry.origin)?.kind;
+  if (origin ? origin !== 'human' : fromElsewhere(text)) return null;
+  return typed(text).slice(0, max) || null;
 }
 
 // /clear writes itself into the conversation it starts, ahead of any prompt.
@@ -245,9 +263,6 @@ function settings(entries: Record<string, any>[]) {
   return { model: model ?? null, effort: request?.output_config?.effort ?? null };
 }
 
-// Each prompt with what Claude wrote after its last tool call in answer to it, so the narration between tool calls
-// stays out; a question or menu does not count as a tool call, as the text before it is for the developer. What comes
-// before the first prompt has no prompt.
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
 const promptImages = (entry: Record<string, any>): { media_type: string; data: string }[] => {
@@ -257,17 +272,26 @@ const promptImages = (entry: Record<string, any>): { media_type: string; data: s
     : [];
 };
 
+// Each prompt with what Claude wrote after its last tool call in answer to it, so the narration between tool calls
+// stays out; a question or menu does not count as a tool call, as the text before it is for the developer. What
+// closed a turn stays through the tool calls of the turns that a background task or another session starts after it.
+// What comes before the first prompt has no prompt.
 function replies(entries: Record<string, any>[], max?: number) {
   const out: { entry: Record<string, any> | null; prompt: string | null; reply: string[]; artifacts: string[] }[] = [{ entry: null, prompt: null, reply: [], artifacts: [] }];
+  let closed = 0;
   for (const e of entries) {
     const prompt = e.isCompactSummary ? null : promptText(e, max) ?? (promptImages(e).length ? '' : null);
-    if (prompt !== null) out.push({ entry: e, prompt, reply: [], artifacts: [] });
-    else if (e.message?.model !== '<synthetic>' && !e.isApiErrorMessage) {
+    if (prompt !== null) {
+      out.push({ entry: e, prompt, reply: [], artifacts: [] });
+      closed = 0;
+    } else if (e.message?.model !== '<synthetic>' && !e.isApiErrorMessage) {
+      const { reply, artifacts } = out.at(-1)!;
       for (const b of blocks(e)) {
-        if (b.type === 'text' && String(b.text ?? '').trim()) out.at(-1)!.reply.push(String(b.text).trim());
-        else if (b.type === 'tool_use' && ARTIFACT_TOOL_NAMES.has(b.name)) out.at(-1)!.artifacts.push(String(b.id));
-        if (b.type === 'tool_use' && !ASK_TOOL_NAMES.has(b.name) && b.name !== MENU_TOOL_NAME) out.at(-1)!.reply.length = 0;
+        if (b.type === 'text' && String(b.text ?? '').trim()) reply.push(String(b.text).trim());
+        else if (b.type === 'tool_use' && ARTIFACT_TOOL_NAMES.has(b.name)) artifacts.push(String(b.id));
+        if (b.type === 'tool_use' && !ASK_TOOL_NAMES.has(b.name) && b.name !== MENU_TOOL_NAME) reply.length = closed;
       }
+      if (e.message?.stop_reason === 'end_turn') closed = reply.length;
     }
   }
   return out;
@@ -289,8 +313,8 @@ function queuedPrompt(entries: Record<string, any>[]): Unanswered | null {
     else if (e.operation === 'dequeue') queue.shift();
     else if (queue.some((q) => q.content === e.content)) queue.splice(queue.findIndex((q) => q.content === e.content), 1);
   }
-  const last = queue.findLast((q) => typeof q.content === 'string' && q.content.trim() && !q.content.startsWith('<'));
-  return last ? { text: String(last.content).trim().slice(0, MAX_PROMPT), at: last.at, queued: true } : null;
+  const last = queue.findLast((q) => typeof q.content === 'string' && q.content.trim() && !fromElsewhere(q.content));
+  return last ? { text: typed(String(last.content)).slice(0, MAX_PROMPT), at: last.at, queued: true } : null;
 }
 
 // The latest turn's reply, or the turn before while the current one has none, with the prompt it answers; and the
