@@ -3,6 +3,7 @@ import { adviceToSend, answerText, checkDecision, claim, DECLINED, menuAnswerTex
 import { Unsent, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
 import { menuKeystrokes, type MenuAnswer } from './menu.ts';
+import { roundAnswerLabel, roundReply, type RoundAnswers } from './rounds.ts';
 
 // Everything that touches the machine comes in as a dependency, so tests and the mock run this very code.
 export interface AnsweringDeps {
@@ -46,11 +47,14 @@ function promptTarget(s: Session) {
   return to;
 }
 
-// The transcript keeps an ask_human question open until the next prompt, so one answered or dismissed on the board is
-// put aside for good. Closing any other decision, such as a menu Claude opened alongside, leaves the question to come up.
+// The transcript keeps an ask_human question or a round of questions open until the next prompt, so one answered or
+// dismissed on the board is put aside for good. Closing any other decision, such as a menu Claude opened alongside,
+// leaves it to come up.
 export function closeQuestion(store: AnswerStore, id: string, key: string | null) {
-  const q = store.get(id)?.question;
+  const s = store.get(id);
+  const q = s?.question;
   if (q && key === `q:${q.toolUseId}`) store.update(id, { question: null, dismissedAsk: q.toolUseId });
+  else if (s?.round && key === `r:${s.round.key}`) store.update(id, { round: null, dismissedRound: s.round.key });
 }
 
 export function answering({ store, send, keys, notify, decided, isCommand, checkUploads }: AnsweringDeps) {
@@ -135,6 +139,18 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     });
   }
 
+  // The answers to a round's questions as one message; a question left out is said to stay open.
+  async function answerRound(id: string, body: { round: string; replies: RoundAnswers }) {
+    await inTurn(id, () => {
+      const s = must(id);
+      const to = promptTarget(s);
+      const key = `r:${body.round}`;
+      checkDecision(s, key);
+      const prompt = roundReply(s.round!, body.replies);
+      return { claim: { seen: key, typed: false, text: roundAnswerLabel(s.round!, body.replies) }, type: () => send(to, prompt) };
+    });
+  }
+
   // Esc, as pressed in the terminal: Claude Code takes the menu as declined and ends the turn.
   async function declineMenu(id: string, body: { toolUseId: string }) {
     await inTurn(id, () => {
@@ -190,5 +206,5 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     }
   }
 
-  return { answer, answerMenu, declineMenu, acceptAdvice, dismiss, type, press, settled };
+  return { answer, answerMenu, answerRound, declineMenu, acceptAdvice, dismiss, type, press, settled };
 }

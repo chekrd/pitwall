@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react';
 import { openDecision } from '../../../server/decision.ts';
+import { roundTitle } from '../../../server/rounds.ts';
 import { promptOf } from '../deck.ts';
 import { openSheet, sessionPath } from '../router.ts';
 import type { RepoView, Session } from '../types.ts';
@@ -17,7 +18,7 @@ function textOf(s: Session, attention: Attention) {
   if (attention === 'clearing') return 'Clear task is removing it; it leaves the board once its worktree is gone';
   if (s.clearError) return `Clear task did not finish: ${s.clearError}`;
   if (failedToStart(s)) return s.starting!.error;
-  if (attention === 'decide') return decisionOf(s)?.problem ?? s.menu!.questions.map((q) => q.question).join(' · ');
+  if (attention === 'decide') return decisionOf(s)?.problem ?? s.menu?.questions.map((q) => q.question).join(' · ') ?? roundTitle(s.round!);
   if (attention === 'focus') return promptOf(s).headline;
   if (stoppedOnError(s, attention)) return ERROR_LINES[s.turnError!.kind];
   return s.summary?.text || s.firstPrompt || 'Starting…';

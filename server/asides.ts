@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Aside, AsideTurn, Session } from './db.ts';
+import type { RoundQuestion } from './rounds.ts';
 
 export const MAX_ASIDES = 10;
 const MAX_QUESTION = 10_000;
@@ -11,6 +12,14 @@ Question: `;
 const FOLLOW_UP = 'A follow-up side question (the same rules: answer it, change nothing):\n\n';
 
 export const asidePrompt = (question: string, first: boolean) => (first ? FIRST : FOLLOW_UP) + question;
+
+const ABOUT = `The developer wants to talk one of the questions you asked through before answering it, in a copy of this conversation. The original session still waits for the answers and never sees this copy. Help them decide this one question: say what it turns on, what each answer would lead to, which one you would pick and why, and answer what they ask. Do not ask the other questions again, do not continue the task and do not change anything. You can read files and the web, but not edit files or run commands.
+
+The question: `;
+
+export const DISCUSS = 'Talk me through this question.';
+
+export const aboutPrompt = (q: RoundQuestion, text: string) => `${ABOUT}${q.id} — ${q.title}\n\nThe developer: ${text}`;
 
 export interface AsideRun {
   fork: string;
@@ -45,7 +54,7 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
 
   const lastTurn = (a: Aside, patch: Partial<AsideTurn>) => ({ ...a, turns: a.turns.map((t, i) => (i === a.turns.length - 1 ? { ...t, ...patch } : t)) });
 
-  async function answer(id: string, asideId: string, question: string, fork: string | null) {
+  async function answer(id: string, asideId: string, prompt: string, fork: string | null) {
     const controller = new AbortController();
     running.set(asideId, controller);
     let last = 0;
@@ -56,7 +65,7 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     };
     const s = must(id);
     try {
-      const out = await run(s, asidePrompt(question, !fork), fork, controller.signal, activity);
+      const out = await run(s, prompt, fork, controller.signal, activity);
       const kept = change(id, asideId, (a) => ({ ...lastTurn(a, { answer: out.answer }), fork: out.fork, state: 'done', activity: null, at: now() }));
       if (!kept) await discard(s, out.fork).catch(() => {});
     } catch (err) {
@@ -67,25 +76,33 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     }
   }
 
-  // A question without `aside` opens a new aside; with it, a follow-up in that aside's fork. Returns the aside's id.
-  function ask(id: string, body: { text: string; aside?: string | null | undefined }) {
+  // A question without `aside` opens a new aside; with it, a follow-up in that aside's fork. `about` names a question
+  // of the task's open round, which has one aside: the first ask opens it, with nothing said if the developer wrote
+  // nothing, and every later one follows up in it. Returns the aside's id.
+  function ask(id: string, body: { text: string; aside?: string | null | undefined; about?: Aside['about'] | undefined }) {
     const s = must(id);
-    const question = body.text.trim();
+    const named = body.aside === undefined || body.aside === null ? undefined : s.asides.find((a) => a.id === body.aside);
+    const about = body.about ?? named?.about;
+    const asked = about && s.round?.key === about.round ? s.round.questions.find((q) => q.id === about.question) : undefined;
+    if (about && !asked) throw new Error('this question is no longer open');
+    const aside = named ?? (about && s.asides.find((a) => a.about?.round === about.round && a.about.question === about.question));
+    const question = body.text.trim() || (asked && !aside ? DISCUSS : '');
     if (!question) throw new Error('the question is empty');
     if (question.length > MAX_QUESTION) throw new Error('the question is too long');
     const turn: AsideTurn = { question, answer: null, error: null, at: now() };
-    if (body.aside === undefined || body.aside === null) {
-      if (s.asides.length >= MAX_ASIDES) throw new Error(`close an aside first; a task keeps at most ${MAX_ASIDES}`);
-      const aside: Aside = { id: randomUUID(), fork: null, state: 'thinking', activity: null, turns: [turn], at: now() };
-      save(id, [...s.asides, aside]);
-      void answer(id, aside.id, question, null).catch((err) => console.warn('aside failed', aside.id, err));
-      return aside.id;
+    const first = asked ? aboutPrompt(asked, question) : asidePrompt(question, true);
+    if (!aside) {
+      if (body.aside !== undefined && body.aside !== null) throw new Error('this aside is closed');
+      if (!about && s.asides.filter((a) => !a.about).length >= MAX_ASIDES) throw new Error(`close an aside first; a task keeps at most ${MAX_ASIDES}`);
+      const opened: Aside = { id: randomUUID(), ...(about && { about }), fork: null, state: 'thinking', activity: null, turns: [turn], at: now() };
+      save(id, [...s.asides, opened]);
+      void answer(id, opened.id, first, null).catch((err) => console.warn('aside failed', opened.id, err));
+      return opened.id;
     }
-    const aside = s.asides.find((a) => a.id === body.aside);
-    if (!aside) throw new Error('this aside is closed');
     if (aside.state === 'thinking') throw new Error('wait for the answer before asking again');
     change(id, aside.id, (a) => ({ ...a, state: 'thinking', activity: null, turns: [...a.turns, turn], at: now() }));
-    void answer(id, aside.id, question, aside.fork).catch((err) => console.warn('aside failed', aside.id, err));
+    // A first answer that failed left no fork, so the question is put as a first one again.
+    void answer(id, aside.id, aside.fork ? asidePrompt(question, false) : first, aside.fork).catch((err) => console.warn('aside failed', aside.id, err));
     return aside.id;
   }
 
@@ -110,6 +127,13 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     await Promise.all(s.asides.flatMap((a) => (a.fork ? [discard(s, a.fork).catch((err) => console.warn('aside fork not removed', a.fork, err))] : [])));
   }
 
+  // The asides about a round's questions go once that round is answered, dismissed or replaced.
+  function sweep(all: readonly Session[]) {
+    for (const s of all) {
+      for (const a of s.asides) if (a.about && a.about.round !== s.round?.key) void close(s.id, a.id).catch((err) => console.warn('aside not closed', a.id, err));
+    }
+  }
+
   // An aside that was answering when the board stopped has no run any more.
   function settle(all: readonly Session[]) {
     for (const s of all) {
@@ -120,5 +144,5 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     }
   }
 
-  return { ask, stop, close, drop, settle };
+  return { ask, stop, close, drop, settle, sweep };
 }

@@ -9,6 +9,7 @@ import { newTask } from './newTask.ts';
 import { queueCard } from './queueCard.ts';
 import { replies } from './replies.ts';
 import { restart } from './restart.ts';
+import { rounds } from './rounds.ts';
 import { schedulesLater } from './schedulesLater.ts';
 import { sends } from './sends.ts';
 import { taskPage } from './taskPage.ts';
@@ -31,4 +32,5 @@ export const checks: Check[] = [
   ...usageFindings,
   ...restart,
   ...schedulesLater,
+  ...rounds,
 ];

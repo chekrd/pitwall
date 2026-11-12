@@ -12,7 +12,7 @@ import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { checkDecision } from './decision.ts';
 import { handOver, taskOf } from './handover.ts';
-import { sessions, type Parent, type Session, type Starting } from './db.ts';
+import { sessions, type Aside, type Parent, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
 import { isClean, listBranches, switchBranch } from './git.ts';
 import { CLAUDE, headless } from './headless.ts';
@@ -243,7 +243,7 @@ function decided() {
 
 const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided, isCommand, checkUploads });
 
-export const { answerMenu, declineMenu, acceptAdvice, dismiss } = answers;
+export const { answerMenu, answerRound, declineMenu, acceptAdvice, dismiss } = answers;
 
 // A send from the board may carry drafts, which leave the task once it went out.
 export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: unknown }) {
@@ -317,10 +317,11 @@ async function discardFork(s: Session, fork: string) {
   await rm(file.replace(/\.jsonl$/, ''), { recursive: true, force: true });
 }
 
-export const askAside = (id: string, body: { text: string; aside?: string | null | undefined }) => asides.ask(id, body);
+export const askAside = (id: string, body: { text: string; aside?: string | null | undefined; about?: Aside['about'] | undefined }) => asides.ask(id, body);
 export const stopAside = (id: string, aside: unknown) => asides.stop(id, aside);
 export const closeAside = (id: string, aside: unknown) => asides.close(id, aside);
 export const settleAsides = () => asides.settle(sessions.all());
+export const sweepAsides = () => asides.sweep(sessions.all());
 export const dropAsides = (gone: Session[]) => Promise.all(gone.map((s) => asides.drop(s)));
 
 const ends = turnEnds();

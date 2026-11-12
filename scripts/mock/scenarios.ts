@@ -261,6 +261,49 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
     })]);
   },
 
+  // A design interview that put a round of four questions to you: a choice with a recommended option, a choice with a
+  // recommendation that is none of its options, an open question with one, and an open question without.
+  round: (now) => base(now, [
+    ...queue(now).filter((s) => s.status === 'working' || (s.status === 'exited' && !s.archived)),
+    session({
+      id: 's-events', repoId: 4, worktree: `${HOME}/code/worktrees/fix-anchors/docs-site`, tty: '/dev/ttys021', pid: 82110,
+      title: 'Design the events page', firstPrompt: 'Grill me: I want a page that lists the events in town and learns what I like.',
+      status: 'idle', createdAt: now - 12 * MIN, updatedAt: now - 2 * MIN, rank: 1, rankReason: 'Nothing gets built until the design is settled',
+      round: {
+        key: 'toolu_01Round', source: 'tool', at: now - 2 * MIN, title: 'Round 1: who it is for and what it shows',
+        intro: 'The repository is empty, so every decision is open. A search for event sources runs meanwhile; the questions about them wait for it.',
+        questions: [
+          {
+            id: 'Q1', title: 'Audience', body: 'Is this a tool only for you, something for a few friends, or a product for strangers?',
+            options: [
+              { label: 'Only me', description: 'No accounts, no onboarding, no moderation' },
+              { label: 'A few friends', description: 'Accounts, but people you know' },
+              { label: 'A public product' },
+            ],
+            recommendation: 'Only you. That removes accounts, onboarding and most of the legal exposure of republishing listings.', recommended: 'Only me',
+          },
+          {
+            id: 'Q2', title: 'Where you use it', body: 'When you check what is on, where are you?',
+            options: [{ label: 'On the phone' }, { label: 'At the desk' }, { label: 'In a weekly digest', description: 'An email, with no page to open' }],
+            recommendation: 'A page built for the phone that also works at the desk. A digest can come later from the same data.', recommended: null,
+          },
+          {
+            id: 'Q3', title: 'What counts as an event', body: 'Listing everything pulls in very different things:\n\n- one-off events: concerts, lectures, markets\n- long runs: exhibitions open for months\n- cinema: dozens of screenings a day',
+            options: [], recommendation: 'Include everything, but collapse it: an exhibition is one item with a date range, a film one item with its showtimes.', recommended: null,
+          },
+          { id: 'Q4', title: 'Your own sources', body: 'Name three to five sources you would add yourself.', options: [], recommendation: '', recommended: null },
+        ],
+      },
+      summary: {
+        text: 'The design interview has put its first four questions to you; nothing is built yet.', progress: ['Found the repository empty', 'Started a search for event sources'], learnings: [],
+        decision: { problem: 'Who the events page is for and what it shows', brief: 'Four design questions that everything else hangs off.', context: '', options: [] },
+        findings: 0, question: 'toolu_01Round', basis: 't-events-1', at: now - 2 * MIN,
+      },
+      lastMessage: 'The repository is empty, so every decision is open. Round 1 is posted: four questions that do not depend on the source search.',
+      lastTurn: 't-events-1',
+    }),
+  ]),
+
   // The Mac restarted: every task that was running ended with it and remembers what it was doing; the two that had
   // ended before stay as they were. `restartedFails` also has one that cannot be resumed.
   restarted: (now) => restarted(now, false),

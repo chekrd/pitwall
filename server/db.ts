@@ -5,6 +5,7 @@ import type { Activity, Menu, TurnError, Unanswered } from './conversations.ts';
 import type { DiffStat } from './git.ts';
 import type { MenuAnswer } from './menu.ts';
 import { migrate } from './migrations.ts';
+import type { Round } from './rounds.ts';
 import type { Schedule, Scheduled } from './schedule.ts';
 import { migrateUx, uxStore } from './uxlog.ts';
 
@@ -153,6 +154,8 @@ export interface AsideTurn {
 
 export interface Aside {
   id: string;
+  // The question of a round this aside talks through; it goes when that round does.
+  about?: { round: string; question: string };
   fork: string | null;
   state: 'thinking' | 'done' | 'failed';
   activity: string | null;
@@ -231,6 +234,8 @@ export interface Session {
   lastTurn: string | null;
   waitingFor: string | null;
   dismissedAsk: string | null;
+  round: Round | null;
+  dismissedRound: string | null;
   advice: Advice | null;
   // Every PR the latest turns opened or watched, oldest first.
   prs: PrFlow[];
@@ -296,6 +301,8 @@ const toSession = (r: Row): Session => ({
   lastTurn: r.last_turn,
   waitingFor: r.waiting_for,
   dismissedAsk: r.dismissed_ask,
+  round: r.round ? JSON.parse(r.round) : null,
+  dismissedRound: r.dismissed_round ?? null,
   advice: r.advice ? toAdvice(JSON.parse(r.advice)) : null,
   // Stored as one PR before a task could have several.
   prs: r.pr ? [JSON.parse(r.pr)].flat().map((p: PrFlow) => ({ ...p, repo: p.repo ?? null })) : [],
@@ -381,6 +388,8 @@ const columns: Record<string, string> = {
   lastTurn: 'last_turn',
   waitingFor: 'waiting_for',
   dismissedAsk: 'dismissed_ask',
+  round: 'round',
+  dismissedRound: 'dismissed_round',
   advice: 'advice',
   prs: 'pr',
   summary: 'summary',
@@ -426,7 +435,7 @@ export const sessions = {
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
     parsed.delete(s.id);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');

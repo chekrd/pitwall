@@ -62,7 +62,7 @@ function set(next: State) {
 
 // For a bug report: each session whose state changed, as it was and as it is, and the link as it goes.
 function recordStates(before: State, next: State, animate: boolean) {
-  const shape = (s: Session) => `${s.status}|${s.waitingFor ?? ''}|${s.question?.toolUseId ?? ''}|${s.menu ? 'menu' : ''}|${s.archived}|${s.summary?.at ?? ''}`;
+  const shape = (s: Session) => `${s.status}|${s.waitingFor ?? ''}|${s.question?.toolUseId ?? ''}|${s.round?.key ?? ''}|${s.menu ? 'menu' : ''}|${s.archived}|${s.summary?.at ?? ''}`;
   const was = new Map(before.sessions.map((s) => [s.id, shape(s)]));
   const changed = next.sessions.flatMap((s) => (was.get(s.id) === shape(s) ? [] : [[s.id, was.get(s.id) ?? null, shape(s)]]));
   if (changed.length || animate) record('state', { changed, animate });

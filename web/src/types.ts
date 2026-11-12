@@ -9,6 +9,7 @@ export type { Conversation, ConversationLog, Exchange, Menu, MenuQuestion } from
 export type { FolderView, RepoView, WorktreeView } from '../../server/workspace.ts';
 export type { Command } from '../../server/commands.ts';
 export type { MenuAnswer } from '../../server/menu.ts';
+export type { Round, RoundAnswer, RoundAnswers, RoundQuestion } from '../../server/rounds.ts';
 export type { Usage, UsageWindow } from '../../server/usage.ts';
 export type { Drift } from '../../server/claudeFormat.ts';
 export type { Run, Schedule, Scheduled, TaskRequest, When } from '../../server/schedule.ts';

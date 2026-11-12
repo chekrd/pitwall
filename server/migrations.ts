@@ -102,6 +102,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN unanswered TEXT');
   },
+  // 9: the round of questions each task waits on, and the one last answered or dismissed on the board.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN round TEXT; ALTER TABLE sessions ADD COLUMN dismissed_round TEXT');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

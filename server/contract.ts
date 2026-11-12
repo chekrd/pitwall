@@ -42,6 +42,9 @@ export const actionBodies = {
   rename: z.strictObject({ title: z.string() }),
   'decline-menu': z.strictObject({ toolUseId: z.string() }),
   'answer-menu': z.strictObject({ toolUseId: z.string(), answers: z.array(z.strictObject({ labels: z.array(z.string()), other: z.string() })) }),
+  'answer-round': z.strictObject({
+    round: z.string(), replies: z.record(z.string(), z.strictObject({ option: z.string().nullable(), recommended: z.boolean(), text: z.string() })),
+  }),
   'accept-advice': z.strictObject({ key, adviceAt: z.number().optional() }),
   'retry-advice': z.strictObject({ key }),
   'stop-advice': z.strictObject({ key }),
@@ -60,7 +63,7 @@ export const actionBodies = {
   park: z.strictObject({ text: z.string(), auto: z.boolean().optional() }),
   'edit-park': z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }),
   unpark: z.strictObject({ draft: z.string() }),
-  'ask-aside': z.strictObject({ text: z.string(), aside: z.string().nullable().optional() }),
+  'ask-aside': z.strictObject({ text: z.string(), aside: z.string().nullable().optional(), about: z.strictObject({ round: z.string(), question: z.string() }).optional() }),
   'stop-aside': z.strictObject({ aside: z.string() }),
   'close-aside': z.strictObject({ aside: z.string() }),
 };
@@ -69,7 +72,8 @@ export const actionBodies = {
 export type ActionName = keyof typeof actionBodies;
 export const isAction = (name: string): name is ActionName => Object.hasOwn(actionBodies, name);
 
-// These act on the decision the page showed and name it in `key`; answer, answer-menu and decline-menu check their own.
+// These act on the decision the page showed and name it in `key`; answer, answer-menu, answer-round and decline-menu
+// check their own.
 export const onDecision: ReadonlySet<ActionName> = new Set(['dismiss', 'accept-advice', 'retry-advice', 'stop-advice', 'elaborate']);
 
 // What the page sends, and what the server reads from it.

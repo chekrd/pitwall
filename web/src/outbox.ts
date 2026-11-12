@@ -1,8 +1,8 @@
 import { checkDecision, decisionKey, Refusal } from '../../server/decision.ts';
-import type { MenuAnswer, Session, SessionStatus } from './types.ts';
+import type { MenuAnswer, RoundAnswers, Session, SessionStatus } from './types.ts';
 import { menuStuck } from './util.ts';
 
-export type Action = 'answer' | 'answer-menu' | 'decline-menu' | 'accept-advice' | 'dismiss';
+export type Action = 'answer' | 'answer-menu' | 'answer-round' | 'decline-menu' | 'accept-advice' | 'dismiss';
 
 // `key` is the decision the card showed, null for a plain message. It is always sent, since the server takes a
 // missing key for a page from before that check.
@@ -13,6 +13,9 @@ export interface Body {
   files?: string[];
   toolUseId?: string;
   answers?: MenuAnswer[];
+  // A round of questions and the answers to it, by question.
+  round?: string;
+  replies?: RoundAnswers;
   adviceAt?: number;
   // Drafts the send carries, which leave the task once it went out.
   drafts?: string[];
@@ -285,7 +288,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
       const body = structuredClone(request.body);
       const item: Item<R> = {
         ...request, body, id, sessionId: s.id,
-        key: request.action === 'answer-menu' || request.action === 'decline-menu' ? `m:${body.toolUseId}` : (body.key ?? null),
+        key: request.action === 'answer-menu' || request.action === 'decline-menu' ? `m:${body.toolUseId}` : request.action === 'answer-round' ? `r:${body.round}` : (body.key ?? null),
         typed: request.action === 'answer' && !body.choice,
         command: !!request.command, status: s.status, lastTurn: s.lastTurn, answeredAt: s.answered?.at ?? null, restore, dueAt: now() + holdMs, state: 'held',
       };

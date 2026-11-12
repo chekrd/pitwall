@@ -3,7 +3,7 @@ import { mkdir, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { ASK_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME, ORIGIN, SCRATCH_DIR } from './config.ts';
+import { ASK_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME, ORIGIN, ROUND_TOOL_NAME, SCRATCH_DIR } from './config.ts';
 import { sessions, type Advice, type Session } from './db.ts';
 import { describeTool } from './conversations.ts';
 import { openDecision, type OpenDecision } from './decision.ts';
@@ -78,8 +78,9 @@ const byToken = new Map<string, Run>();
 await mkdir(SCRATCH_DIR, { recursive: true });
 for (const leftover of await readdir(SCRATCH_DIR)) void removeScratchCopy(join(SCRATCH_DIR, leftover));
 
+// A round of questions gets none: most of them ask what the developer wants, which no reading of the code tells.
 const needsAdvice = (s: Session, d: OpenDecision) =>
-  !running.has(s.id) && (!s.advice || s.advice.key !== d.key || s.advice.state === 'thinking');
+  !d.round && !running.has(s.id) && (!s.advice || s.advice.key !== d.key || s.advice.state === 'thinking');
 
 export function adviseOpen() {
   for (const [id, run] of running) {
@@ -231,7 +232,7 @@ async function advise(s: Session, d: OpenDecision) {
         '--settings', JSON.stringify(guard),
         '--add-dir', SCRATCH_DIR,
         '--allowedTools', `mcp__${MCP_NAME}__${SCRATCH_TOOL}`,
-        '--disallowedTools', ASK_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME, ...readOnly(s),'Bash(git push:*)',
+        '--disallowedTools', ASK_TOOL_NAME, ROUND_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME, ...readOnly(s),'Bash(git push:*)',
         '--permission-prompts', 'none',
         '--json-schema', JSON.stringify(schema(d)),
       ],

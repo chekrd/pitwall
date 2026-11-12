@@ -1,13 +1,14 @@
 import { decisionKey, menuAnswerText, openDecision } from '../../server/decision.ts';
+import { answeredCount, isAnswered, roundAnswerLabel, roundTitle } from '../../server/rounds.ts';
 import { compare } from './order.ts';
 import type { Body, Request } from './outbox.ts';
-import type { Advice, Command, MenuAnswer, Session } from './types.ts';
+import type { Advice, Command, MenuAnswer, RoundAnswers, Session } from './types.ts';
 import { adviceFor, attentionOf, decisionOf, menuStuck, underTask, type Attention } from './util.ts';
 
 // The queue's cards: the tasks that wait on the developer, in board order, and what each press on the card sends. A
 // subtask waits on its task's page and Wall tile.
 
-export type Kind = 'menu' | 'ask' | 'turn' | 'prompt' | 'idle';
+export type Kind = 'menu' | 'ask' | 'round' | 'turn' | 'prompt' | 'idle';
 
 const IN_DECK: readonly Attention[] = ['decide', 'focus', 'idle'];
 
@@ -33,7 +34,7 @@ export function kindOf(s: Session, now = Date.now()): Kind | null {
   if (attention === 'idle') return 'idle';
   if (attention !== 'decide') return null;
   const key = decisionKey(s)!;
-  return key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : 'turn';
+  return key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : key.startsWith('r:') ? 'round' : 'turn';
 }
 
 // The deck as it is read: the front card, then a send that failed until it has been at the front, then the rest in
@@ -219,11 +220,30 @@ function menuPrimary(s: Session, picks: readonly MenuAnswer[]): Primary {
   return { label: a?.state === 'done' && samePicks(picks, a.answers) ? 'Accept suggestion' : 'Send answer', disabled: false, press: menuAnswer(s, picks) };
 }
 
+// The answers given so far to a round's questions, as one send; the questions left out stay open.
+export function roundAnswer(s: Session, replies: RoundAnswers): Request {
+  const round = s.round!;
+  const given = Object.fromEntries(round.questions.flatMap((q) => (isAnswered(replies[q.id]) ? [[q.id, replies[q.id]]] : [])));
+  return { action: 'answer-round', body: { round: round.key, replies: given }, label: roundAnswerLabel(round, given) };
+}
+
+function roundPrimary(s: Session, replies: RoundAnswers): Primary {
+  const all = s.round!.questions.length;
+  const n = answeredCount(s.round!, replies);
+  if (!n) return { label: all === 1 ? 'Answer the question' : 'Answer a question', disabled: true, press: null };
+  const label = all === 1 ? 'Send answer' : n === all ? `Send all ${all} answers` : `Send ${n} of ${all} answers`;
+  return { label, disabled: false, press: roundAnswer(s, replies) };
+}
+
 // The footer's primary button, which ⏎ presses: the frozen choice (with the open composer's note), the picks of a
-// menu, Terminal, or Reply. It never sends the composer's text by itself; Enter in the composer does that.
-export function primary(s: Session, frozen: Frozen | null, input: { composer?: Composer; picks?: readonly MenuAnswer[] | undefined } = {}, now = Date.now()): Primary {
+// menu, the answers to a round, Terminal, or Reply. It never sends the composer's text by itself; Enter in the
+// composer does that.
+export function primary(
+  s: Session, frozen: Frozen | null, input: { composer?: Composer; picks?: readonly MenuAnswer[] | undefined; replies?: RoundAnswers | undefined } = {}, now = Date.now(),
+): Primary {
   const kind = kindOf(s, now);
   if (kind === 'prompt') return { label: 'Terminal', disabled: false, press: { intent: 'terminal' } };
+  if (kind === 'round') return roundPrimary(s, input.replies ?? {});
   if (kind !== 'menu' && kind !== 'ask' && kind !== 'turn') return { ...reply, disabled: kind !== 'idle' };
   const f = frozen ?? freeze(s)!;
   if (kind === 'menu') return menuPrimary(s, input.picks ?? (f.via === 'menu' ? f.picks : noPicks(s)));
@@ -298,8 +318,8 @@ export function declining(s: Session): Request {
 }
 
 export function dismissal(s: Session): Request {
-  const d = decisionOf(s)!;
-  return { action: 'dismiss', body: { key: d.key }, label: d.problem };
+  const key = decisionKey(s)!;
+  return { action: 'dismiss', body: { key }, label: key.startsWith('r:') ? roundTitle(s.round!) : decisionOf(s)!.problem };
 }
 
 // The Needs-focus card: what the terminal shows, and its subject when Claude names one ("… for Bash: pnpm test").

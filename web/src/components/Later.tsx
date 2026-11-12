@@ -3,7 +3,7 @@ import { sessionAction } from '../api.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
 import type { ActionBody, Parked, Session } from '../types.ts';
-import { AsideList, askAside, canAsk, MAX_ASIDES } from './Asides.tsx';
+import { AsideList, askAside, canAsk, MAX_ASIDES, ownAsides } from './Asides.tsx';
 import { explain, TIPS, type Explanation } from './explain.ts';
 import styles from './Later.module.css';
 import { toast } from './Toasts.tsx';
@@ -111,11 +111,12 @@ export function Later({ session, name }: { session: Session; name: string }) {
   const ask = () => take((t) => askAside(session, t));
   const asking = canAsk(session);
   const armed = drafts.filter((d) => d.auto).length;
+  const asides = ownAsides(session).length;
   return (
     <section className={styles.later} data-later data-ux-section="later">
       <h3 className={styles.label} data-explain="Drafts reach Claude only when you send them; a question asked on the side is answered by a copy of the conversation and never reaches it">
         Later {drafts.length > 0 && <span>· {drafts.length} {drafts.length === 1 ? 'draft' : 'drafts'}</span>}
-        {session.asides.length > 0 && <span>· {session.asides.length} asked on the side</span>}
+        {asides > 0 && <span>· {asides} asked on the side</span>}
       </h3>
       {drafts.length > 0 && (
         <ul className={styles.list}>
@@ -148,7 +149,7 @@ export function Later({ session, name }: { session: Session; name: string }) {
             <span className={styles.spacer} />
             <button
               type="button"
-              {...explain(asking ? TIPS.ask : { does: session.asides.length >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' })}
+              {...explain(asking ? TIPS.ask : { does: asides >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' })}
               disabled={!text.trim() || !asking}
               onClick={ask}
             >

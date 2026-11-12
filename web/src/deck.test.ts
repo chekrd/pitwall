@@ -344,3 +344,28 @@ test('the second opinion as a reply to edit leads with its choice, unless its an
   assert.equal(suggestionText(advice('q:q1', { choice: 'Merge', answer: 'Merge, because it is smaller.' })), 'Merge, because it is smaller.');
   assert.equal(suggestionText(advice('q:q1')), 'Because it is smaller.');
 });
+
+const round = {
+  key: 'r1', source: 'tool' as const, title: 'Round 1', intro: '', at: 3,
+  questions: [
+    { id: 'Q1', title: 'Audience', body: 'Who?', options: [{ label: 'Only me' }, { label: 'Friends' }], recommendation: 'Only you.', recommended: 'Only me' },
+    { id: 'Q2', title: 'Sources', body: 'Which?', options: [], recommendation: '', recommended: null },
+  ],
+};
+
+test('a round of questions is a card of its own: its main button counts the answers and sends the ones given, and Dismiss names the round', () => {
+  const s = session('events', { round });
+  assert.equal(kindOf(s), 'round');
+  assert.deepEqual(primary(s, null), { label: 'Answer a question', disabled: true, press: null });
+  assert.equal(targetOf(s, null), 'none');
+  const q1 = { option: 'Only me', recommended: false, text: '' };
+  const blank = { option: null, recommended: false, text: ' ' };
+  assert.deepEqual(primary(s, null, { replies: { Q1: q1, Q2: blank } }), {
+    label: 'Send 1 of 2 answers', disabled: false,
+    press: { action: 'answer-round', body: { round: 'r1', replies: { Q1: q1 } }, label: 'Answers to 1 of 2 questions' },
+  });
+  assert.equal(primary(s, null, { replies: { Q1: q1, Q2: { ...blank, text: 'the city calendar' } } }).label, 'Send all 2 answers');
+  assert.equal(primary(session('one', { round: { ...round, questions: round.questions.slice(0, 1) } }), null, { replies: { Q1: q1 } }).label, 'Send answer');
+  assert.deepEqual(dismissal(s), { action: 'dismiss', body: { key: 'r:r1' }, label: 'Round 1' });
+  assert.deepEqual(ids(deckOf([s], none)), ['events']);
+});

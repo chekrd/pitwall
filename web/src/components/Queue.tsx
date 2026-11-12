@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent } from 'react';
+import { roundTitle } from '../../../server/rounds.ts';
 import { arrivals, kindOf, promptOf } from '../deck.ts';
 import { arrange, queue, signature, useQueue } from '../queue.ts';
 import { useStore } from '../store.ts';
@@ -17,6 +18,7 @@ function peekText(s: Session) {
   const kind = kindOf(s);
   if (kind === 'menu') return s.menu?.questions.map((q) => q.question).join(' · ') ?? '';
   if (kind === 'ask' || kind === 'turn') return decisionOf(s)?.problem ?? '';
+  if (kind === 'round') return roundTitle(s.round!);
   if (kind === 'prompt') return promptOf(s).headline;
   return s.summary?.text ?? '';
 }

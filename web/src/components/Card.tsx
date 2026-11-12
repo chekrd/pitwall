@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, type Composer as Note, type Intent } from '../deck.ts';
 import type { Action, Card as Keys } from '../keys.ts';
 import type { Request } from '../outbox.ts';
+import { roundTitle } from '../../../server/rounds.ts';
 import { queue, useQueue } from '../queue.ts';
+import { useRoundAnswers } from '../rounds.ts';
 import { openSheet, sessionPath } from '../router.ts';
 import { hold } from '../sends.ts';
 import type { RepoView, Session } from '../types.ts';
@@ -17,9 +19,10 @@ import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { MenuBody } from './MenuBody.tsx';
-import { Age, BranchMark } from './Parts.tsx';
+import { Age, BranchMark, Headline } from './Parts.tsx';
 import { ParentCrumb } from './Findings.tsx';
 import { PromptBody } from './PromptBody.tsx';
+import { RoundBody } from './RoundBody.tsx';
 import { archive, ClearButton, openTerminal, SessionMenu } from './SessionMenu.tsx';
 import { StateMark } from './StateMark.tsx';
 import { labelOf, stoppedOnError } from './Status.tsx';
@@ -69,7 +72,11 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   const menu = kind === 'menu' ? session.menu : null;
   // The compiler reads what a callback uses during render, so a `decision!.options` there would throw on other cards.
   const options = decision?.options ?? [];
+  const round = kind === 'round' ? session.round : null;
+  // What a reply can be written to instead: a question, an end-of-turn choice or a round.
+  const asks = decision !== null || round !== null;
   const { key, frozen, picks, setPicks, toggle, answerOwn, questions, lone } = useDecision(session, menu);
+  const [replies, setReplies] = useRoundAnswers(round ? key : null);
   const advice = adviceFor(session);
   const done = advice?.state === 'done' ? advice : null;
   const draft = useDraft(session.id);
@@ -85,7 +92,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
 
   // A draft that comes back, from a send taken back or refused, shows in the reply box.
   useEffect(() => {
-    if (filled && decision) setComposing(true);
+    if (filled && asks) setComposing(true);
   }, [filled]);
 
   useEffect(() => {
@@ -112,9 +119,9 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     if (whyOpen) why.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [whyOpen]);
 
-  const open = kind === 'idle' || (decision !== null && composing);
-  const box: Note = { open: decision !== null && composing, text: draft.text, files: readyPaths(draft), uploading: uploading(draft) };
-  const primary = primaryOf(session, frozen, { composer: box, picks: menu ? picks : undefined });
+  const open = kind === 'idle' || (asks && composing);
+  const box: Note = { open: asks && composing, text: draft.text, files: readyPaths(draft), uploading: uploading(draft) };
+  const primary = primaryOf(session, frozen, { composer: box, picks: menu ? picks : undefined, replies: round ? replies : undefined });
 
   const focusCard = () => article.current?.focus({ preventScroll: true });
   const compose = () => {
@@ -131,7 +138,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   const send = (r: Request) => {
     if (r.command) {
       hold(session, r, name);
-      if (decision) setNote(`${r.label.split(/\s/)[0]} goes to the terminal as typed; the question stays open.`);
+      if (asks) setNote(`${r.label.split(/\s/)[0]} goes to the terminal as typed; the question stays open.`);
       return;
     }
     if (article.current?.contains(document.activeElement)) focusCard();
@@ -194,7 +201,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     suggestion: !!done && decision !== null,
     primary: !primary.disabled && primary.press !== null,
     why: whyOpen,
-    composing: decision !== null && composing,
+    composing: asks && composing,
   };
   const act = (a: Action) => {
     if (a.type === 'option') pick(options[a.index].label);
@@ -225,6 +232,9 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     meta = <><Age at={session.summary?.at ?? session.updatedAt} prefix="asked " />{metaChip("from Claude's last message", "Claude ended its turn with a choice for you; a model read it from its last message")}{mine}{rankReason}</>;
   } else if (menu) {
     meta = <><Age at={menu.at} prefix="asked " />{metaChip('asked in the terminal', 'Claude opened a choice menu in its terminal; answering here picks the options there for you')}{mine}{rankReason}</>;
+  } else if (round) {
+    const n = round.questions.length;
+    meta = <><Age at={round.at} prefix="asked " />{metaChip(n === 1 ? '1 question' : `${n} questions`, 'Claude asked these at once; answer each on its own and send them together')}{mine}{rankReason}</>;
   } else if (kind === 'prompt') {
     meta = <><Age at={session.updatedAt} />{session.tty && <code className={styles.tty} data-explain="The terminal device Claude runs on">{session.tty}</code>}</>;
   } else meta = <Age at={session.summary?.at ?? session.updatedAt} prefix="finished " />;
@@ -233,7 +243,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     focus: focusAsk,
     note,
     onSend: send,
-    onEscape: () => (decision ? closeComposer() : focusCard()),
+    onEscape: () => (asks ? closeComposer() : focusCard()),
   };
 
   return (
@@ -311,6 +321,15 @@ export function Card({ session, repos, deck, enter }: CardProps) {
                 onSubmit={pressPrimary}
               />
             )}
+            {round && (
+              <div className={styles.round}>
+                <Headline text={roundTitle(round)} />
+                <RoundBody session={session} round={round} answers={replies} onAnswers={setReplies} />
+                {open && (
+                  <Composer session={session} decision={key} label="A message instead of answers" placeholder="Write to Claude instead of answering; the questions close with it…" {...composer} />
+                )}
+              </div>
+            )}
             {kind === 'prompt' && <PromptBody session={session} />}
             {kind === 'idle' && <TurnBody session={session} />}
             {learnings.length > 0 && (
@@ -320,7 +339,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
                 <CopyButton value={learnings.join('\n\n')} what="Worth knowing" />
               </div>
             )}
-            {(kind === 'ask' || menu) && session.lastMessage && (
+            {(kind === 'ask' || menu || round) && session.lastMessage && (
               <div className={styles.reply} data-reply><LatestReply key={session.lastMessage} text={session.lastMessage} /></div>
             )}
           </div>
@@ -334,7 +353,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           data-primary
           data-guarded={guarded || undefined}
           disabled={primary.disabled}
-          data-explain={menu ? "Picks your answers in Claude's terminal menu" : undefined}
+          {...(round ? explain(TIPS.sendRound) : { 'data-explain': menu ? "Picks your answers in Claude's terminal menu" : undefined })}
           onClick={pressPrimary}
         >
           <span className={styles.primaryLabel}>{primary.label}</span>
@@ -350,20 +369,28 @@ export function Card({ session, repos, deck, enter }: CardProps) {
           </div>
         )}
         <div className={styles.actions}>
+          {asks && (
+            <button
+              type="button"
+              className={styles.secondary}
+              aria-pressed={composing}
+              data-explain={round ? 'Write Claude a message of your own instead of answering the questions; they close with it' : undefined}
+              onClick={() => (composing ? closeComposer() : compose())}
+            >
+              {round ? 'Write instead' : 'Write my own'} <kbd>W</kbd>
+            </button>
+          )}
           {decision && (
-            <>
-              <button type="button" className={styles.secondary} aria-pressed={composing} onClick={() => (composing ? closeComposer() : compose())}>
-                Write my own <kbd>W</kbd>
-              </button>
-              <button type="button" className={styles.secondary} aria-pressed={whyOpen} {...explain(SENDS.elaborate)} onClick={toggleWhy}>
-                Elaborate <kbd>Y</kbd>
-              </button>
-            </>
+            <button type="button" className={styles.secondary} aria-pressed={whyOpen} {...explain(SENDS.elaborate)} onClick={toggleWhy}>
+              Elaborate <kbd>Y</kbd>
+            </button>
           )}
           {kind === 'idle' && (
             <button type="button" className={styles.secondary} onClick={archiveIt}>Archive <kbd>X</kbd></button>
           )}
-          {kind === 'ask' && <button type="button" className={styles.dismiss} data-explain="Clear the question without answering it" onClick={dismiss}>Dismiss</button>}
+          {(kind === 'ask' || round) && (
+            <button type="button" className={styles.dismiss} data-explain={round ? 'Clear the questions without answering them' : 'Clear the question without answering it'} onClick={dismiss}>Dismiss</button>
+          )}
           {kind === 'menu' && session.menu && <button type="button" className={styles.dismiss} {...explain(TIPS.decline)} onClick={decline}>Decline</button>}
         </div>
       </footer>

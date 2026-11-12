@@ -1,8 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
-import { ARTIFACT_TOOL, ASK_TOOL, MCP_SERVER_NAME, OPEN_WORKTREE_TOOL } from './config.ts';
+import { ARTIFACT_TOOL, ASK_TOOL, MCP_SERVER_NAME, OPEN_WORKTREE_TOOL, ROUND_TOOL } from './config.ts';
+import type { RoundRead } from './conversations.ts';
 import { openWorktree } from './folderTasks.ts';
+import type { Round } from './rounds.ts';
 
 export const CATEGORIES = ['feature', 'bug', 'plan-problem', 'ci-failure', 'research', 'update', 'review-ready'] as const;
 
@@ -19,6 +21,40 @@ const inputSchema = {
 
 export const askInput = z.object(inputSchema);
 
+const roundSchema = {
+  title: z.string().optional().describe('A few words naming the round, e.g. "Round 2: where the data comes from".'),
+  intro: z.string().optional().describe('Markdown that applies to the whole round: what the last answers settled, what you found out since. Leave out what belongs to one question.'),
+  questions: z.array(z.object({
+    title: z.string().describe('A short name for the question, e.g. "Where you use it".'),
+    body: z.string().describe('Markdown: the question itself with what the user needs to answer it. It must stand on its own, as the user may read it without the others.'),
+    options: z.array(z.object({
+      label: z.string().describe('Short button text, e.g. "A web app on the phone".'),
+      description: z.string().optional(),
+    })).optional().describe('The concrete choices, when the question is one among a few. The user can always write an own answer instead.'),
+    recommendation: z.string().optional().describe('Your recommended answer and why, in a sentence or two.'),
+    recommended: z.string().optional().describe('The label of the option you recommend, copied exactly, when your recommendation is one of the options.'),
+  })).min(1).describe('The questions, shown as Q1, Q2, … in this order.'),
+};
+
+export const roundInput = z.object(roundSchema);
+
+const said = (text: string | undefined) => (text ?? '').trim();
+
+// The round an ask_questions call posts, or null when the MCP server would have rejected its input.
+export function roundOf(read: RoundRead): Round | null {
+  if (read.source === 'prose') return { key: read.key, source: 'prose', title: '', intro: read.intro, questions: read.questions, at: read.at };
+  const input = roundInput.safeParse(read.input);
+  if (!input.success) return null;
+  const questions = input.data.questions.map((q, i) => {
+    const options = (q.options ?? []).map((o) => ({ label: o.label.trim(), description: said(o.description) || undefined })).filter((o) => o.label);
+    return {
+      id: `Q${i + 1}`, title: q.title.trim(), body: q.body.trim(), options, recommendation: said(q.recommendation),
+      recommended: options.find((o) => o.label === said(q.recommended))?.label ?? null,
+    };
+  });
+  return { key: read.key, source: 'tool', title: said(input.data.title), intro: said(input.data.intro), questions, at: read.at };
+}
+
 // A longer call would not fit the transcript lines the dashboard reads it from.
 const MAX_ARTIFACT = 100_000;
 
@@ -32,8 +68,8 @@ const artifactSchema = {
 
 export const artifactInput = z.object(artifactSchema);
 
-// The dashboard reads calls to ask_human and create_artifact from the session transcript, so those tools only have to
-// exist and acknowledge; open_worktree does its work here.
+// The dashboard reads calls to ask_human, ask_questions and create_artifact from the session transcript, so those tools
+// only have to exist and acknowledge; open_worktree does its work here.
 function server() {
   const mcp = new McpServer({ name: MCP_SERVER_NAME, version: '1.0.0' });
   mcp.registerTool(ASK_TOOL, {
@@ -49,6 +85,22 @@ function server() {
     inputSchema,
   }, async () => ({
     content: [{ type: 'text', text: 'Posted to the user\'s dashboard. End your turn now and wait; their answer will arrive as the next user message.' }],
+  }));
+  mcp.registerTool(ROUND_TOOL, {
+    title: 'Ask the human several questions at once',
+    description:
+      `Call this instead of ${ASK_TOOL} when you have several separate questions for the user at once, such as a round of an ` +
+      'interview about a plan or a design. The Pitwall shows each question on its own, with its options, your recommendation ' +
+      'and a field for an own answer; the user answers them one by one, can talk a single question through with a copy of ' +
+      'this conversation first, and sends all answers together. Put only questions in one call that can be answered ' +
+      'independently of each other; one whose answer depends on another still open belongs to a later call. Give every ' +
+      'question your recommended answer. After calling this, say in one line that the questions are posted, without ' +
+      'repeating them, and end your turn. The answers arrive as the next user message, each named by its number (Q1, Q2, … ' +
+      'in the order you gave them). "Your recommendation" as an answer takes your recommendation as it stood. A question ' +
+      'the user left unanswered is said to be still open: ask it again in your next call, unless the other answers settled it.',
+    inputSchema: roundSchema,
+  }, async ({ questions }) => ({
+    content: [{ type: 'text', text: `Posted to the user's dashboard as Q1${questions.length > 1 ? `–Q${questions.length}` : ''}. End your turn now and wait; the answers will arrive together as the next user message.` }],
   }));
   mcp.registerTool(ARTIFACT_TOOL, {
     title: 'Create a visual explanation',

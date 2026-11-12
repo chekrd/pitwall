@@ -1,0 +1,125 @@
+@layer components {
+  .round { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+
+  .intro { max-width: 90ch; font-size: 16px; line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; }
+
+  .progress {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    font-size: 13.5px;
+    color: var(--muted);
+    strong { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  }
+
+  .spacer { flex: 1; }
+
+  .question {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 18px 18px;
+    border: 1.5px solid var(--line);
+    border-radius: 16px;
+    background: var(--card-2);
+    &[data-answered] { border-color: var(--accent-line); }
+  }
+
+  .head {
+    align-self: stretch;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    h2 { flex: 1; min-width: 0; margin: 0; font: 600 21px/1.2 var(--font-display); letter-spacing: -0.01em; color: var(--text); text-wrap: balance; }
+  }
+
+  .n { flex: none; font: 700 12.5px/1 var(--mono); color: var(--muted); }
+
+  .body { align-self: stretch; max-width: 90ch; font-size: 15.5px; line-height: 1.5; overflow-wrap: anywhere; }
+
+  .options { align-self: stretch; display: flex; flex-direction: column; gap: 8px; }
+
+  .option {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--line);
+    border-radius: 13px;
+    background: var(--raised);
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+    &:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
+    &[aria-pressed="true"] { border-color: var(--accent-line); background-color: var(--accent-tint); box-shadow: 0 0 0 1px var(--accent-line); }
+  }
+
+  .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+
+  .label { font-size: 15.5px; font-weight: 650; line-height: 1.3; color: var(--text); overflow-wrap: anywhere; }
+
+  .description { font-size: 13.5px; line-height: 1.45; color: var(--text-2); }
+
+  .recommends {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px 12px;
+    border-left: 3px solid var(--line-2);
+    border-radius: 4px 12px 12px 4px;
+    background: var(--raised);
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    &[data-taken] { border-left-color: var(--accent); background: var(--accent-tint); }
+  }
+
+  .recommendsHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; }
+
+  .own {
+    align-self: stretch;
+    min-height: 44px;
+    max-height: 40vh;
+    field-sizing: content;
+    resize: none;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .ask {
+    align-self: stretch;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px dashed var(--line-2);
+    border-radius: 12px;
+  }
+
+  .field {
+    flex: 1;
+    min-width: 0;
+    min-height: 24px;
+    max-height: 30vh;
+    field-sizing: content;
+    resize: none;
+    padding: 2px 0;
+    border: 0;
+    outline: none;
+    background: none;
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  .question > [data-aside] { align-self: stretch; background: var(--raised); }
+}

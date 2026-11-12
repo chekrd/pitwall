@@ -181,6 +181,7 @@ function push() {
     pushing = false;
     pausing.step(state.sessions);
     sendDueDrafts();
+    asides.sweep(state.sessions);
     const message = JSON.stringify(args.legacy ? snapshot() : { ...snapshot(), uiEntry: announced ?? ui.settled() } satisfies Snapshot);
     for (const ws of clients) ws.send(message);
   });
@@ -345,7 +346,7 @@ const asides = asking({
   get: find,
   save: (id, list) => update(id, { asides: list }),
   run: (_s, prompt, fork, signal, activity) => new Promise((done, fail) => {
-    const question = prompt.split('\n').at(-1)!.replace(/^Question: /, '');
+    const question = prompt.split('\n').at(-1)!.replace(/^(Question|The developer): /, '');
     const scenario = state;
     later(300, () => activity('Read: src/invoice/LineItem.ts'));
     later(1200, () => (scenario !== state ? fail(new Error('the mock loaded another scenario meanwhile'))
@@ -474,6 +475,7 @@ const actions: ActionHandlers<Session> = {
   rename: (s, body) => rename(s, body.title),
   'decline-menu': (s, body) => answers.declineMenu(s.id, body),
   'answer-menu': (s, body) => (args.legacy ? legacyAnswerMenu(s, body) : answers.answerMenu(s.id, body)),
+  'answer-round': (s, body) => answers.answerRound(s.id, body),
   'accept-advice': (s, body) =>
     args.legacy ? legacyAcceptAdvice(s) : answers.acceptAdvice(s.id, typeof body.adviceAt === 'number' ? body.adviceAt : undefined),
   'retry-advice': (s) => retryAdvice(s),
@@ -602,7 +604,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
   state.sessions.push({
     id, conversation: id, history: [], repoId, worktree, cwd: worktree, pid: 41_000 + state.sessions.length, tty: '/dev/ttys041', title: o.title || null,
     firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, rank: null, rankReason: null, priority: null, diffstat: null,
-    lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, waitingFor: null, dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null,
+    lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, waitingFor: null, dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null,
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null,
     model: o.model || null, effort: o.effort || null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, starting: null, parked: [], asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,
   });

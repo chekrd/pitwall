@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Advice, Session } from './db.ts';
 import { adviceToSend, answeredLine, answerText, checkDecision, claim, decisionKey, menuAnswerText, openDecision } from './decision.ts';
+import type { Round } from './rounds.ts';
 
 const session = (patch: Partial<Session>): Session => ({
   id: 's', conversation: 's', history: [], repoId: 1, worktree: '/w', cwd: '/w', pid: 1, tty: null, title: null, firstPrompt: null, status: 'idle',
   question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
-  dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
+  dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
   archived: false, createdAt: 0, updatedAt: 0, ...patch,
 });
 
@@ -194,4 +195,22 @@ test('accepting a second opinion needs the one the page showed, still done and s
   assert.throws(() => adviceToSend(s, 6), { message: /changed/, code: 'advice-changed' });
   assert.throws(() => adviceToSend(session({ question, advice: { ...advice, state: 'thinking' } })), { message: /no advice/, code: 'stale' });
   assert.throws(() => adviceToSend(session({ question, advice, answered: answered('q:q1') })), { code: 'stale' });
+});
+
+const round: Round = {
+  key: 'r1', source: 'tool', title: 'Round 1', intro: '', at: 3,
+  questions: [
+    { id: 'Q1', title: 'Audience', body: 'Who is it for?', options: [{ label: 'Only me' }, { label: 'Friends' }], recommendation: 'Only you.', recommended: 'Only me' },
+    { id: 'Q2', title: 'Sources', body: 'Which sources?', options: [], recommendation: '', recommended: null },
+  ],
+};
+
+test('a round of questions is a decision that comes after a menu and an ask_human call and before the end of the turn', () => {
+  const d = openDecision(session({ round, summary: summary('t2') }));
+  assert.deepEqual([d?.key, d?.title, d?.category, d?.askedAt, d?.round], ['r:r1', 'Round 1', 'round of questions', 3, round]);
+  assert.equal(d?.details, 'Q1 — Audience: Who is it for?\n   - Only me\n   - Friends\n   Claude recommends: Only you.\nQ2 — Sources: Which sources?');
+  assert.equal(decisionKey(session({ round, question })), 'q:q1');
+  assert.equal(decisionKey(session({ round, menu, status: 'waiting' })), 'm:m1');
+  assert.equal(decisionKey(session({ round, status: 'working' })), 'r:r1', 'it waits while Claude writes on after it');
+  assert.equal(decisionKey(session({ round, answered: answered('r:r1') })), null);
 });

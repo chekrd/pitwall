@@ -6,10 +6,11 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { report, sessionFileProblems, transcriptProblems, versionOf } from './claudeFormat.ts';
-import { ARTIFACT_TOOL, ARTIFACT_TOOL_NAME, ASK_TOOL, ASK_TOOL_NAME, OLD_MCP_SERVER_NAMES } from './config.ts';
+import { ARTIFACT_TOOL, ARTIFACT_TOOL_NAME, ASK_TOOL, ASK_TOOL_NAME, OLD_MCP_SERVER_NAMES, ROUND_TOOL_NAME } from './config.ts';
 import type { PrFlow } from './db.ts';
 import { tildeIn } from './home.ts';
 import { linksIn, type Found } from './links.ts';
+import { proseRound, type Round } from './rounds.ts';
 import { readEntries, readEntriesWhole } from './transcriptRead.ts';
 
 const run = promisify(execFile);
@@ -32,6 +33,9 @@ export interface ToolCall {
   at: number;
 }
 
+// A round of questions as read: an ask_questions call with its input unchecked, or one parsed from Claude's text.
+export type RoundRead = { key: string; at: number } & ({ source: 'tool'; input: Record<string, unknown> } | ({ source: 'prose' } & Pick<Round, 'intro' | 'questions'>));
+
 interface Meta {
   mtime: number;
   title: string | null;
@@ -47,6 +51,7 @@ interface Meta {
   background: [string, string][];
   toolResults: string[];
   ask: ToolCall | null;
+  round: RoundRead | null;
   artifacts: ToolCall[];
   links: Found[];
   prs: (Omit<PrFlow, 'url' | 'repo'> & { dir: string | null; repository: string | null })[];
@@ -189,6 +194,26 @@ function latestAsk(entries: Record<string, any>[]): ToolCall | null {
   return ask;
 }
 
+// The latest round of questions, posted with ask_questions or written as text; like a question, it stays open until
+// the developer's next prompt, through whatever Claude writes after it.
+function latestRound(entries: Record<string, any>[]): RoundRead | null {
+  let round: RoundRead | null = null;
+  for (const entry of entries) {
+    if (round && promptText(entry)) round = null;
+    if (entry.message?.model === '<synthetic>' || entry.isApiErrorMessage) continue;
+    const at = Date.parse(entry.timestamp) || Date.now();
+    for (const b of blocks(entry)) {
+      if (b.type === 'tool_use' && b.name === ROUND_TOOL_NAME) {
+        round = { key: String(b.id), at, source: 'tool', input: b.input ?? {} };
+      } else if (b.type === 'text') {
+        const prose = proseRound(String(b.text ?? ''));
+        if (prose) round = { key: String(entry.uuid), at, source: 'prose', ...prose };
+      }
+    }
+  }
+  return round;
+}
+
 const artifactCalls = (entries: Record<string, any>[]): ToolCall[] =>
   entries.flatMap((e) => blocks(e).filter((b) => b.type === 'tool_use' && ARTIFACT_TOOL_NAMES.has(b.name))
     .map((b) => ({ toolUseId: b.id, input: b.input ?? {}, at: Date.parse(e.timestamp) || Date.now() })));
@@ -289,7 +314,7 @@ function replies(entries: Record<string, any>[], max?: number) {
       for (const b of blocks(e)) {
         if (b.type === 'text' && String(b.text ?? '').trim()) reply.push(String(b.text).trim());
         else if (b.type === 'tool_use' && ARTIFACT_TOOL_NAMES.has(b.name)) artifacts.push(String(b.id));
-        if (b.type === 'tool_use' && !ASK_TOOL_NAMES.has(b.name) && b.name !== MENU_TOOL_NAME) reply.length = closed;
+        if (b.type === 'tool_use' && !ASK_TOOL_NAMES.has(b.name) && b.name !== ROUND_TOOL_NAME && b.name !== MENU_TOOL_NAME) reply.length = closed;
       }
       if (e.message?.stop_reason === 'end_turn') closed = reply.length;
     }
@@ -603,6 +628,7 @@ async function readMeta(file: string, mtime: number): Promise<Meta | null> {
     background: background(tail, cached?.background),
     toolResults: toolResults(tail),
     ask: latestAsk(tail),
+    round: latestRound(tail),
     artifacts: artifactCalls(tail),
     links: links(tail),
     ...await prMeta(tail, cached),

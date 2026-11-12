@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { sessionAction } from '../api.ts';
 import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
 import type { Request } from '../outbox.ts';
+import { roundTitle } from '../../../server/rounds.ts';
 import { queue } from '../queue.ts';
+import { useRoundAnswers } from '../rounds.ts';
 import { closeSheet, closeSheetOf, closeSheetToQueue, showTab } from '../router.ts';
 import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
@@ -14,12 +16,14 @@ import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { Findings, Subtasks, SubtaskOf } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
+import { ownAsides } from './Asides.tsx';
 import { Later } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
 import { MenuBody } from './MenuBody.tsx';
 import { Options } from './Options.tsx';
 import { interruptedAs, resumePaused } from './RestartBanner.tsx';
+import { RoundBody } from './RoundBody.tsx';
 import styles from './Overview.module.css';
 import { scheduledNote } from '../schedules.ts';
 import { SecondOpinion } from './SecondOpinion.tsx';
@@ -47,7 +51,10 @@ function Copy({ value, what, title, shown = value }: { value: string; what: stri
 function Queued({ session, name, box: ownBox }: { session: Session; name: string; box: boolean }) {
   const menu = session.menu;
   const decision = menu ? null : decisionOf(session);
-  const { frozen, picks, setPicks, toggle, answerOwn, lone } = useDecision(session, menu);
+  const { key, frozen, picks, setPicks, toggle, answerOwn, lone } = useDecision(session, menu);
+  const round = kindOf(session) === 'round' ? session.round : null;
+  const [replies, setReplies] = useRoundAnswers(round ? key : null);
+  const roundPress = round ? primaryOf(session, frozen, { replies }) : null;
   const { sessions } = useStore();
   const carded = !underTask(sessions, session);
   const advice = adviceFor(session);
@@ -80,7 +87,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
   };
   return (
     <section className={styles.queued} data-queued data-ux-section="decision">
-      <span className={styles.kicker}>{carded && 'In your queue · '}{menu ? 'Asked in the terminal' : 'Decision'}</span>
+      <span className={styles.kicker}>{carded && 'In your queue · '}{menu ? 'Asked in the terminal' : round ? 'Questions' : 'Decision'}</span>
       {decision && (
         <>
           <h3>{decision.problem}</h3>
@@ -108,6 +115,32 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
           />}
         </>
       )}
+      {round && (
+        <>
+          <h3>{roundTitle(round)}</h3>
+          <RoundBody session={session} round={round} answers={replies} onAnswers={setReplies} />
+          <button
+            type="button"
+            data-variant="primary"
+            data-round-send
+            disabled={roundPress?.disabled}
+            {...explain(TIPS.sendRound)}
+            onClick={() => roundPress?.press && !('intent' in roundPress.press) && send(roundPress.press)}
+          >
+            {roundPress?.label}
+          </button>
+          {ownBox && <Composer
+            session={session}
+            decision={key}
+            label="A message instead of answers"
+            placeholder="Write to Claude instead of answering; the questions close with it…"
+            focus={focus}
+            note={note}
+            onSend={send}
+            onEscape={closeSheet}
+          />}
+        </>
+      )}
       {menu && (
         <>
           <MenuBody
@@ -126,8 +159,8 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
         </>
       )}
       <div className={styles.queuedActions}>
-        {kindOf(session) === 'ask' && (
-          <button type="button" data-explain="Clear the question without answering it" onClick={() => send(dismissal(session))}>Dismiss</button>
+        {(kindOf(session) === 'ask' || round) && (
+          <button type="button" data-explain={round ? 'Clear the questions without answering them' : 'Clear the question without answering it'} onClick={() => send(dismissal(session))}>Dismiss</button>
         )}
         {menu && <button type="button" {...explain(TIPS.decline)} onClick={() => send(declining(session))}>Decline</button>}
         {carded && <button type="button" data-explain="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>}
@@ -332,7 +365,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               />
             </div>
           )}
-          {!starting && (!archived || session.parked.length > 0 || session.asides.length > 0) && <Later session={session} name={name} />}
+          {!starting && (!archived || session.parked.length > 0 || ownAsides(session).length > 0) && <Later session={session} name={name} />}
           {learnings.length > 0 && (
             <section className={styles.know} data-ux-section="worth knowing">
               <h3 className={styles.label} data-explain="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>

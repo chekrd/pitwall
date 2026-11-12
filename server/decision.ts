@@ -1,8 +1,9 @@
 import type { Menu } from './conversations.ts';
 import type { Answered, Decision, QuestionOption, Session } from './db.ts';
 import type { MenuAnswer } from './menu.ts';
+import { roundText, roundTitle, type Round } from './rounds.ts';
 
-// Also imported by the UI, so only type imports here.
+// Also imported by the UI, so nothing imported here may load the server.
 
 export interface OpenDecision {
   key: string;
@@ -12,6 +13,7 @@ export interface OpenDecision {
   category: string;
   askedAt: number;
   menu: Menu | null;
+  round: Round | null;
 }
 
 export class Refusal extends Error {
@@ -26,7 +28,7 @@ export class Refusal extends Error {
 // a decision read from an older message is stale.
 export function turnDecision(s: Session): Decision | null {
   const summary = s.summary;
-  if (s.question || s.status !== 'idle' || !summary?.decision || summary.question !== null || summary.basis !== s.lastTurn) return null;
+  if (s.question || s.round || s.status !== 'idle' || !summary?.decision || summary.question !== null || summary.basis !== s.lastTurn) return null;
   // Summaries written before options had descriptions stored bare labels.
   const options = summary.decision.options.map((o) => (typeof o === 'string' ? { label: o } : o));
   return { ...summary.decision, options };
@@ -35,7 +37,7 @@ export function turnDecision(s: Session): Decision | null {
 // The decision the task page shows. Unlike openDecision, archived and ended sessions keep theirs. One the board
 // answered is closed at once, before the terminal or the transcript catch up.
 export const decisionKey = (s: Session) => {
-  const key = s.menu ? `m:${s.menu.toolUseId}` : s.question ? `q:${s.question.toolUseId}` : turnDecision(s) ? `s:${s.summary!.basis}` : null;
+  const key = s.menu ? `m:${s.menu.toolUseId}` : s.question ? `q:${s.question.toolUseId}` : s.round ? `r:${s.round.key}` : turnDecision(s) ? `s:${s.summary!.basis}` : null;
   return key === s.answered?.key ? null : key;
 };
 
@@ -52,7 +54,7 @@ export function checkDecision(s: Session, seen: string | null | undefined, typed
 
 export interface AnswerStore {
   get(id: string): Session | undefined;
-  update(id: string, patch: Partial<Pick<Session, 'answered' | 'question' | 'dismissedAsk'>>): void;
+  update(id: string, patch: Partial<Pick<Session, 'answered' | 'question' | 'dismissedAsk' | 'round' | 'dismissedRound'>>): void;
 }
 
 // Reads, checks and closes in one synchronous step, so a second request for the same decision finds it answered
@@ -80,22 +82,29 @@ const menuText = (menu: Menu) =>
     q.options.map((o) => `   - ${o.label}${o.description ? `: ${o.description}` : ''}`).join('\n')).join('\n');
 
 // What the session waits on the developer for: a menu Claude Code opened in the terminal, an
-// ask_human call, or a choice a model read from the end of Claude's last message.
+// ask_human call, a round of questions, or a choice a model read from the end of Claude's last message.
 export function openDecision(s: Session): OpenDecision | null {
   const key = decisionKey(s);
   if (!key || s.archived || s.status === 'exited') return null;
   if (s.menu) {
     return {
       key, title: s.menu.questions.map((q) => q.question).join(' · '), details: menuText(s.menu),
-      options: [], category: 'menu in the terminal', askedAt: s.menu.at, menu: s.menu,
+      options: [], category: 'menu in the terminal', askedAt: s.menu.at, menu: s.menu, round: null,
     };
   }
   const q = s.question;
-  if (q) return { key, title: q.title, details: q.details, options: q.options, category: q.category, askedAt: q.askedAt, menu: null };
+  if (q) return { key, title: q.title, details: q.details, options: q.options, category: q.category, askedAt: q.askedAt, menu: null, round: null };
+  const r = s.round;
+  if (r) {
+    return {
+      key, title: roundTitle(r), details: [r.intro, roundText(r)].filter(Boolean).join('\n\n'), options: [],
+      category: 'round of questions', askedAt: r.at, menu: null, round: r,
+    };
+  }
   const d = turnDecision(s)!;
   return {
     key, title: d.problem, details: [d.brief, d.context].filter(Boolean).join('\n\n'), options: d.options,
-    category: 'end of turn', askedAt: s.summary!.at, menu: null,
+    category: 'end of turn', askedAt: s.summary!.at, menu: null, round: null,
   };
 }
 

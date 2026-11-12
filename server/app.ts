@@ -95,6 +95,7 @@ const actions: ActionHandlers<string> = {
   dismiss: (id, b) => { S.dismiss(id, b.key ?? null); },
   rename: async (id, b) => { await S.rename(id, b.title); },
   'answer-menu': async (id, b) => { await S.answerMenu(id, b); },
+  'answer-round': async (id, b) => { await S.answerRound(id, b); },
   'decline-menu': async (id, b) => { await S.declineMenu(id, b); },
   'accept-advice': async (id, b) => { await S.acceptAdvice(id, b.adviceAt); },
   'retry-advice': (id) => { retryAdvice(id); },
@@ -119,7 +120,7 @@ const actions: ActionHandlers<string> = {
   'close-aside': async (id, b) => { await S.closeAside(id, b.aside); },
 };
 
-const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'decline-menu', 'accept-advice', 'dismiss']);
+const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'answer-round', 'decline-menu', 'accept-advice', 'dismiss']);
 
 const read = <K extends keyof typeof bodies>(c: Context, route: K) => input(c, bodies[route]) as Promise<RouteInput<K>>;
 

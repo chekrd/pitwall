@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Session } from './db.ts';
 import { openDecision } from './decision.ts';
 import type { MenuAnswer } from './menu.ts';
+import { isAnswered, type RoundAnswers } from './rounds.ts';
 
 const MAX_EVENTS = 500;
 const MAX_DATA = 2000;
@@ -100,7 +101,7 @@ export function uxStore(db: DatabaseSync) {
   };
 }
 
-const kindOf = (key: string) => (key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : 'turn');
+const kindOf = (key: string) => (key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : key.startsWith('r:') ? 'round' : 'turn');
 
 const loadOf = (all: Session[]) => ({
   open: all.filter((s) => openDecision(s)).length,
@@ -124,6 +125,13 @@ export function boardAnswer(s: Session, action: string, body: Data, now = Date.n
       own: !!a.other?.trim(),
     }));
     return { ...base, how: 'menu', picks };
+  }
+  if (action === 'answer-round') {
+    const replies = Object.values((body.replies ?? {}) as RoundAnswers);
+    return {
+      ...base, how: 'round', asked: d.round?.questions.length ?? 0, answered: replies.filter(isAnswered).length,
+      recommended: replies.filter((a) => a.recommended).length, own: replies.filter((a) => a.text.trim()).length,
+    };
   }
   if (action !== 'answer') return null;
   const text = typeof body.text === 'string' ? body.text.trim() : '';
@@ -157,7 +165,7 @@ export function boardTracker(record: (name: string, data: Data) => void, now = (
         current.set(d.key, s);
         if (open.has(d.key)) continue;
         open.set(d.key, { task: s.id, askedAt: d.askedAt });
-        record('decision-open', { task: s.id, decision: d.key, kind: kindOf(d.key), optionCount: d.menu ? d.menu.questions.length : d.options.length, askedAt: d.askedAt, load });
+        record('decision-open', { task: s.id, decision: d.key, kind: kindOf(d.key), optionCount: d.menu ? d.menu.questions.length : d.round ? d.round.questions.length : d.options.length, askedAt: d.askedAt, load });
       }
       for (const [key, o] of open) {
         if (current.has(key)) continue;

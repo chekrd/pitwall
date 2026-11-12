@@ -9,7 +9,7 @@ import { repos, sessions, type Session, type SessionStatus } from './db.ts';
 import { handOver, leftBy, taskOf } from './handover.ts';
 import { fullDiff, pullRequestUrl, repoRoot } from './git.ts';
 import * as terminal from './terminal.ts';
-import { askInput } from './mcp.ts';
+import { askInput, roundOf } from './mcp.ts';
 import { trackDecisions } from './priority.ts';
 import { bootTime, interruption, pickedUp } from './restart.ts';
 import { summarizeStale } from './summary.ts';
@@ -141,6 +141,12 @@ async function readTranscript(s: Session, p?: LiveProcess) {
       : null;
     // The MCP server rejected this call, so Claude never saw it as a question either.
     if (ask && !input?.success) patch.dismissedAsk = ask.toolUseId;
+  }
+  const read = meta.round && meta.round.key !== s.dismissedRound ? meta.round : null;
+  if ((read?.key ?? null) !== (s.round?.key ?? null)) {
+    patch.round = read && roundOf(read);
+    // The MCP server rejected this call too, so Claude never took it for asked.
+    if (read && !patch.round) patch.dismissedRound = read.key;
   }
   sessions.update(s.id, patch);
   return Object.keys(patch).length > 0;

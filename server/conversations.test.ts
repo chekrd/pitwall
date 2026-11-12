@@ -469,3 +469,26 @@ test("what the hooks said is forgotten for a conversation no task has and no Cla
   forgetHooked((id) => id === 'kept', 11 * minute);
   assert.deepEqual(['gone', 'kept', 'recent'].map(startSource), [null, 'clear', 'resume']);
 });
+
+const QUESTIONS = { questions: [{ title: 'Audience', body: 'Who is it for?', options: [{ label: 'Only me' }, { label: 'Friends' }], recommendation: 'Only you.', recommended: 'Only me' }] };
+
+test('a round of questions posted with ask_questions stays open, through what Claude writes after it, until the developer prompts again', async () => {
+  const teammate = prompt('Another Claude session sent a message:\n<teammate-message teammate_id="scout">\nSources found.\n</teammate-message>', 3);
+  const posted = [prompt('Grill me'), assistant([text('Round 1 is posted.'), toolUse('r1', 'mcp__pitwall__ask_questions', QUESTIONS)], 1), toolResult('r1', 'Posted')];
+  const open = await meta([...posted, teammate, assistant([text('The sources are in.')], 4)]);
+  assert.deepEqual(open.round, { key: 'r1', at: Date.parse(at(1)), source: 'tool', input: QUESTIONS });
+  assert.equal(open.lastMessage, 'Round 1 is posted.\n\nThe sources are in.', 'the text before the call is for the developer');
+  assert.equal((await meta([...posted, prompt('My answers to your questions:\n\nQ1 — Audience: Only me')])).round, null);
+});
+
+test('a round written as text in the grill-me format is read from the message it stands in, and a later round replaces it', async () => {
+  const first = assistant([text('Round 1.\n\n❓ **Q1** - **Audience**: Who is it for?\n\n➡️ Only you.\n\n---\n\n❓ **Q2** - **Where**: Where do you use it?\n- (a) phone\n- (b) desk\n\n➡️ (a), phone first.')], 1);
+  const m = await meta([prompt('/grilling:grill-me an events app'), first, assistant([text('Round 1 still stands.')], 2)]);
+  assert.equal(m.round?.source, 'prose');
+  assert.equal(m.round?.key, first.uuid);
+  assert.deepEqual(m.round?.source === 'prose' && m.round.questions.map((q) => [q.id, q.title, q.options.map((o) => o.label), q.recommended]), [
+    ['Q1', 'Audience', [], null], ['Q2', 'Where', ['(a) phone', '(b) desk'], '(a) phone'],
+  ]);
+  const later = await meta([prompt('x'), first, prompt('Q1: only me'), assistant([toolUse('r2', 'mcp__pitwall__ask_questions', QUESTIONS)], 5)]);
+  assert.equal(later.round?.key, 'r2');
+});

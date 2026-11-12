@@ -3,6 +3,7 @@ import { conversationMeta, type Turn } from './conversations.ts';
 import { sessions, type Session } from './db.ts';
 import { headless } from './headless.ts';
 import { clip } from './priority.ts';
+import { roundText } from './rounds.ts';
 import { notify, repoView, taskRepoNames } from './workspace.ts';
 
 const MODEL = 'sonnet';
@@ -85,8 +86,11 @@ const due = (s: Session) =>
   !s.archived && !running.has(s.id) && Date.now() - (failed.get(s.id) ?? 0) >= RETRY_AFTER_MS &&
   (s.status !== 'working' || Date.now() - (s.summary?.at ?? 0) >= WHILE_WORKING_EVERY_MS);
 
+// What Claude formally asked and waits on: its ask_human question, or its round of questions.
+const askedOf = (s: Session) => s.question?.toolUseId ?? s.round?.key ?? null;
+
 const fresh = (s: Session, latest: string) =>
-  s.summary?.basis === latest && s.summary.question === (s.question?.toolUseId ?? null) && !!s.summary.learnings &&
+  s.summary?.basis === latest && s.summary.question === askedOf(s) && !!s.summary.learnings &&
   (!s.summary.decision || s.summary.decision.context !== undefined) && (s.summary.findings !== undefined || s.status === 'exited');
 
 // Only the turns since the previous summary, so a long session costs the same as a short one. Claude's
@@ -108,13 +112,17 @@ const list = (items: string[] | undefined) => items?.map((i) => `- ${i}`).join('
 function prompt(s: Session, turns: Turn[]) {
   const transcript = turns.map((t) => `[${t.role}]\n${t.text}`).join('\n\n');
   const q = s.question;
+  const round = q ? null : s.round;
   const question = q
     ? `Claude has formally asked the developer this, and waits for the answer:
 Title: ${q.title}
 Options: ${q.options.map((o) => o.label).join(' | ') || '(none, free text)'}
 Details:
 ${clip(q.details, 6000)}`
-    : 'Claude has no formal question open.';
+    : round
+      ? `Claude has formally put ${round.questions.length === 1 ? 'a question' : `${round.questions.length} questions`} to the developer, who answers each on its own, and waits for the answers:
+${clip(roundText(round), 6000)}`
+      : 'Claude has no formal question open.';
   return `You brief a developer on a coding task they run with a coding agent (Claude). They run several tasks in parallel and read your briefing instead of the conversation, so it must stand on its own.
 
 Repository: ${s.repoId === null ? `${taskRepoNames(s.worktree)} (a task across several repositories)` : repoView(s.repoId)?.name ?? s.worktree}
@@ -137,12 +145,14 @@ Reply with:
 - learnings: what is worth knowing, carried over from the previous list. Most tasks have nothing here, so return [] unless something clears this bar: a finding the developer would want to hear even if they never looked at this task again, and that they could not have guessed from the task itself. For example: the real cause differs from what was assumed; the plan, ticket or a requirement turned out wrong; a hidden risk, side effect or affected area outside the task; a non-obvious gotcha in the codebase, tooling or environment worth remembering; a result that should change priorities. Never: what was done, routine results, passing tests, plans or next steps, or context that only matters for the open decision (that belongs in its brief). Each point is one or two plain sentences saying what was found and why it matters. Drop a point that turned out wrong or does not clear this bar.
 - decision: ${q
     ? 'restate the open question. problem: one plain sentence naming what has to be decided. brief: 2 to 4 sentences of plain text with the context needed to decide and the trade-off, and which way Claude leans. context: "" (Claude\'s own details are shown next to it). options: [].'
-    : `if Claude's latest message ends by asking the developer to decide, approve or provide something, fill it in; otherwise leave every field empty. The developer decides from this card alone, without reading the conversation, so it must hold everything they need: never refer to a number, name or item from the conversation without saying what it is.
+    : round
+      ? 'restate what the open questions are about. problem: one plain sentence naming what they settle together. brief: 1 or 2 sentences of plain text on where the questions come from and what waits on the answers. context: "" (the questions are shown next to it). options: [].'
+      : `if Claude's latest message ends by asking the developer to decide, approve or provide something, fill it in; otherwise leave every field empty. The developer decides from this card alone, without reading the conversation, so it must hold everything they need: never refer to a number, name or item from the conversation without saying what it is.
   - problem: one plain sentence naming what has to be decided.
   - brief: 2 to 4 sentences of plain text: the situation, the trade-off, and which way Claude leans.
   - context: Markdown with the rest of what the decision needs. When the choice is among items, proposals, files or findings in Claude's message, list every one of them with its number if it has one, what it is and why it matters, one tight line each. "" when the brief already says it all.
   - options: each concrete choice Claude offered. label: short button text. description: one plain sentence saying exactly what happens if it is chosen, naming the items it covers rather than only their numbers. findings: the numbers, counting from 1 in the findings list you return below, of every finding this option acts on; [] when it acts on none. [] when Claude needs free text.`}
-- findings: when Claude's latest message lists separate findings the developer can act on one by one (the issues a code review found, bugs, risks or problems it reports), one entry per finding, in Claude's order; otherwise []. Never a plan's steps, changes Claude made, or options of a decision. Each finding gets acted on alone by an agent that has not seen the conversation, so each must stand on its own:
+- findings: when Claude's latest message lists separate findings the developer can act on one by one (the issues a code review found, bugs, risks or problems it reports), one entry per finding, in Claude's order; otherwise []. Never a plan's steps, changes Claude made, questions Claude asks, or options of a decision. Each finding gets acted on alone by an agent that has not seen the conversation, so each must stand on its own:
   - title: a short plain-text name for it, under 80 characters, without its number.
   - detail: Markdown with everything Claude said about it: what is wrong, why it matters, the scenario and the suggested fix, keeping names of files, functions and symbols in code spans.
   - location: the file and line it points at, as Claude gave it (e.g. "src/a.ts:26"), several separated by ", "; "" when it names none.`;
@@ -172,18 +182,19 @@ async function summarize(s: Session, turns: Turn[]) {
         return { label: String(o?.label ?? '').trim(), description: String(o?.description ?? '').trim() || undefined, ...(covers.length ? { covers } : {}) };
       })
       .filter((o: { label: string }) => o.label);
+    const formal = !!askedOf(s);
     const decision = problem || s.question
       ? {
         problem: problem || s.question!.title,
         brief: String(r.decision?.brief ?? '').trim(),
-        context: s.question ? '' : String(r.decision?.context ?? '').trim(),
-        options: s.question ? [] : options,
+        context: formal ? '' : String(r.decision?.context ?? '').trim(),
+        options: formal ? [] : options,
       }
       : null;
     // A summary rewritten from the same message keeps what the developer did with its findings.
     if (findings.length && s.findings?.basis !== basis) sessions.update(s.id, { findings: { basis, items: findings } });
     const strings = (v: unknown) => (Array.isArray(v) ? v.map(String).map((x) => x.trim()).filter(Boolean) : []);
-    sessions.update(s.id, { summary: { text, progress: strings(r.progress), learnings: strings(r.learnings), decision, findings: findings.length, question: s.question?.toolUseId ?? null, basis, at: Date.now() } });
+    sessions.update(s.id, { summary: { text, progress: strings(r.progress), learnings: strings(r.learnings), decision, findings: findings.length, question: askedOf(s), basis, at: Date.now() } });
     failed.delete(s.id);
     notify();
   } catch (err) {

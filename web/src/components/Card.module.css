@@ -44,6 +44,8 @@
 
   .reply { flex: none; margin: 18px 30px 0; }
 
+  .round { flex: none; display: flex; flex-direction: column; gap: 16px; padding: 12px 30px 0; }
+
   .top { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 32px; }
 
   .state {
@@ -276,6 +278,7 @@
     .notSent { margin: 10px 18px 0; }
     .know { margin: 0 18px 16px; }
     .reply { margin: 0 18px 16px; }
+    .round { padding: 14px 18px 16px; }
     .layout > aside { margin: 0 18px 16px; }
     .cols { grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 14px 18px 16px; }
     .foot {

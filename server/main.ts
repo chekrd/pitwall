@@ -36,6 +36,7 @@ settleExplanations();
 setInterval(() => void sync().then(() => {
   S.pauseStep();
   S.sendDueDrafts();
+  S.sweepAsides();
 }).catch((err) => console.warn('session sync failed', err)), 1500);
 setInterval(() => void refreshWorkspace({ scan: true }).catch((err) => console.warn('workspace refresh failed', err)), 30_000);
 

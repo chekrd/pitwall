@@ -6,11 +6,12 @@ import type { Advice, Session } from './db.ts';
 import { claim, decisionKey } from './decision.ts';
 import { Unsent, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
+import type { Round } from './rounds.ts';
 
 const session = (patch: Partial<Session>): Session => ({
   id: 's', conversation: 's', history: [], repoId: 1, worktree: '/w', cwd: '/w', pid: 1, tty: '/dev/ttys001', title: null, firstPrompt: null, status: 'idle',
   question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
-  dismissedAsk: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
+  dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
   archived: false, createdAt: 0, updatedAt: 0, ...patch,
 });
 
@@ -382,4 +383,40 @@ test('an answered question is put aside for good; a menu answered while it is op
   assert.deepEqual([both.row().question?.toolUseId, both.row().dismissedAsk, both.decided], ['q1', null, ['s', 's']]);
   both.store.update('s', { menu: null, status: 'idle' });
   assert.equal(decisionKey(both.row()), 'q:q1');
+});
+
+const round: Round = {
+  key: 'r1', source: 'tool', title: 'Round 1', intro: '', at: 3,
+  questions: [
+    { id: 'Q1', title: 'Audience', body: 'Who is it for?', options: [{ label: 'Only me' }, { label: 'Friends' }], recommendation: 'Only you.', recommended: 'Only me' },
+    { id: 'Q2', title: 'Sources', body: 'Which sources?', options: [], recommendation: '', recommended: null },
+  ],
+};
+
+test('the answers to a round go out as one message; the round is put aside for good, and a second send of it is refused', async () => {
+  const w = world(session({ round }));
+  await w.answers.answerRound('s', { round: 'r1', replies: { Q1: { option: 'Only me', recommended: false, text: 'for now' } } });
+  assert.deepEqual(w.typed, ['My answers to your questions:\n\nQ1 — Audience: Only me — for now\n\nQ2 — Sources: not answered yet; keep it open']);
+  assert.deepEqual([w.row().round, w.row().dismissedRound, w.row().answered?.key, w.row().answered?.text], [null, 'r1', 'r:r1', 'Answers to 1 of 2 questions']);
+  assert.deepEqual(w.decided, ['s']);
+  await assert.rejects(w.answers.answerRound('s', { round: 'r1', replies: { Q2: { option: null, recommended: false, text: 'x' } } }), { code: 'answered' });
+  assert.equal(w.typed.length, 1);
+});
+
+test('answers to a round that is no longer the open one, or that answer nothing, type nothing and leave it open', async () => {
+  const own = { option: null, recommended: false, text: 'x' };
+  const w = world(session({ round }));
+  await assert.rejects(w.answers.answerRound('s', { round: 'r0', replies: { Q1: own } }), { code: 'stale' });
+  await assert.rejects(w.answers.answerRound('s', { round: 'r1', replies: {} }), /answer at least one question/);
+  await assert.rejects(w.answers.answerRound('s', { round: 'r1', replies: { Q1: { ...own, option: 'Strangers' } } }), /unknown option for Q1/);
+  assert.deepEqual([w.typed, decisionKey(w.row())], [[], 'r:r1']);
+});
+
+test('a reply written instead of the answers closes the round, and Dismiss puts it aside without typing', async () => {
+  const w = world(session({ round }));
+  await w.answers.answer('s', { key: 'r:r1', text: 'Skip the questions and build it.' });
+  assert.deepEqual([w.typed, w.row().round, w.row().dismissedRound], [['Skip the questions and build it.'], null, 'r1']);
+  const d = world(session({ round }));
+  d.answers.dismiss('s', 'r:r1');
+  assert.deepEqual([d.typed, d.row().round, d.row().dismissedRound, decisionKey(d.row())], [[], null, 'r1', null]);
 });

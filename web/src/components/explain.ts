@@ -45,6 +45,18 @@ export const TIPS = {
   keepAnswer: { does: 'Copies the last answer into a draft under Later, to edit and send when you decide.', sees: 'nothing of it until you send the draft', session: `${TASK}, once you send it` },
   stop: { does: 'Stops the copy answering this question. You can ask again.' },
   close: { does: "Forgets this aside and deletes the copy's transcript, so no follow-up can continue it.", session: "the fork ends; the task's own session is not touched" },
+  discuss: {
+    does: 'Talks this one question through before you answer it: what it turns on and what each answer leads to. Write what you want to know, or nothing. Nothing is sent to the task, and your answers stay as they are.',
+    sees: 'a copy of the whole conversation as it stands now, with every question of the round',
+    session: FORK,
+  },
+  useAnswer: { does: 'Copies the last answer into your own answer to this question, to edit. Nothing is sent.' },
+  takeRest: { does: "Answers every question you have not answered yet with Claude's recommendation. Nothing is sent; you can still change each one." },
+  sendRound: {
+    does: 'Sends your answers as one message, with 5 s to undo. A question you left out is said to be still open, so Claude asks it again.',
+    sees: WHOLE,
+    session: TASK,
+  },
 } satisfies Record<string, Explanation>;
 
 const SUBTASK_SEES = "the task's first prompt, this finding and your note; nothing of the review's conversation";
