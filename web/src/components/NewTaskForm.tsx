@@ -190,6 +190,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
   const filter = useRef<HTMLInputElement>(null);
+  const options = useRef<HTMLDivElement>(null);
   const seed = useRef('');
   const { home } = useStore();
   const [query, setQuery] = useState('');
@@ -199,9 +200,11 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
   const at = Math.min(active, shown.length - 1);
   const activeId = shown[at] && `${id}-${at}`;
 
-  useEffect(() => {
-    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
-  }, [activeId]);
+  // Only the arrows scroll the list, to the option they move to; the pointer highlights an option where it is.
+  const move = (to: number) => {
+    setActive(to);
+    document.getElementById(`${id}-${to}`)?.scrollIntoView({ block: 'nearest' });
+  };
 
   const choose = (r: Target) => {
     pick(r);
@@ -228,7 +231,7 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
     if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (shown.length) setActive((at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length);
+      if (shown.length) move((at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length);
     } else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       if (shown[at]) choose(shown[at]);
@@ -261,12 +264,13 @@ function RepoPicker({ repos, repo, pick }: { repos: Target[]; repo: Target; pick
           onChange={(e) => {
             setQuery(e.currentTarget.value);
             setActive(0);
+            options.current?.scrollTo(0, 0);
           }}
           onKeyDown={onFilterKey}
           spellCheck={false}
           autoComplete="off"
         />
-        <div id={`${id}-options`} role="listbox" aria-label="Repositories" className={styles.repos}>
+        <div id={`${id}-options`} ref={options} role="listbox" aria-label="Repositories" className={styles.repos}>
           {shown.map((r, i) => (
             <button
               key={r.key}
@@ -309,13 +313,17 @@ function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | n
   useEffect(() => {
     const el = list.current;
     if (!el) return;
-    if (open && !el.matches(':popover-open')) el.showPopover();
+    if (open && !el.matches(':popover-open')) {
+      el.showPopover();
+      el.querySelector('[data-active]')?.scrollIntoView({ block: 'nearest' });
+    }
     if (!open && el.matches(':popover-open')) el.hidePopover();
   }, [open]);
 
-  useEffect(() => {
-    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
-  }, [activeId]);
+  const move = (to: number) => {
+    setActive(to);
+    document.getElementById(`${id}-${to}`)?.scrollIntoView({ block: 'nearest' });
+  };
 
   const show = () => {
     if (open) return;
@@ -333,7 +341,7 @@ function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | n
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!open) return show();
-      if (shown.length) setActive((at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length);
+      if (shown.length) move((at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length);
     } else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && open) {
       e.preventDefault();
       if (shown[at]) choose(shown[at]);
@@ -357,6 +365,7 @@ function BranchPicker({ branches, value, pick, where }: { branches: Branch[] | n
           onChange={(e) => {
             pick(e.currentTarget.value);
             setActive(0);
+            list.current?.scrollTo(0, 0);
             setOpen(true);
           }}
           onFocus={(e) => e.currentTarget.select()}

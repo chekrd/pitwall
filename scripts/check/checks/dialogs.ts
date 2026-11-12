@@ -184,6 +184,58 @@ export const dialogs: Check[] = [
     },
   },
   {
+    name: 'P4.repo-still New task\'s repository list opens at its top and stays where it is under the pointer: an option half in view is highlighted without the list scrolling to it; only the arrows scroll, to the option they move to',
+    async run({ holds, page, mock }) {
+      const picker = '#new-task [data-repo-picker]';
+      const list = `${picker} [role="listbox"]`;
+      const top = (list: string) => document.querySelector(list)!.scrollTop;
+      const active = (list: string) => document.querySelector(`${list} [data-active] strong`)?.textContent;
+      await page.goto(`${mock.url}/wall`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      // The mock's five repositories fit the list; this height leaves one half in view, as a longer list would.
+      await page.eval((list: string) => {
+        const el = document.querySelector<HTMLElement>(list)!;
+        el.style.maxHeight = '130px';
+      }, list);
+      await pickRepo(page, 'storefront');
+      await page.click('dialog#new-task button[aria-haspopup="listbox"]');
+      await page.until('the filter focused', (picker: string) => document.activeElement === document.querySelector(`${picker}:popover-open input`), picker);
+      await holds('the list to open at its top, storefront highlighted below', 300, async () =>
+        matches([await page.eval(top, list), await page.eval(active, list)], [0, 'storefront']));
+
+      const half = await page.eval((list: string) => {
+        const box = document.querySelector(list)!.getBoundingClientRect();
+        const options = [...document.querySelectorAll(`${list} [role="option"]`)];
+        const cut = options.find((o) => {
+          const r = o.getBoundingClientRect();
+          return r.top < box.bottom - 4 && r.bottom > box.bottom + 4;
+        });
+        if (!cut) return null;
+        const r = cut.getBoundingClientRect();
+        return { name: cut.querySelector('strong')!.textContent, index: options.indexOf(cut), below: options.length - options.indexOf(cut), x: r.x + r.width / 2, y: (r.top + box.bottom) / 2 };
+      }, list);
+      assert.ok(half, 'an option half in view');
+      await page.pointAt(half.x, half.y - 1);
+      await page.pointAt(half.x, half.y);
+      await page.until(`${half.name} highlighted under the pointer`, (list: string, name: string) =>
+        document.querySelector(`${list} [data-active] strong`)?.textContent === name, list, half.name);
+      await holds('the list to stay at its top under the pointer', 300, async () => (await page.eval(top, list)) === 0);
+
+      await page.key('ArrowUp');
+      await page.until('the option above, still at the top', (list: string, index: number) => document.querySelector(`${list} [data-active]`) === document.querySelectorAll(`${list} [role="option"]`)[index] &&
+        document.querySelector(list)!.scrollTop === 0, list, half.index - 1);
+      for (let i = 0; i < half.below; i++) await page.key('ArrowDown');
+      await page.until('the last option, scrolled into view by the arrows', (list: string) => {
+        const box = document.querySelector(list)!.getBoundingClientRect();
+        const last = document.querySelector(`${list} [role="option"]:last-of-type`)!;
+        return last.matches('[data-active]') && last.getBoundingClientRect().bottom <= box.bottom + 1 && document.querySelector(list)!.scrollTop > 0;
+      }, list);
+      await page.type('code/');
+      await page.until('the filtered list back at its top', (list: string) => document.querySelectorAll(`${list} [role="option"]`).length === 3 && document.querySelector(list)!.scrollTop === 0, list);
+    },
+  },
+  {
     name: 'P4.repo-keys New task by keyboard alone: Tab goes round inside the dialog, from its last field to the repository button and back with Shift+Tab; Tab in the repository filter takes the highlighted one and moves on to the mode, Shift+Tab closes the list on the button',
     async run({ page, mock }) {
       const picker = '#new-task [data-repo-picker]';
