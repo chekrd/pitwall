@@ -267,9 +267,8 @@
 
   .error { font-size: 14px; color: var(--danger); }
 
-  /* Start with its time and days, and Model with Effort, each wrap as one, so neither is split across lines. */
-  .when, .models { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .models { flex-wrap: nowrap; }
+  /* Start with its time and days wraps as one, so it is not split across lines. */
+  .when { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 
   .extra > .hint { flex: none; }
 

@@ -1,4 +1,4 @@
-import { useActionState, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent, type ToggleEvent } from 'react';
+import { useActionState, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ToggleEvent } from 'react';
 import { api } from '../api.ts';
 import { track } from '../ux.ts';
 import { keepUnderLayer } from '../layers.ts';
@@ -9,7 +9,8 @@ import type { Session } from '../types.ts';
 import { DAYS, describeWhen } from '../schedules.ts';
 import type { When } from '../types.ts';
 import { toast } from './Toasts.tsx';
-import { EFFORTS, effortName, modelName, tilde, untilde } from '../util.ts';
+import { effortName, tilde, untilde } from '../util.ts';
+import { ModelPicker, modelOptionsOf, useModelChoices } from './ModelPicker.tsx';
 import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
 import { Icon } from './Icon.tsx';
 import styles from './NewTaskForm.module.css';
@@ -32,12 +33,6 @@ interface Fields {
   at: string;
   time: string;
   days: number[];
-}
-
-// What each choice of model comes to, '' being what Claude Code picks by itself, and the effort it starts with.
-interface Models {
-  models: Record<string, string | null>;
-  efforts: Record<string, string | null>;
 }
 
 interface Branch {
@@ -101,8 +96,6 @@ let branches: { repoId: number; list: Branch[] } | null = null;
 let reading: number | null = null;
 // Each opening reads the branches again, so one fetched or pushed since shows.
 let opened = 0;
-let models: { key: string; read: Models } | null = null;
-let readingModels: string | null = null;
 const subscribers = new Set<() => void>();
 
 const notify = () => {
@@ -128,18 +121,6 @@ function readBranches(repoId: number) {
     if (reading !== repoId) return;
     reading = null;
     branches = { repoId, list: list.toSorted((a, b) => byName(a.name, b.name)) };
-    notify();
-  });
-}
-
-// `key` is the target's: what a model resolves to depends on the settings of the folder Claude starts in.
-function readModels(key: string, url: `/api/repos/${number}/models` | `/api/folders/models?path=${string}`) {
-  if (readingModels === key || models?.key === key) return;
-  readingModels = key;
-  void api('GET', url).catch(() => ({ models: {}, efforts: {} })).then((read) => {
-    if (readingModels !== key) return;
-    readingModels = null;
-    models = { key, read };
     notify();
   });
 }
@@ -408,7 +389,6 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const f = useSyncExternalStore(subscribe, () => fields);
   const read = useSyncExternalStore(subscribe, () => branches);
   const opening = useSyncExternalStore(subscribe, () => opened);
-  const known = useSyncExternalStore(subscribe, () => models);
   const attached = useDraft(ATTACHED);
   const promptField = useRef<HTMLTextAreaElement>(null);
   const { onPaste, onDragOver, onDrop } = takesFiles(ATTACHED, () => promptField.current?.focus());
@@ -426,7 +406,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   useEffect(() => {
     if (fields.existing && !fields.branch.trim()) edit({ branch: defaultBranch(repo) });
   }, [repo.id, opening]);
-  useEffect(() => readModels(target.key, pickedFolder ? `/api/folders/models?path=${encodeURIComponent(pickedFolder.path)}` : `/api/repos/${repo.id}/models`), [target.key]);
+  const choices = useModelChoices(target.key, pickedFolder ? `/api/folders/models?path=${encodeURIComponent(pickedFolder.path)}` : `/api/repos/${repo.id}/models`);
   const existing = f.existing && !pickedFolder;
 
   const name = f.name.trim();
@@ -504,51 +484,12 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
     }
   };
 
-  const choices = known?.key === target.key ? known.read : null;
-  const real = (value: string) => choices?.models[value] ?? null;
-  const modelOptions = [
-    ['', real('') ? modelName(real('')!) : 'Default'],
-    ...['fable', 'opus', 'sonnet', 'haiku']
-      .filter((a) => (real(a) ?? a) !== real('')?.replace('[1m]', ''))
-      .map((a) => [a, modelName(real(a) ?? a)]),
-  ];
-  const usual = choices?.efforts[f.model] ?? null;
-  const effortOptions = [['', usual ? effortName(usual) : 'Default'], ...Object.entries(EFFORTS).filter(([e]) => e !== usual)];
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
-  const chosen = [when && describeWhen(when), f.model && modelOptions.find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+  const chosen = [when && describeWhen(when), f.model && modelOptionsOf(choices).find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
-  // A click on a label only focuses its select; the options of an open list are inside the select and must pick as usual.
-  // The press of a click outside an open list closes it, so the click that follows must not open it again.
-  const listWasOpen = useRef(false);
-  const noteList = (e: PointerEvent<HTMLLabelElement>) => {
-    listWasOpen.current = !!e.currentTarget.querySelector('select:open');
-  };
-  const openList = (e: MouseEvent<HTMLLabelElement>) => {
-    if ((e.target as Element).closest('select')) return;
-    e.preventDefault();
-    if (!listWasOpen.current) e.currentTarget.querySelector('select')?.showPicker();
-  };
-
-  const modelControl = (
-    <div className={styles.models}>
-      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain="The model Claude starts with; the first is the one your Claude Code settings pick">
-        <span className={styles.caption}>Model</span>
-        <select value={f.model} onChange={(e) => edit({ model: e.currentTarget.value })}>
-          {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-        <Icon name="chevron-down" size={14} />
-      </label>
-      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain="How hard Claude thinks; the first is the one your Claude Code settings give that model">
-        <span className={styles.caption}>Effort</span>
-        <select value={f.effort} onChange={(e) => edit({ effort: e.currentTarget.value })}>
-          {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-        <Icon name="chevron-down" size={14} />
-      </label>
-    </div>
-  );
+  const modelControl = <ModelPicker choices={choices} model={f.model} effort={f.effort} onChange={edit} />;
 
   const startControl = (
     <div className={styles.when} data-when>

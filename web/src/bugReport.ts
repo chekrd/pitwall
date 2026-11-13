@@ -46,16 +46,18 @@ export function bugPrompt(comment: string, report: string) {
 
 // The report goes to the Pitwall repository as a new task. When the board cannot file it (the server is down, or
 // Pitwall is not on the board), the report is saved as a download instead, with the prompt it would have started.
-export async function fileBugReport({ comment, taken, sessions, repos, pitwall, link }: { comment: string; taken: Snapshot; sessions: Session[]; repos: RepoView[]; pitwall: string; link: string }) {
+export const pitwallRepo = (repos: RepoView[], pitwall: string) => repos.find((r) => r.path === pitwall || r.worktrees.some((w) => w.path === pitwall));
+
+export async function fileBugReport({ comment, model, effort, taken, sessions, repos, pitwall, link }: { comment: string; model: string; effort: string; taken: Snapshot; sessions: Session[]; repos: RepoView[]; pitwall: string; link: string }) {
   record('bug-report', { commentLength: comment.length });
   const stamp = stampOf(new Date());
   const name = `bug-${stamp}`;
   const report = buildReport({ comment, taken, sessions, link });
   try {
-    const repo = repos.find((r) => r.path === pitwall || r.worktrees.some((w) => w.path === pitwall));
+    const repo = pitwallRepo(repos, pitwall);
     if (!repo) throw new Error('the Pitwall repository is not on the board');
     const path = await upload(new File([JSON.stringify(report, null, 1)], `${name}.json`, { type: 'application/json' }));
-    const created = await api('POST', '/api/worktrees', { repoId: repo.id, name, prompt: bugPrompt(comment, path) });
+    const created = await api('POST', '/api/worktrees', { repoId: repo.id, name, prompt: bugPrompt(comment, path), model, effort });
     return { filed: true as const, session: created.sessionId };
   } catch (err) {
     const file = `${name}.json`;

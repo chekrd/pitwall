@@ -220,7 +220,7 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word',
+    name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word, on the model and effort picked in it, which the next report starts on',
     async run({ page, mock, shot }) {
       const open = () => !!document.querySelector('#bug-report:modal') && document.activeElement === document.querySelector('#bug-report textarea');
       await page.goto(`${mock.url}/wall`);
@@ -247,11 +247,22 @@ export const replies: Check[] = [
       await page.type(comment);
       await page.key('Enter', { shift: true });
       await page.type('and `Z` did nothing');
+      const picker = () => [...document.querySelectorAll('#bug-report label:has(select)')].map((l) => [l.querySelector('span')!.textContent, l.querySelector('select')!.selectedOptions[0].textContent]);
+      await page.until('Model and Effort name what Claude Code picks by itself', () => document.querySelector('#bug-report select option')?.textContent === 'Opus 5.5');
+      assert.deepEqual(await page.eval(picker), [['Model', 'Opus 5.5'], ['Effort', 'Medium']]);
+      await page.eval(() => {
+        for (const [label, value] of [['Model', 'fable'], ['Effort', 'max']]) {
+          const select = [...document.querySelectorAll('#bug-report label')].find((l) => l.querySelector('span')?.textContent === label)!.querySelector('select')!;
+          select.value = value;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
       await page.key('Enter');
       const [created] = await logged(mock, 'the task', (e) => e.method === 'POST' && e.path === '/api/worktrees');
       const [uploaded] = await logged(mock, 'the report', (e) => e.method === 'POST' && e.path === '/api/uploads');
       assert.equal(created.status, 200);
       assert.equal(created.body.repoId, 3);
+      assert.deepEqual([created.body.model, created.body.effort], ['fable', 'max']);
       assert.match(created.body.name, /^bug-\d{10}$/);
       assert.ok(created.body.prompt.includes(`\`\`\`\`\n${comment}\nand \`Z\` did nothing\n\`\`\`\``), created.body.prompt);
       assert.match(created.body.prompt, /\/bug-\d{10}\.json \(JSON\)/);
@@ -266,6 +277,9 @@ export const replies: Check[] = [
       assert.match(report.snapshot.text, /Fix invoice PDF rounding/);
       assert.match((await page.until('the toast', toastsOf, 'info'))[0].text, /^Filed the bug: a task reproduces it, fixes it and delivers the fix/);
       assert.equal(await page.eval(() => document.activeElement === document.querySelector('#task-sheet textarea')), true, 'focus went back to the box');
+      await page.click('[data-bug-report]');
+      await page.until('Bug report again', open);
+      assert.deepEqual(await page.eval(picker), [['Model', 'Fable 5.1'], ['Effort', 'Max']], 'the next report starts on the model and effort picked');
     },
   },
   {

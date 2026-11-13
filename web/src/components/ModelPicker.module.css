@@ -1,0 +1,34 @@
+@layer components {
+  .caption { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+  .select {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 4px 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 9px;
+    background: var(--raised);
+    &:has(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+    &:has(select) { cursor: pointer; }
+    select {
+      display: inline-flex;
+      align-items: center;
+      height: 30px;
+      padding: 0 2px;
+      border: 0;
+      outline: none;
+      background: none;
+      font-size: 13.5px;
+      font-weight: 650;
+      cursor: pointer;
+      &::picker-icon { display: none; }
+      option { padding: 6px 10px; border-radius: 8px; font-weight: 400; }
+      option:checked { font-weight: 650; }
+      option::checkmark { display: none; }
+    }
+    svg { color: var(--muted); pointer-events: none; }
+
+  .models { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
+}

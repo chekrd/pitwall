@@ -31,7 +31,7 @@
 
   .foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
 
-  .hint { flex: 1 1 260px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .hint { font-size: 13px; line-height: 1.5; color: var(--muted); }
 
   .file {
     margin-left: auto;
