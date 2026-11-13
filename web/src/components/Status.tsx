@@ -32,6 +32,7 @@ export const labelOf = (s: Session, shown: Shown) => (failedToStart(s) ? 'Did no
 export const ERROR_LINES = {
   refusal: "The model's safeguards flagged your last message; rephrase it",
   limit: 'The usage limit stopped the turn; try again once it resets',
+  model: 'This model is out of usage; continue on another model',
   login: 'The login expired; run /login in its terminal',
   other: 'The request failed; try again',
 } as const;

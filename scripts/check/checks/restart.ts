@@ -468,7 +468,7 @@ export const restart: Check[] = [
     },
   },
   {
-    name: 'E1 a turn that ended on an API error says Stopped on an error on its tile and page, with what to do for its kind and Try again unless it was refused, until Claude replies again',
+    name: 'E1 a turn that ended on an API error says Stopped on an error on its tile and page, with what to do for its kind and Try again unless it was refused, a model out of usage offers the others to continue on with /model and the retry, until Claude replies again',
     async run({ page, mock, shot }) {
       const all = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; question: unknown; menu: unknown; summary: { decision?: unknown } | null }[];
       const s = all.find((o) => o.status === 'idle' && !o.archived && !o.question && !o.menu && !o.summary?.decision)!;
@@ -509,10 +509,25 @@ export const restart: Check[] = [
       assert.match(limit.text, /usage limit[\s\S]*resets 2pm/);
       assert.equal(limit.buttons, 1);
 
+      await mock.post('/mock/patch', { id: s.id, patch: { model: 'claude-fable-5-2', turnError: { at: Date.now(), kind: 'model', text: "You're out of usage credits. Run /usage-credits to keep using Fable 5.2 or /model to switch models." } } });
+      const model = await page.until('the other models to continue on', () => {
+        const p = document.querySelector<HTMLElement>('#task-sheet [data-turn-error="model"]');
+        return p && { text: p.innerText, buttons: [...p.querySelectorAll('button')].map((b) => b.textContent) };
+      });
+      assert.match(model.text, /other models still run/);
+      assert.deepEqual(model.buttons, ['Continue on Opus', 'Continue on Sonnet', 'Continue on Haiku', 'Try again']);
+      await page.click('#task-sheet [data-turn-error="model"] button', 'Continue on Sonnet');
+      const answers = async () => (await mock.log()).filter((e) => e.action === 'answer' && e.sessionId === s.id && e.status !== null);
+      const switched = await until('the switch and the retry in the mock\'s log', async () => {
+        const found = await answers();
+        return found.length >= 2 ? found : null;
+      }, POSTED_MS);
+      assert.deepEqual(switched.map((e) => e.body.text), ['/model sonnet', 'Your last turn stopped on an API error before you replied. Answer my last message again.']);
+
       await mock.post('/mock/patch', { id: s.id, patch: { turnError: { at: Date.now(), kind: 'other', text: 'API Error: 500 Internal server error.' } } });
       await page.until('the failed request', () => document.querySelector('#task-sheet [data-turn-error="other"]')?.textContent?.includes('500 Internal server error') || null);
       await page.click('#task-sheet [data-turn-error="other"] button', 'Try again');
-      const [sent] = await logged(mock, 'the retry', (e) => e.action === 'answer' && e.sessionId === s.id, POSTED_MS);
+      const sent = await until('the retry in the mock\'s log', async () => (await answers())[2] ?? null, POSTED_MS);
       assert.match(String(sent.body.text), /stopped on an API error before you replied/);
 
       await mock.post('/mock/patch', { id: s.id, patch: { status: 'idle', turnError: null } });

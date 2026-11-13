@@ -94,10 +94,11 @@ export interface Unanswered {
 }
 
 // An API error that ended Claude's turn in place of a reply: the model's safeguards refused it, the usage limit was hit,
-// the login expired, or the request failed.
+// the model in use ran out of the limit or credits it alone has (another model still runs), the login expired, or the
+// request failed.
 export interface TurnError {
   at: number;
-  kind: 'refusal' | 'limit' | 'login' | 'other';
+  kind: 'refusal' | 'limit' | 'model' | 'login' | 'other';
   text: string;
 }
 
@@ -271,7 +272,10 @@ function turns(entries: Record<string, any>[]): Turn[] {
 const MAX_ERROR = 2000;
 
 const errorKind = (e: Record<string, any>): TurnError['kind'] =>
-  e.message?.stop_reason === 'refusal' ? 'refusal' : e.error === 'rate_limit' ? 'limit' : e.error === 'authentication_failed' ? 'login' : 'other';
+  e.message?.stop_reason === 'refusal' ? 'refusal'
+  : e.apiError === 'model_requires_usage_credits' ? 'model'
+  : e.error === 'rate_limit' ? 'limit'
+  : e.error === 'authentication_failed' ? 'login' : 'other';
 
 // Claude Code writes the error in place of the reply; the next prompt, or a reply after a retry, clears it.
 function turnError(entries: Record<string, any>[]): TurnError | null {

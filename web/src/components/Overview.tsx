@@ -209,11 +209,22 @@ function Interrupted({ session, name }: { session: Session; name: string }) {
 const ERROR_ADVICE = {
   refusal: <>The model's safeguards flagged your last message, so Claude wrote no reply. Sent again as it is, it will likely be flagged again: <strong>rephrase it</strong> below, or in its terminal press Esc twice to edit it or pick another model with /model.</>,
   limit: <>You hit your usage limit, so Claude wrote no reply. <strong>Try again</strong> once the limit resets.</>,
+  model: <>This model is out of usage, so Claude wrote no reply; other models still run. <strong>Continue on</strong> another model switches it with /model and has Claude answer your last message again.</>,
   login: <>Claude's login expired, so it wrote no reply. Run <strong>/login</strong> in its terminal, then <strong>Try again</strong>.</>,
   other: <>The request failed, so Claude wrote no reply. <strong>Try again</strong> has it answer your last message.</>,
 };
 
 const RETRY_TURN = 'Your last turn stopped on an API error before you replied. Answer my last message again.';
+
+const FAMILIES = ['opus', 'sonnet', 'haiku', 'fable'];
+
+const familyOf = (model: string | null) => (model && /^(?:claude-)?([a-z]+)/.exec(model)?.[1]) || null;
+
+function switchModel(session: Session, name: string, alias: string) {
+  const command = `/model ${alias}`;
+  void hold(session, { action: 'answer', body: { key: null, text: command }, label: command, command: true }, name, { box: false });
+  void hold(session, typed(null, RETRY_TURN, [], null), name, { box: false });
+}
 
 function clearingNote(session: Session, folderTask: unknown, repo: RepoView | undefined) {
   const own = repo?.worktrees.find((w) => w.path === session.worktree);
@@ -261,8 +272,13 @@ function TurnError({ session, name }: { session: Session; name: string }) {
         {said && <blockquote data-explain={text}>{said}</blockquote>}
       </div>
       {(kind === 'refusal' || kind === 'login') && <FocusButton session={session} />}
+      {kind === 'model' && FAMILIES.filter((f) => f !== familyOf(session.model)).map((alias, i) => (
+        <button key={alias} type="button" data-variant={i === 0 ? 'primary' : undefined} {...explain(SENDS.prompt(`/model ${alias}”, then “${RETRY_TURN}`))} onClick={() => switchModel(session, name, alias)}>
+          Continue on {modelName(alias)}
+        </button>
+      ))}
       {kind !== 'refusal' && (
-        <button type="button" data-variant="primary" {...explain(SENDS.prompt(RETRY_TURN))} onClick={() => void hold(session, typed(null, RETRY_TURN, [], null), name)}>Try again</button>
+        <button type="button" data-variant={kind === 'model' ? undefined : 'primary'} {...explain(SENDS.prompt(RETRY_TURN))} onClick={() => void hold(session, typed(null, RETRY_TURN, [], null), name)}>Try again</button>
       )}
     </section>
   );
