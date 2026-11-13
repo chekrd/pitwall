@@ -13,14 +13,14 @@ const session = (patch: Partial<Session> = {}): Session => ({
 
 function setup(o: { fail?: string; row?: Partial<Session> } = {}) {
   let row = session(o.row);
-  const runs: { prompt: string; fork: string | null }[] = [];
+  const runs: { prompt: string; fork: string | null; model?: string | undefined; effort?: string | undefined }[] = [];
   const discarded: string[] = [];
   const pending: (() => void)[] = [];
   const a = asking({
     get: () => row,
     save: (_, asides: Aside[]) => void (row = { ...row, asides }),
-    run: (_s, prompt, fork, signal) => new Promise((done, fail) => {
-      runs.push({ prompt, fork });
+    run: (_s, aside, prompt, fork, signal) => new Promise((done, fail) => {
+      runs.push({ prompt, fork, model: aside.model, effort: aside.effort });
       signal.addEventListener('abort', () => fail(new Error('stopped')));
       pending.push(() => (o.fail ? fail(new Error(o.fail)) : done({ fork: fork ?? `f${runs.length}`, answer: `answer ${runs.length}` })));
     }),
@@ -152,4 +152,19 @@ test("a follow-up to a discussion whose first answer failed puts the question ag
   t.patch({ round: null });
   t.a.sweep([t.row()]);
   assert.deepEqual(t.row().asides, []);
+});
+
+test("a new aside's fork runs on the model and effort picked for it, and its follow-ups too; an unknown one is refused", async () => {
+  const t = setup();
+  const id = t.a.ask('s', { text: 'Why?', model: 'sonnet', effort: 'high' });
+  await t.settle();
+  t.a.ask('s', { text: 'And then?', aside: id, model: 'haiku' });
+  await t.settle();
+  assert.deepEqual(t.runs.map((r) => [r.model, r.effort]), [['sonnet', 'high'], ['sonnet', 'high']]);
+  const plain = t.a.ask('s', { text: 'Plain?' });
+  await t.settle();
+  assert.deepEqual([t.runs.at(-1)!.model, t.runs.at(-1)!.effort], [undefined, undefined]);
+  assert.equal(t.row().asides.find((a) => a.id === plain)!.model, undefined);
+  assert.throws(() => t.a.ask('s', { text: 'Bad?', model: 'opus; rm -rf' }), /unknown model/);
+  assert.throws(() => t.a.ask('s', { text: 'Bad?', effort: 'huge' }), /unknown effort/);
 });

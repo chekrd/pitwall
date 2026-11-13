@@ -6,20 +6,9 @@ import { useStore } from '../store.ts';
 import styles from './BugReportDialog.module.css';
 import { toast } from './Toasts.tsx';
 import { explain, SENDS } from './explain.ts';
-import { ModelPicker, useModelChoices } from './ModelPicker.tsx';
+import { ModelPicker, useModelChoices, useStoredPick } from './ModelPicker.tsx';
 
 const DIALOG = 'bug-report';
-const CHOICES = 'pitwall:bug-report-choices';
-
-// The model and effort outlast the tab, as the next bug is usually fixed the way the last one was.
-function storedChoices() {
-  try {
-    const { model = '', effort = '' } = JSON.parse(localStorage.getItem(CHOICES) ?? '{}') as { model?: string; effort?: string };
-    return { model, effort };
-  } catch {
-    return { model: '', effort: '' };
-  }
-}
 let taken: ReturnType<typeof snapshot> | null = null;
 
 // The page is taken as it is before the dialog moves focus, so the report shows what was wrong, not the report.
@@ -36,18 +25,9 @@ export function BugReportDialog() {
   const { sessions, repos, pitwall, link } = useStore();
   const dialog = useRef<HTMLDialogElement>(null);
   const [comment, setComment] = useState('');
-  const [{ model, effort }, setChoices] = useState(storedChoices);
+  const [{ model, effort }, choose] = useStoredPick('pitwall:bug-report-choices');
   const repo = pitwallRepo(repos, pitwall);
   const choices = useModelChoices(repo ? `repo:${repo.id}` : 'repo:none', repo ? `/api/repos/${repo.id}/models` : null);
-  const choose = (patch: { model?: string; effort?: string }) => {
-    const next = { model, effort, ...patch };
-    setChoices(next);
-    try {
-      localStorage.setItem(CHOICES, JSON.stringify(next));
-    } catch {
-      // A page without storage keeps them in memory only.
-    }
-  };
 
   const file = () => {
     const at = taken ?? snapshot();

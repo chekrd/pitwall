@@ -2,9 +2,11 @@ import { useState, type KeyboardEvent } from 'react';
 import { sessionAction } from '../api.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
+import { useStore } from '../store.ts';
 import type { ActionBody, Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES, ownAsides } from './Asides.tsx';
 import { explain, TIPS, type Explanation } from './explain.ts';
+import { ModelPicker, useModelChoices, useStoredPick } from './ModelPicker.tsx';
 import styles from './Later.module.css';
 import { toast } from './Toasts.tsx';
 
@@ -15,6 +17,11 @@ const park = <A extends 'park' | 'edit-park' | 'unpark'>(s: Session, action: A, 
     reportError(err);
     return false;
   });
+
+const ASIDE_TIPS = {
+  model: 'The model the copy that answers a question asked on the side runs on; the first is the task\'s own. Drafts go to the task\'s Claude on its model',
+  effort: 'How hard the copy that answers a question asked on the side thinks; the first is the task\'s own',
+};
 
 const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text);
 
@@ -94,6 +101,13 @@ function Item({ session, draft, name, canSend, sendTip }: { session: Session; dr
 export function Later({ session, name }: { session: Session; name: string }) {
   const [text, setText] = useState('');
   const [auto, setAuto] = useState(false);
+  const [pick, choose] = useStoredPick('pitwall:aside-choices');
+  // A task across a folder runs in <folder>/worktrees/<task>, and the folder's settings are the ones it reads.
+  const folder = useStore().folders.find((f) => session.repoId === null && session.worktree.startsWith(`${f.path}/worktrees/`));
+  const choices = useModelChoices(
+    session.repoId !== null ? `repo:${session.repoId}` : `folder:${folder?.path}`,
+    session.repoId !== null ? `/api/repos/${session.repoId}/models` : folder ? `/api/folders/models?path=${encodeURIComponent(folder.path)}` : null,
+  );
   const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.drafts ?? [] : [])));
   const drafts = session.parked.filter((d) => !sending.has(d.id));
   // The server refuses typing while the terminal shows a question, which the message would answer.
@@ -108,7 +122,7 @@ export function Later({ session, name }: { session: Session; name: string }) {
     });
   };
   const add = () => take((t) => park(session, 'park', { text: t, auto }));
-  const ask = () => take((t) => askAside(session, t));
+  const ask = () => take((t) => askAside(session, t, null, pick));
   const asking = canAsk(session);
   const armed = drafts.filter((d) => d.auto).length;
   const asides = ownAsides(session).length;
@@ -142,20 +156,24 @@ export function Later({ session, name }: { session: Session; name: string }) {
             onKeyDown={onEnter(add)}
           />
           <div className={styles.actions}>
-            <label className={styles.auto} {...explain(TIPS.auto)}>
-              <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.currentTarget.checked)} />
-              Send when it's my turn
-            </label>
-            <span className={styles.spacer} />
-            <button
-              type="button"
-              {...explain(asking ? TIPS.ask : { does: asides >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' })}
-              disabled={!text.trim() || !asking}
-              onClick={ask}
-            >
-              Ask on the side
-            </button>
-            <button type="button" {...explain(TIPS.keep)} disabled={!text.trim()} onClick={add}>Keep for later <kbd>↵</kbd></button>
+            <div className={styles.group}>
+              <ModelPicker choices={choices} current={session} model={pick.model} effort={pick.effort} onChange={choose} tips={ASIDE_TIPS} />
+              <button
+                type="button"
+                {...explain(asking ? TIPS.ask : { does: asides >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' })}
+                disabled={!text.trim() || !asking}
+                onClick={ask}
+              >
+                Ask on the side
+              </button>
+            </div>
+            <div className={styles.group} data-keep>
+              <label className={styles.auto} {...explain(TIPS.auto)}>
+                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.currentTarget.checked)} />
+                Send when it's my turn
+              </label>
+              <button type="button" {...explain(TIPS.keep)} disabled={!text.trim()} onClick={add}>Keep for later <kbd>↵</kbd></button>
+            </div>
           </div>
         </div>
       )}

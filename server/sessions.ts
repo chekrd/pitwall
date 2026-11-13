@@ -12,11 +12,11 @@ import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { checkDecision } from './decision.ts';
 import { handOver, taskOf } from './handover.ts';
-import { sessions, type Aside, type Parent, type Session, type Starting } from './db.ts';
+import { sessions, type Parent, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
 import { isClean, listBranches, switchBranch } from './git.ts';
 import { CLAUDE, headless } from './headless.ts';
-import { asking } from './asides.ts';
+import { asking, type AskBody } from './asides.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
 import { clip, scheduleRerank, trackDecisions } from './priority.ts';
@@ -272,16 +272,18 @@ export function unpark(id: string, draft: unknown) {
 const ASIDE_TOOLS = 'Read,Grep,Glob,WebFetch,WebSearch';
 const ASIDE_MS = 15 * 60_000;
 
-// A fork reads the task's files and the web on the task's own model, without its MCP servers or hooks, which could
-// act on the task. A first question that fails after forking leaves no fork behind.
+// A fork reads the task's files and the web on the model and effort picked for it, else the task's own, without its MCP
+// servers or hooks, which could act on the task. A first question that fails after forking leaves no fork behind.
 const asides = asking({
   get: sessions.get,
   save: (id, list) => {
     sessions.update(id, { asides: list });
     notify();
   },
-  run: async (s, prompt, fork, signal, activity) => {
+  run: async (s, aside, prompt, fork, signal, activity) => {
     let started: string | null = null;
+    const model = aside.model ?? s.model;
+    const effort = aside.effort ?? s.effort;
     try {
       const out = await headless(prompt, {
         cwd: s.cwd,
@@ -296,7 +298,7 @@ const asides = asking({
         },
         args: [
           ...folderArgs(s.cwd), '--resume', fork ?? s.conversation, ...(fork ? [] : ['--fork-session']),
-          ...(s.model ? ['--model', s.model] : []), ...(s.effort ? ['--effort', s.effort] : []),
+          ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []),
           '--settings', JSON.stringify({ disableAllHooks: true }), '--strict-mcp-config', '--tools', ASIDE_TOOLS, '--allowedTools', ASIDE_TOOLS,
         ],
       });
@@ -317,7 +319,7 @@ async function discardFork(s: Session, fork: string) {
   await rm(file.replace(/\.jsonl$/, ''), { recursive: true, force: true });
 }
 
-export const askAside = (id: string, body: { text: string; aside?: string | null | undefined; about?: Aside['about'] | undefined }) => asides.ask(id, body);
+export const askAside = (id: string, body: AskBody) => asides.ask(id, body);
 export const stopAside = (id: string, aside: unknown) => asides.stop(id, aside);
 export const closeAside = (id: string, aside: unknown) => asides.close(id, aside);
 export const settleAsides = () => asides.settle(sessions.all());

@@ -49,6 +49,10 @@
 
   .spacer { flex: 1; }
 
+  /* The model picked is for Ask on the side and the tick for Keep for later, so each wraps with its button. */
+  .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .group[data-keep] { margin-left: auto; }
+
   .auto {
     display: inline-flex;
     align-items: center;

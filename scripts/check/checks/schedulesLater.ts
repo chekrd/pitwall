@@ -267,6 +267,43 @@ export const schedulesLater: Check[] = [
     },
   },
   {
+    name: "A1.model Ask on the side runs its copy on the model and effort picked beside it, the first being the task's own; the aside says what it ran on, the next question starts on the same pick, and Keep for later sends nothing of it",
+    async run({ page, mock, shot }) {
+      type Snap = { sessions: { id: string; parked: { text: string }[]; asides: { model?: string; effort?: string }[] }[] };
+      const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', answered: null, model: 'claude-sonnet-5-5', effort: 'high', activity: { step: 'Bash: pnpm test', since: Date.now() } } });
+      await openSheetOf(page, mock, 's-invoice');
+      const picker = () => [...document.querySelectorAll('#task-sheet [data-later] label:has(select)')].map((l) => [l.querySelector('span')!.textContent, l.querySelector('select')!.selectedOptions[0].textContent]);
+      await page.until("the task's own model first", () => document.querySelector('#task-sheet [data-later] select option')?.textContent === 'Sonnet 5.5');
+      assert.deepEqual(await page.eval(picker), [['Model', 'Sonnet 5.5'], ['Effort', 'High']]);
+      await page.eval(() => {
+        for (const [label, value] of [['Model', 'opus'], ['Effort', 'max']]) {
+          const select = [...document.querySelectorAll('#task-sheet [data-later] label')].find((l) => l.querySelector('span')?.textContent === label)!.querySelector('select')!;
+          select.value = value;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.type('Why integer cents?');
+      await page.click('#task-sheet [data-later] button', 'Ask on the side');
+      await page.until('the answer', () => !!document.querySelector('#task-sheet [data-aside][data-state="done"] strong'));
+      const asked = (await mock.log()).findLast((e) => e.action === 'ask-aside' && e.sessionId === 's-invoice')!;
+      assert.deepEqual(asked.body, { text: 'Why integer cents?', aside: null, model: 'opus', effort: 'max' });
+      assert.deepEqual((await invoice()).asides.map((a) => [a.model, a.effort]), [['opus', 'max']]);
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-aside-model]')?.textContent), 'Opus · Max effort');
+      assert.deepEqual(await page.eval(picker), [['Model', 'Opus 5.5'], ['Effort', 'Max']], 'the next question starts on the same pick');
+      await page.eval(() => document.querySelector('#task-sheet [data-later] textarea[aria-label="A message for later"]')!.scrollIntoView({ block: 'center' }));
+      await shot('aside-model');
+
+      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.type('Mention the rounding test');
+      await page.key('Enter');
+      await page.until('the draft', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
+      const parked = (await mock.log()).findLast((e) => e.action === 'park' && e.sessionId === 's-invoice')!;
+      assert.deepEqual(parked.body, { text: 'Mention the rounding test', auto: false });
+    },
+  },
+  {
     name: "L5 while Claude shows a question in its terminal, Send now on a draft under Later is off and says to answer or decline the question first, as the send would be refused; once it is answered Send now is on again, and a question that opens during the hold calls the send off with a toast that says the draft is still under Later, where it is",
     async run({ page, mock }) {
       type Snap = { sessions: { id: string; parked: { id: string }[]; answered: { text: string } | null }[] };

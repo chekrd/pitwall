@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type PointerEvent } from 'react';
 import { api } from '../api.ts';
 import { EFFORTS, effortName, modelName } from '../util.ts';
 import { Icon } from './Icon.tsx';
@@ -33,14 +33,50 @@ function readModels(key: string, url: ModelsUrl) {
   });
 }
 
-export function modelOptionsOf(choices: Models | null) {
+// `current` is what the first option stands for when it is not what Claude Code picks by itself, such as a running task's.
+export interface Current {
+  model: string | null;
+  effort: string | null;
+}
+
+export function modelOptionsOf(choices: Models | null, current?: Current) {
   const real = (value: string) => choices?.models[value] ?? null;
+  const first = current ? current.model : real('');
   return [
-    ['', real('') ? modelName(real('')!) : 'Default'],
+    ['', first ? modelName(first) : 'Default'],
     ...['fable', 'opus', 'sonnet', 'haiku']
-      .filter((a) => (real(a) ?? a) !== real('')?.replace('[1m]', ''))
+      .filter((a) => (real(a) ?? a) !== first?.replace('[1m]', ''))
       .map((a) => [a, modelName(real(a) ?? a)]),
   ];
+}
+
+export interface Picked {
+  model: string;
+  effort: string;
+}
+
+function storedPick(key: string): Picked {
+  try {
+    const { model = '', effort = '' } = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Picked>;
+    return { model, effort };
+  } catch {
+    return { model: '', effort: '' };
+  }
+}
+
+// A model and effort kept in this browser under `key`, as the next pick is usually the last one.
+export function useStoredPick(key: string) {
+  const [picked, setPicked] = useState(() => storedPick(key));
+  const pick = (patch: Partial<Picked>) => {
+    const next = { ...picked, ...patch };
+    setPicked(next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      // A page without storage keeps them in memory only.
+    }
+  };
+  return [picked, pick] as const;
 }
 
 export function useModelChoices(key: string, url: ModelsUrl | null) {
@@ -51,14 +87,21 @@ export function useModelChoices(key: string, url: ModelsUrl | null) {
   return known.get(key) ?? null;
 }
 
-export function ModelPicker({ choices, model, effort, onChange }: {
+const TIPS = {
+  model: "The model Claude starts with; the first is the one your Claude Code settings pick",
+  effort: "How hard Claude thinks; the first is the one your Claude Code settings give that model",
+};
+
+export function ModelPicker({ choices, current, model, effort, onChange, tips = TIPS }: {
   choices: Models | null;
+  current?: Current;
   model: string;
   effort: string;
   onChange: (patch: { model?: string; effort?: string }) => void;
+  tips?: { model: string; effort: string };
 }) {
-  const modelOptions = modelOptionsOf(choices);
-  const usual = choices?.efforts[model] ?? null;
+  const modelOptions = modelOptionsOf(choices, current);
+  const usual = current && !model ? current.effort : choices?.efforts[model] ?? null;
   const effortOptions = [['', usual ? effortName(usual) : 'Default'], ...Object.entries(EFFORTS).filter(([e]) => e !== usual)];
 
   // A click on a label only focuses its select; the options of an open list are inside the select and must pick as usual.
@@ -75,14 +118,14 @@ export function ModelPicker({ choices, model, effort, onChange }: {
 
   return (
     <div className={styles.models}>
-      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain="The model Claude starts with; the first is the one your Claude Code settings pick">
+      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain={tips.model}>
         <span className={styles.caption}>Model</span>
         <select value={model} onChange={(e) => onChange({ model: e.currentTarget.value })}>
           {modelOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <Icon name="chevron-down" size={14} />
       </label>
-      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain="How hard Claude thinks; the first is the one your Claude Code settings give that model">
+      <label className={styles.select} onPointerDownCapture={noteList} onClick={openList} data-explain={tips.effort}>
         <span className={styles.caption}>Effort</span>
         <select value={effort} onChange={(e) => onChange({ effort: e.currentTarget.value })}>
           {effortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}

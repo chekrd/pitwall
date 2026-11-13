@@ -4,6 +4,7 @@ import type { ActionBody, Aside, Session } from '../types.ts';
 import styles from './Asides.module.css';
 import { explain, TIPS } from './explain.ts';
 import { Markdown } from './Markdown.tsx';
+import { effortName, modelName } from '../util.ts';
 import { toast } from './Toasts.tsx';
 
 const act = <A extends 'ask-aside' | 'stop-aside' | 'close-aside' | 'park'>(s: Session, action: A, body: ActionBody<A>) =>
@@ -19,7 +20,8 @@ export const ownAsides = (s: Session) => s.asides.filter((a) => !a.about);
 
 export const canAsk = (s: Session) => !s.archived && s.lastTurn !== null && ownAsides(s).length < MAX_ASIDES;
 
-export const askAside = (s: Session, text: string, aside: string | null = null) => act(s, 'ask-aside', { text, aside });
+export const askAside = (s: Session, text: string, aside: string | null = null, pick: { model?: string; effort?: string } = {}) =>
+  act(s, 'ask-aside', { text, aside, ...(pick.model && { model: pick.model }), ...(pick.effort && { effort: pick.effort }) });
 
 export const discuss = (s: Session, about: NonNullable<Aside['about']>, text: string) => act(s, 'ask-aside', { text, about });
 
@@ -72,6 +74,11 @@ export function AsideCard({ session, aside, as: Tag = 'li', children }: { sessio
       <div className={styles.actions}>
         {last.answer && aside.state !== 'thinking' && children}
         <span className={styles.spacer} />
+        {(aside.model || aside.effort) && (
+          <span className={styles.on} data-aside-model data-explain="Picked for this question in place of the task's own; its follow-ups run on it too">
+            {[aside.model && modelName(aside.model), aside.effort && `${effortName(aside.effort)} effort`].filter(Boolean).join(' · ')}
+          </span>
+        )}
         <button type="button" {...explain(TIPS.close)} onClick={() => void act(session, 'close-aside', { aside: aside.id })}>Close</button>
       </div>
     </Tag>

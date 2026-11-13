@@ -63,7 +63,10 @@ export const actionBodies = {
   park: z.strictObject({ text: z.string(), auto: z.boolean().optional() }),
   'edit-park': z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }),
   unpark: z.strictObject({ draft: z.string() }),
-  'ask-aside': z.strictObject({ text: z.string(), aside: z.string().nullable().optional(), about: z.strictObject({ round: z.string(), question: z.string() }).optional() }),
+  'ask-aside': z.strictObject({
+    text: z.string(), aside: z.string().nullable().optional(), about: z.strictObject({ round: z.string(), question: z.string() }).optional(),
+    model: z.string().optional(), effort: z.string().optional(),
+  }),
   'stop-aside': z.strictObject({ aside: z.string() }),
   'close-aside': z.strictObject({ aside: z.string() }),
 };

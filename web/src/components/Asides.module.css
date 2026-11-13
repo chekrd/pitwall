@@ -65,4 +65,5 @@
 
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .spacer { flex: 1; }
+  .on { font-size: 12.5px; color: var(--muted); }
 }

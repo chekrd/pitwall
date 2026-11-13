@@ -4,6 +4,8 @@ import type { RoundQuestion } from './rounds.ts';
 
 export const MAX_ASIDES = 10;
 const MAX_QUESTION = 10_000;
+const MODEL = /^[a-z][a-z0-9.-]*(\[1m\])?$/;
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 const FIRST = `This is a side question from the developer, asked in a copy of this conversation. The original session carries on with the task and never sees this copy. Answer the question only: do not continue the task and do not change anything. You can read files and the web, but not edit files or run commands.
 
@@ -21,6 +23,14 @@ export const DISCUSS = 'Talk me through this question.';
 
 export const aboutPrompt = (q: RoundQuestion, text: string) => `${ABOUT}${q.id} — ${q.title}\n\nThe developer: ${text}`;
 
+export interface AskBody {
+  text: string;
+  aside?: string | null | undefined;
+  about?: Aside['about'] | undefined;
+  model?: string | undefined;
+  effort?: string | undefined;
+}
+
 export interface AsideRun {
   fork: string;
   answer: string;
@@ -30,7 +40,7 @@ export interface AsideDeps {
   get: (id: string) => Session | undefined;
   save: (id: string, asides: Aside[]) => void;
   // Forks the task's conversation when `fork` is null, else resumes that fork.
-  run: (s: Session, prompt: string, fork: string | null, signal: AbortSignal, activity: (text: string) => void) => Promise<AsideRun>;
+  run: (s: Session, aside: Aside, prompt: string, fork: string | null, signal: AbortSignal, activity: (text: string) => void) => Promise<AsideRun>;
   discard: (s: Session, fork: string) => Promise<void>;
   now?: () => number;
 }
@@ -65,7 +75,8 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     };
     const s = must(id);
     try {
-      const out = await run(s, prompt, fork, controller.signal, activity);
+      const aside = s.asides.find((a) => a.id === asideId)!;
+      const out = await run(s, aside, prompt, fork, controller.signal, activity);
       const kept = change(id, asideId, (a) => ({ ...lastTurn(a, { answer: out.answer }), fork: out.fork, state: 'done', activity: null, at: now() }));
       if (!kept) await discard(s, out.fork).catch(() => {});
     } catch (err) {
@@ -78,8 +89,8 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
 
   // A question without `aside` opens a new aside; with it, a follow-up in that aside's fork. `about` names a question
   // of the task's open round, which has one aside: the first ask opens it, with nothing said if the developer wrote
-  // nothing, and every later one follows up in it. Returns the aside's id.
-  function ask(id: string, body: { text: string; aside?: string | null | undefined; about?: Aside['about'] | undefined }) {
+  // nothing, and every later one follows up in it. `model` and `effort` are for a new aside's fork. Returns the aside's id.
+  function ask(id: string, body: AskBody) {
     const s = must(id);
     const named = body.aside === undefined || body.aside === null ? undefined : s.asides.find((a) => a.id === body.aside);
     const about = body.about ?? named?.about;
@@ -89,12 +100,14 @@ export function asking({ get, save, run, discard, now = Date.now }: AsideDeps) {
     const question = body.text.trim() || (asked && !aside ? DISCUSS : '');
     if (!question) throw new Error('the question is empty');
     if (question.length > MAX_QUESTION) throw new Error('the question is too long');
+    if (body.model && !MODEL.test(body.model)) throw new Error(`unknown model ${body.model}`);
+    if (body.effort && !EFFORTS.includes(body.effort)) throw new Error(`unknown effort ${body.effort}`);
     const turn: AsideTurn = { question, answer: null, error: null, at: now() };
     const first = asked ? aboutPrompt(asked, question) : asidePrompt(question, true);
     if (!aside) {
       if (body.aside !== undefined && body.aside !== null) throw new Error('this aside is closed');
       if (!about && s.asides.filter((a) => !a.about).length >= MAX_ASIDES) throw new Error(`close an aside first; a task keeps at most ${MAX_ASIDES}`);
-      const opened: Aside = { id: randomUUID(), ...(about && { about }), fork: null, state: 'thinking', activity: null, turns: [turn], at: now() };
+      const opened: Aside = { id: randomUUID(), ...(about && { about }), ...(body.model && { model: body.model }), ...(body.effort && { effort: body.effort }), fork: null, state: 'thinking', activity: null, turns: [turn], at: now() };
       save(id, [...s.asides, opened]);
       void answer(id, opened.id, first, null).catch((err) => console.warn('aside failed', opened.id, err));
       return opened.id;

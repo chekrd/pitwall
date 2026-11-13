@@ -156,6 +156,9 @@ export interface Aside {
   id: string;
   // The question of a round this aside talks through; it goes when that round does.
   about?: { round: string; question: string };
+  // Picked when it was asked, for its fork in place of the task's own; a follow-up runs on them too.
+  model?: string;
+  effort?: string;
   fork: string | null;
   state: 'thinking' | 'done' | 'failed';
   activity: string | null;

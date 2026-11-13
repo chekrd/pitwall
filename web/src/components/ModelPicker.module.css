@@ -29,6 +29,7 @@
       option::checkmark { display: none; }
     }
     svg { color: var(--muted); pointer-events: none; }
+  }
 
   .models { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
 }

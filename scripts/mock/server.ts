@@ -345,7 +345,7 @@ let forks = 0;
 const asides = asking({
   get: find,
   save: (id, list) => update(id, { asides: list }),
-  run: (_s, prompt, fork, signal, activity) => new Promise((done, fail) => {
+  run: (_s, _aside, prompt, fork, signal, activity) => new Promise((done, fail) => {
     const question = prompt.split('\n').at(-1)!.replace(/^(Question|The developer): /, '');
     const scenario = state;
     later(300, () => activity('Read: src/invoice/LineItem.ts'));
