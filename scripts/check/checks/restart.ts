@@ -438,7 +438,7 @@ export const restart: Check[] = [
     },
   },
   {
-    name: 'R8 archiving a task the restart ended takes it off the banner for good: unarchived later, it is an ended task like any other and the banner does not come back for it',
+    name: 'R8 archiving a task the restart ended takes it off the banner for good: unarchived later, its conversation resumes and the banner does not come back for it',
     scenario: 'restarted',
     async run({ page, mock }) {
       const all = (await mock.get('/api/state')).sessions as { id: string; parent: unknown; archived: boolean; interrupted: unknown }[];
@@ -463,7 +463,7 @@ export const restart: Check[] = [
         const t = document.querySelector(`[data-tile][data-session="${id}"]:not([data-archived])`);
         return t?.getAttribute('aria-label') ?? null;
       }, last.id);
-      assert.match(label, /, Ended$/);
+      assert.match(label, /, Your turn$/);
       assert.equal(await page.eval(() => !!document.querySelector('[data-restart]')), false, 'no restart banner for it');
     },
   },

@@ -4,14 +4,14 @@ import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { adviseOpen } from './advisor.ts';
 import { storeArtifacts } from './artifacts.ts';
-import { conversationMeta, forgetHooked, liveConversations, startSource, type Activity, type LiveProcess } from './conversations.ts';
+import { conversationMeta, forgetHooked, liveConversations, signal, startSource, type Activity, type LiveProcess } from './conversations.ts';
 import { repos, sessions, type Session, type SessionStatus } from './db.ts';
 import { handOver, leftBy, taskOf } from './handover.ts';
 import { fullDiff, pullRequestUrl, repoRoot } from './git.ts';
 import * as terminal from './terminal.ts';
 import { askInput, roundOf } from './mcp.ts';
 import { trackDecisions } from './priority.ts';
-import { bootTime, interruption, pickedUp } from './restart.ts';
+import { archivePatch, bootTime, interruption, pickedUp } from './restart.ts';
 import { summarizeStale } from './summary.ts';
 import { describeLinks } from './linkAbout.ts';
 import { mergeLinks } from './links.ts';
@@ -66,6 +66,28 @@ const startedByClear = async (cwd: string, conversation: string) => {
 };
 
 const ignored = new Map<string, number>();
+
+// An archived task keeps no Claude running: archived at work, its Claude quits once the turn ends.
+const retiring = new Map<string, number>();
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Settles once the Claude that archiving told to quit has gone, true when there was one.
+export async function retired(id: string, timeoutMs = 10_000) {
+  const pid = retiring.get(id);
+  if (pid === undefined) return false;
+  for (const end = Date.now() + timeoutMs; alive(pid) && Date.now() < end;) await new Promise((r) => setTimeout(r, 100));
+  retiring.delete(id);
+  return true;
+}
+
 const deleting = new Set<string>();
 
 // A sync that started before a worktree was deleted must not bring its sessions back.
@@ -200,9 +222,10 @@ async function syncLive() {
       update(s.id, handOver(s, conversation, Date.now()));
       changed = true;
     }
-    // A conversation that left its task by /resume and came back brings the task back.
-    if (s.status === 'exited' && s.archived && !s.resolution) {
-      update(s.id, { archived: false });
+    // A conversation that left its task by /resume and came back brings the task back, a settled subtask reopened.
+    if (s.status === 'exited' && s.archived) {
+      update(s.id, archivePatch(s, false));
+      s = sessions.get(s.id)!;
       changed = true;
     }
     const status = statusOf(p, s.activity?.background?.length);
@@ -214,6 +237,11 @@ async function syncLive() {
       update(s.id, { pid: p.pid, tty: s.pid === p.pid ? s.tty : await ttyOf(p.pid), status, waitingFor: p.waitingFor, ...(status === 'idle' && { menu: null }) });
       if (s.status === 'working' && status !== 'working') void refreshDiffstat(s.id);
       changed = true;
+    }
+    // Read again, as the rows may predate an Unarchive that came in while this pass waited.
+    if (status !== 'working' && retiring.get(s.id) !== p.pid && sessions.get(s.id)?.archived) {
+      retiring.set(s.id, p.pid);
+      signal(p.pid);
     }
     const now = Date.now();
     if (s.aliveAt === null || now - s.aliveAt >= ALIVE_MS) sessions.alive(s.id, now);
@@ -241,6 +269,7 @@ async function syncLive() {
     if (s.pid === null && Date.now() - s.updatedAt < STARTUP_GRACE_MS) continue;
     // The process lives on in another conversation after a /resume; this task is done. A /clear took the task with it.
     // After a restart the pid may be another process's.
+    retiring.delete(s.id);
     const interrupted = s.interrupted?.cause === 'pause' ? null : interruption(s, await bootTime());
     const replaced = !interrupted && s.pid !== null && livePids.has(s.pid);
     sessions.update(s.id, { status: 'exited', pid: null, waitingFor: null, menu: null, ...(interrupted && { interrupted }), ...(replaced && { archived: true }) });

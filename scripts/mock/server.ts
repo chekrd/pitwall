@@ -257,6 +257,12 @@ function resume(s: Session) {
   update(s.id, { status: 'idle', pid: 42_000 + state.sessions.indexOf(s), tty: '/dev/ttys042', archived: false });
 }
 
+// As the server's archive: an archived task's Claude quits unless at work, and one brought back resumes.
+function settleArchive(s: Session) {
+  if (!s.archived) resume(s);
+  else if (s.status === 'idle' || s.status === 'waiting') later(300, () => s.archived && update(s.id, { status: 'exited', pid: null, waitingFor: null, menu: null }));
+}
+
 const flagged = (id: string, flag: Flag) => state.flags[id]?.includes(flag) === true;
 
 const repoOf = (id: number | null) => state.repos.find((r) => r.id === id);
@@ -491,11 +497,15 @@ const actions: ActionHandlers<Session> = {
     push();
   },
   priority: (s, body) => update(s.id, { priority: body.priority ?? null }),
-  archive: (s, body) => update(s.id, archivePatch(s, body.archived ?? true)),
+  archive: (s, body) => {
+    update(s.id, archivePatch(s, body.archived ?? true));
+    settleArchive(s);
+  },
   resolve: (s, body) => {
     if (!s.parent) throw new Error('only a subtask is marked solved or dropped');
     const state = body.state ?? null;
     update(s.id, { ...archivePatch(s, !!state), resolution: state ? { state, at: Date.now() } : null });
+    settleArchive(s);
   },
   'delete-worktree': (s, body) => {
     if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");

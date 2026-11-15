@@ -33,7 +33,7 @@ export function archive(session: Session, name: string) {
   sessionAction(id, 'archive', { archived: true }).then(() => {
     const undo = () => {
       const back = () => {
-        patchSession(id, { archived: false });
+        patchSession(id, { archived: false, ...resumed(session) });
         return true;
       };
       if (front) queue.restore(id, back);
@@ -44,17 +44,23 @@ export function archive(session: Session, name: string) {
   }, failed(id));
 }
 
+// Archiving quit an idle or waiting Claude, which an Undo resumes waiting for you, so the card comes back as it left
+// rather than as ended until the snapshot that has it running again.
+const resumed = (session: Session): Partial<Session> => (session.status === 'idle' || session.status === 'waiting' ? { status: 'idle' } : {});
+
+const quitNote = (session: Session) =>
+  session.status === 'exited' ? '' : session.status === 'working' ? 'its Claude quits once this turn ends, ' : 'its Claude quits, ';
+
 // Solved and Dropped archive the subtask, and its page gives way to its task's; Undo opens it again.
 export function settleNote(session: Session, state: Resolution['state']) {
   const what = state === 'solved' ? 'Done with it' : 'Not going on with it';
-  const left = session.status === 'exited' ? 'its changes stay in the worktree' : 'its Claude keeps running and its changes stay in the worktree; Quit Claude stops it';
-  return `${what}: it stops counting as open on its task; ${left}`;
+  return `${what}: it stops counting as open on its task; ${quitNote(session)}its changes stay in the worktree, and Reopen resumes the conversation`;
 }
 
 export function resolveSubtask(session: Session, state: Resolution['state'] | null, name: string) {
   const { id } = session;
   if (state && session.parent) moveSheetOf(id, session.parent.id);
-  const change = () => patchSession(id, { resolution: state ? { state, at: Date.now() } : null, archived: !!state });
+  const change = () => patchSession(id, { resolution: state ? { state, at: Date.now() } : null, archived: !!state, ...(!state && resumed(session)) });
   if (state) queue.leave(id, change);
   else change();
   sessionAction(id, 'resolve', { state }).then(() => {
@@ -104,16 +110,16 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         )}
         <PriorityPicker session={session} />
         {clearing ? null : session.parent ? (session.resolution ? (
-          <Item label="Reopen" note={`Marked ${session.resolution.state}; back into its task's open count`} onClick={pick(() => resolveSubtask(session, null, name))} />
+          <Item label="Reopen" note={`Marked ${session.resolution.state}; back into its task's open count, its conversation resumed`} onClick={pick(() => resolveSubtask(session, null, name))} />
         ) : (
           <>
             <Item label="Mark solved" note={settleNote(session, 'solved')} onClick={pick(() => resolveSubtask(session, 'solved', name))} />
             <Item label="Drop" note={settleNote(session, 'dropped')} onClick={pick(() => resolveSubtask(session, 'dropped', name))} />
           </>
         )) : session.archived ? (
-          <Item label="Unarchive" note="Back into the queue and the strip" onClick={act('archive', { archived: false })} />
+          <Item label="Unarchive" note={exited ? 'Resume the conversation, back into the queue and the strip' : 'Back into the queue and the strip'} onClick={act('archive', { archived: false })} />
         ) : (
-          <Item label="Archive" note="Hide it; ranking, advice and summaries stop" onClick={pick(() => archive(session, name))} />
+          <Item label="Archive" note={`Done with it: ${quitNote(session)}ranking, advice and summaries stop; Unarchive resumes the conversation`} onClick={pick(() => archive(session, name))} />
         )}
         {exited && !clearing && (
           <Item

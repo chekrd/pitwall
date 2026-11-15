@@ -22,7 +22,7 @@ import * as terminal from './terminal.ts';
 import { clip, scheduleRerank, trackDecisions } from './priority.ts';
 import { notify, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
-import { sync } from './ingest.ts';
+import { retired, sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
 import { archivePatch } from './restart.ts';
 import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
@@ -127,7 +127,7 @@ export async function continueConversation(opts: { repoId: number | null; worktr
   const meta = await conversationMeta(existing?.cwd ?? cwd, id);
   // Claude writes no transcript until the first prompt, so a task never prompted starts again as it first did.
   if (!meta && existing && existing.conversation === id && !existing.firstPrompt && !existing.lastPrompt && !existing.history.length) {
-    sessions.update(existing.id, { pid: null, tty: null, status: 'idle', archived: false });
+    sessions.update(existing.id, { pid: null, tty: null, status: 'idle', ...archivePatch(existing, false) });
     await launch(existing.id, existing.cwd, ['--session-id', id]);
     notify();
     return existing.id;
@@ -136,7 +136,7 @@ export async function continueConversation(opts: { repoId: number | null; worktr
   if (existing) {
     sessions.update(existing.id, {
       ...(existing.conversation !== id && handOver(existing, id, Date.now())),
-      pid: null, tty: null, status: opts.prompt ? 'working' : 'idle', archived: false,
+      pid: null, tty: null, status: opts.prompt ? 'working' : 'idle', ...archivePatch(existing, false),
     });
     await launch(existing.id, existing.cwd, ['--resume', id, ...(opts.prompt ? ['--', opts.prompt] : [])]);
     notify();
@@ -449,10 +449,20 @@ export async function forget(id: string) {
   notify();
 }
 
-export function archive(id: string, archived: boolean) {
+// Archived, a task's Claude quits, once its turn ends when it is at work; brought back, the conversation resumes.
+export async function archive(id: string, archived: boolean) {
   const s = must(id);
   sessions.update(id, archivePatch(s, archived));
   notify();
+  await (archived ? sync() : bringBack(id));
+}
+
+async function bringBack(id: string) {
+  if (await retired(id)) sessions.update(id, { status: 'exited', pid: null, waitingFor: null, menu: null });
+  const s = sessions.get(id);
+  if (s?.status !== 'exited' || s.archived || !existsSync(s.cwd)) return;
+  await continueConversation({ repoId: s.repoId, worktree: s.worktree, cwd: s.cwd, continueId: s.conversation })
+    .catch((err) => console.warn('resume on unarchive failed', id, err));
 }
 
 export function setPriority(id: string, priority: unknown) {
@@ -464,12 +474,13 @@ export function setPriority(id: string, priority: unknown) {
 }
 
 // Solved and Dropped also archive the subtask, so it leaves the queue; Reopen brings it back.
-export function resolve(id: string, state: unknown) {
+export async function resolve(id: string, state: unknown) {
   const s = must(id);
   if (!s.parent) throw new Error('only a subtask is marked solved or dropped');
   if (state !== null && state !== 'solved' && state !== 'dropped') throw new Error('unknown resolution');
   sessions.update(id, { ...archivePatch(s, !!state), resolution: state ? { state, at: Date.now() } : null });
   notify();
+  await (state ? sync() : bringBack(id));
 }
 
 // Works where the branch is already checked out, else switches the main checkout to it.
