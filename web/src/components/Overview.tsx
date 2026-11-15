@@ -16,8 +16,7 @@ import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { Findings, Subtasks, SubtaskOf } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
-import { ownAsides } from './Asides.tsx';
-import { Later } from './Later.tsx';
+import { Later, LaterActions } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
 import { MenuBody } from './MenuBody.tsx';
@@ -333,7 +332,11 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const scroller = useRef<HTMLDivElement>(null);
   const deciding = !archived && attention === 'decide';
   const queued = deciding && !busy.has(session.id);
-  const reply = session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} previous={waits} />;
+  const reply = session.lastMessage && (
+    <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} previous={waits}>
+      <YourMessage session={session} send={sending} inside />
+    </LatestReply>
+  );
   return (
     <div className={styles.scroll} ref={scroller}>
       {queued && <DecisionBelow scroller={scroller} what={session.menu ? 'Question' : kindOf(session) === 'round' ? 'Questions' : 'Decision'} />}
@@ -379,7 +382,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </section>
           )}
           {!deciding && reply}
-          <YourMessage session={session} send={sending} />
+          {!session.lastMessage && <YourMessage session={session} send={sending} />}
           {ended && !writing && (
             <section className={styles.blocked} data-ended data-ux-section="ended">
               <p>Claude has ended for this task. <strong>Continue</strong> resumes the conversation in a hidden terminal, and then you can message it here.</p>
@@ -406,10 +409,11 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
                 focus={0}
                 onSend={(r) => void hold(session, r, name)}
                 onEscape={closeSheet}
+                actions={<LaterActions session={session} />}
               />
             </div>
           )}
-          {!starting && (!archived || session.parked.length > 0 || ownAsides(session).length > 0) && <Later session={session} name={name} />}
+          {!starting && <Later session={session} name={name} />}
           {learnings.length > 0 && (
             <section className={styles.know} data-ux-section="worth knowing">
               <h3 className={styles.label} data-explain="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>

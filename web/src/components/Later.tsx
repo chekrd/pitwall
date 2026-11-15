@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from 'react';
+import { editDraft, useDraft } from './Composer.tsx';
 import { sessionAction } from '../api.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
@@ -96,11 +97,10 @@ function Item({ session, draft, name, canSend, sendTip }: { session: Session; dr
   );
 }
 
-// One box for what comes to mind while Claude works: kept as a draft for the task's Claude, sent when you decide or when
-// its turn ends, or asked on the side of a copy of the conversation that the task's Claude never sees.
-export function Later({ session, name }: { session: Session; name: string }) {
-  const [text, setText] = useState('');
-  const [auto, setAuto] = useState(false);
+// The buttons under Message Claude that keep its text instead of sending it: as a draft for the task's Claude, sent when
+// you decide or when its turn ends, or asked on the side of a copy of the conversation that the task's Claude never sees.
+export function LaterActions({ session }: { session: Session }) {
+  const draft = useDraft(session.id);
   const [pick, choose] = useStoredPick('pitwall:aside-choices');
   // A task across a folder runs in <folder>/worktrees/<task>, and the folder's settings are the ones it reads.
   const folder = useStore().folders.find((f) => session.repoId === null && session.worktree.startsWith(`${f.path}/worktrees/`));
@@ -108,24 +108,54 @@ export function Later({ session, name }: { session: Session; name: string }) {
     session.repoId !== null ? `repo:${session.repoId}` : `folder:${folder?.path}`,
     session.repoId !== null ? `/api/repos/${session.repoId}/models` : folder ? `/api/folders/models?path=${encodeURIComponent(folder.path)}` : null,
   );
+  // A draft and a question are text only; files attached go with a message sent now.
+  const ready = !!draft.text.trim() && !draft.files.length;
+  const take = (send: (t: string) => Promise<boolean>) => {
+    const t = draft.text.trim();
+    if (!t) return;
+    editDraft(session.id, (d) => ({ ...d, text: '' }));
+    void send(t).then((ok) => {
+      if (!ok) editDraft(session.id, (d) => (d.text ? d : { ...d, text: t }));
+    });
+  };
+  const asking = canAsk(session);
+  const asides = ownAsides(session).length;
+  const files = draft.files.length > 0 ? { does: 'Takes text only; send the files with Enter, or remove them first.' } : null;
+  return (
+    <div className={styles.actions} data-later-actions>
+      <div className={styles.group}>
+        <ModelPicker choices={choices} current={session} model={pick.model} effort={pick.effort} onChange={choose} tips={ASIDE_TIPS} />
+        <button
+          type="button"
+          {...explain(files ?? (asking ? TIPS.ask : { does: asides >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' }))}
+          disabled={!ready || !asking}
+          onClick={() => take((t) => askAside(session, t, null, pick))}
+        >
+          Ask on the side
+        </button>
+      </div>
+      <div className={styles.group} data-keep>
+        <button type="button" {...explain(files ?? TIPS.autoKeep)} disabled={!ready} onClick={() => take((t) => park(session, 'park', { text: t, auto: true }))}>
+          Send when it's my turn
+        </button>
+        <button type="button" {...explain(files ?? TIPS.keep)} disabled={!ready} onClick={() => take((t) => park(session, 'park', { text: t, auto: false }))}>
+          Keep for later
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// What was kept for later: the drafts, each sent when you decide or when the turn ends, and the questions asked on the side.
+export function Later({ session, name }: { session: Session; name: string }) {
   const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.drafts ?? [] : [])));
   const drafts = session.parked.filter((d) => !sending.has(d.id));
   // The server refuses typing while the terminal shows a question, which the message would answer.
   const asked = session.status === 'waiting' || !!session.menu;
   const canSend = session.status !== 'exited' && !session.archived && !asked;
-  const take = (send: (t: string) => Promise<boolean>) => {
-    const t = text.trim();
-    if (!t) return;
-    setText('');
-    void send(t).then((ok) => {
-      if (!ok) setText((now) => now || t);
-    });
-  };
-  const add = () => take((t) => park(session, 'park', { text: t, auto }));
-  const ask = () => take((t) => askAside(session, t, null, pick));
-  const asking = canAsk(session);
   const armed = drafts.filter((d) => d.auto).length;
   const asides = ownAsides(session).length;
+  if (!drafts.length && !asides) return null;
   return (
     <section className={styles.later} data-later data-ux-section="later">
       <h3 className={styles.label} data-explain="Drafts reach Claude only when you send them; a question asked on the side is answered by a copy of the conversation and never reaches it">
@@ -145,38 +175,6 @@ export function Later({ session, name }: { session: Session; name: string }) {
         </div>
       )}
       <AsideList session={session} />
-      {!session.archived && (
-        <div className={styles.add}>
-          <textarea
-            className={styles.field}
-            aria-label="A message for later"
-            placeholder="A message for later, or a question to ask on the side; Claude's work goes on…"
-            value={text}
-            onChange={(e) => setText(e.currentTarget.value)}
-            onKeyDown={onEnter(add)}
-          />
-          <div className={styles.actions}>
-            <div className={styles.group}>
-              <ModelPicker choices={choices} current={session} model={pick.model} effort={pick.effort} onChange={choose} tips={ASIDE_TIPS} />
-              <button
-                type="button"
-                {...explain(asking ? TIPS.ask : { does: asides >= MAX_ASIDES ? `Close an aside first; a task keeps at most ${MAX_ASIDES}.` : 'Claude has no conversation to copy yet.' })}
-                disabled={!text.trim() || !asking}
-                onClick={ask}
-              >
-                Ask on the side
-              </button>
-            </div>
-            <div className={styles.group} data-keep>
-              <label className={styles.auto} {...explain(TIPS.auto)}>
-                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.currentTarget.checked)} />
-                Send when it's my turn
-              </label>
-              <button type="button" {...explain(TIPS.keep)} disabled={!text.trim()} onClick={add}>Keep for later <kbd>↵</kbd></button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

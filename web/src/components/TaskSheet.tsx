@@ -116,12 +116,12 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
                 type="button"
                 role="tab"
                 aria-selected={t.key === current}
-                data-changes={stat.files || undefined}
+                data-changes={stat.files > 0 || undefined}
                 data-ux="Diff"
-                data-explain={stat.files ? `${stat.files} ${stat.files === 1 ? 'file' : 'files'} changed: +${stat.insertions} −${stat.deletions}` : 'No changes against the base branch'}
+                data-explain={stat.files ? 'Has changes against the base branch' : 'No changes against the base branch'}
                 onClick={() => showTab(t.key)}
               >
-                {t.label} {stat.files > 0 ? <span className={styles.changes}>{stat.files}</span> : <span className={styles.clean}>none</span>} <kbd>{t.kbd}</kbd>
+                {t.label}{stat.files > 0 && <span className={styles.changes} aria-label="has changes" />} <kbd>{t.kbd}</kbd>
               </button>
             ) : (
               <button key={t.key} type="button" role="tab" aria-selected={t.key === current} onClick={() => showTab(t.key)}>

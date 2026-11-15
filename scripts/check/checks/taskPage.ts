@@ -359,7 +359,7 @@ export const taskPage: Check[] = [
       assert.equal(quoted, 'Go on, and tell me when it is done.');
       await page.click('#task-sheet [role="tab"]', 'Conversation');
       const shown = await page.until('the conversation with its picture', log);
-      assert.deepEqual([shown.tab, shown.tabs], ['Conversation 2', ['Overview 1', 'Conversation 2', 'Diff 7 3', 'Artifacts (1) 4']]);
+      assert.deepEqual([shown.tab, shown.tabs], ['Conversation 2', ['Overview 1', 'Conversation 2', 'Diff 3', 'Artifacts (1) 4']]);
       assert.equal(shown.cleared, 2);
       assert.deepEqual(shown.items.map((i) => [i.prompt, i.images, i.artifacts]), [
         ['Start with the failing test.', 0, []],

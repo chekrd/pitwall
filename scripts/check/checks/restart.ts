@@ -117,21 +117,21 @@ export const restart: Check[] = [
     },
   },
   {
-    name: 'diff-tab the Diff tab counts the changed files, with their lines on hover, and says none when the worktree has no changes',
+    name: 'diff-tab the Diff tab marks a worktree with changes by a dot, with no count, and shows no mark when it has none',
     scenario: 'findings',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/s/s-review`);
       const tab = () => {
         const t = [...document.querySelectorAll<HTMLElement>('#task-sheet [role="tab"]')].find((b) => b.innerText.startsWith('Diff'));
-        return t ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.dataset.explain, changes: t.dataset.changes ?? null } : null;
+        return t ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.dataset.explain, changes: t.dataset.changes ?? null, mark: !!t.querySelector('[aria-label="has changes"]') } : null;
       };
-      assert.deepEqual(await page.until('the Diff tab', tab), { text: 'Diff 5 3', title: '5 files changed: +96 −12', changes: '5' });
+      assert.deepEqual(await page.until('the Diff tab', tab), { text: 'Diff 3', title: 'Has changes against the base branch', changes: 'true', mark: true });
       await shot('diff-tab-changes');
       await mock.post('/mock/patch', { id: 's-review', patch: { diffstat: { files: 0, insertions: 0, deletions: 0 } } });
       assert.deepEqual(await page.until('the tab with no changes', () => {
         const t = [...document.querySelectorAll<HTMLElement>('#task-sheet [role="tab"]')].find((b) => b.innerText.startsWith('Diff'));
-        return t?.innerText.includes('none') ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.dataset.explain, changes: t.dataset.changes ?? null } : null;
-      }), { text: 'Diff none 3', title: 'No changes against the base branch', changes: null });
+        return t && !t.querySelector('[aria-label="has changes"]') ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.dataset.explain, changes: t.dataset.changes ?? null } : null;
+      }), { text: 'Diff 3', title: 'No changes against the base branch', changes: null });
     },
   },
   {

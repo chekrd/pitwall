@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { api, upload } from '../api.ts';
 import { typed } from '../deck.ts';
 import type { Request } from '../outbox.ts';
@@ -285,12 +285,14 @@ export interface ComposerProps {
   onEscape: () => void;
   // In a bar beside buttons: no heading or hint line, and a field one line high to start.
   inline?: boolean;
+  // Other things to do with the text than Enter's, under the field.
+  actions?: ReactNode;
 }
 
 // The reply box: Enter sends, Shift+Enter adds a line, "/" lists the session's commands, and files come by paste,
 // drop or the paperclip. Esc closes the command list first; in an empty box it takes back a send that waits to go out,
 // else it leaves the box.
-export function Composer({ session, decision, label, placeholder, focus, note, onSend, onEscape, inline }: ComposerProps) {
+export function Composer({ session, decision, label, placeholder, focus, note, onSend, onEscape, inline, actions }: ComposerProps) {
   const id = session.id;
   const draft = useDraft(id);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -415,6 +417,7 @@ export function Composer({ session, decision, label, placeholder, focus, note, o
         />
         <AttachButton id={id} refocus={() => field.current?.focus()} />
       </div>
+      {actions}
       {!inline && <p className={styles.hint}>Enter sends · Shift+Enter adds a line · / and ! go to the terminal as typed</p>}
     </section>
   );

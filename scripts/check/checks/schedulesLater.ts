@@ -168,7 +168,7 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: "L1 Later keeps messages written while Claude works on the task's Overview: Enter keeps one, the card counts them; the ones set to Send when it's my turn go out as one message at the end of the turn, a reply after that end holds them back, and Send now sends one held with its Undo",
+    name: "L1 Later keeps messages written while Claude works on the task's Overview: Keep for later under Message Claude keeps one, the card counts them; the ones set to Send when it's my turn go out as one message at the end of the turn, a reply after that end holds them back, and Send now sends one held with its Undo",
     clock: 'fast',
     async run({ holds, page, mock, shot }) {
       type Snap = { sessions: { id: string; parked: { id: string; text: string; auto: boolean }[]; answered: { text: string } | null }[] };
@@ -186,24 +186,23 @@ export const schedulesLater: Check[] = [
 
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', lastTurn: 't-later', summary: null, answered: null, activity: { step: 'Bash: pnpm test', since: Date.now() } } });
       await openSheetOf(page, mock, 's-invoice');
-      await page.until('the Later box', () => !!document.querySelector('#task-sheet [data-later] textarea'));
+      await page.until('the Later buttons', () => !!document.querySelector('#task-sheet [data-later-actions]'));
       const drafts = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] li[data-parked]')]
         .map((li) => [li.querySelector('p')?.textContent, li.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked]);
 
-      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.click('#task-sheet textarea[aria-label="Message Claude"]');
       await page.type('Also check the credit notes.');
-      await page.key('Enter');
+      await page.click('#task-sheet [data-later-actions] button', 'Keep for later');
       await page.until('the first draft', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 1);
+      assert.equal(await page.eval(() => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea[aria-label="Message Claude"]')!.value), '', 'the box emptied');
       await page.click('#task-sheet [data-later] li[data-parked] input[type="checkbox"]');
-      await page.click('#task-sheet [data-later] > div label input[type="checkbox"]');
-      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.click('#task-sheet textarea[aria-label="Message Claude"]');
       await page.type('Then rename the helper.');
-      await page.key('Enter');
+      await page.click('#task-sheet [data-later-actions] button', "Send when it's my turn");
       await page.until('the second draft', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 2);
-      await page.click('#task-sheet [data-later] > div label input[type="checkbox"]');
-      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.click('#task-sheet textarea[aria-label="Message Claude"]');
       await page.type('Kept for a press.');
-      await page.key('Enter');
+      await page.click('#task-sheet [data-later-actions] button', 'Keep for later');
       await page.until('three drafts, two set to go', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] li[data-parked]')]
         .map((li) => [li.querySelector('p')?.textContent, li.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked])) === want,
       JSON.stringify([['Also check the credit notes.', true], ['Then rename the helper.', true], ['Kept for a press.', false]]));
@@ -233,16 +232,16 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: "A1 Ask on the side, the other button of the Later box: a question while Claude works is answered by a copy of the conversation, showing what it reads, and the task's Claude gets nothing; a follow-up goes to the same copy, Keep as a draft puts the answer under Later, and Close forgets it",
+    name: "A1 Ask on the side, a button under Message Claude: a question while Claude works is answered by a copy of the conversation, showing what it reads, and the task's Claude gets nothing; a follow-up goes to the same copy, Keep as a draft puts the answer under Later, and Close forgets it",
     async run({ page, mock, shot }) {
       type Snap = { sessions: { id: string; answered: unknown; parked: { text: string }[]; asides: { fork: string | null; state: string; turns: { question: string; answer: string | null }[] }[] }[] };
       const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', answered: null, activity: { step: 'Bash: pnpm test', since: Date.now() } } });
       await openSheetOf(page, mock, 's-invoice');
-      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.click('#task-sheet textarea[aria-label="Message Claude"]');
       await page.type('Why integer cents?');
-      await page.click('#task-sheet [data-later] button', 'Ask on the side');
-      await page.until('the box emptied', () => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-later] textarea[aria-label="A message for later"]')!.value === '');
+      await page.click('#task-sheet [data-later-actions] button', 'Ask on the side');
+      await page.until('the box emptied', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea[aria-label="Message Claude"]')!.value === '');
       assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length), 0, 'asking keeps no draft');
       await page.until('the copy reading', () => document.querySelector('#task-sheet [data-aside][data-state="thinking"]')?.textContent?.includes('Read: src/invoice/LineItem.ts'));
       await page.until('the answer', () => !!document.querySelector('#task-sheet [data-aside][data-state="done"] strong'));
@@ -273,31 +272,31 @@ export const schedulesLater: Check[] = [
       const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', answered: null, model: 'claude-sonnet-5-5', effort: 'high', activity: { step: 'Bash: pnpm test', since: Date.now() } } });
       await openSheetOf(page, mock, 's-invoice');
-      const picker = () => [...document.querySelectorAll('#task-sheet [data-later] label:has(select)')].map((l) => [l.querySelector('span')!.textContent, l.querySelector('select')!.selectedOptions[0].textContent]);
-      await page.until("the task's own model first", () => document.querySelector('#task-sheet [data-later] select option')?.textContent === 'Sonnet 5.5');
+      const picker = () => [...document.querySelectorAll('#task-sheet [data-later-actions] label:has(select)')].map((l) => [l.querySelector('span')!.textContent, l.querySelector('select')!.selectedOptions[0].textContent]);
+      await page.until("the task's own model first", () => document.querySelector('#task-sheet [data-later-actions] select option')?.textContent === 'Sonnet 5.5');
       assert.deepEqual(await page.eval(picker), [['Model', 'Sonnet 5.5'], ['Effort', 'High']]);
       await page.eval(() => {
         for (const [label, value] of [['Model', 'opus'], ['Effort', 'max']]) {
-          const select = [...document.querySelectorAll('#task-sheet [data-later] label')].find((l) => l.querySelector('span')?.textContent === label)!.querySelector('select')!;
+          const select = [...document.querySelectorAll('#task-sheet [data-later-actions] label')].find((l) => l.querySelector('span')?.textContent === label)!.querySelector('select')!;
           select.value = value;
           select.dispatchEvent(new Event('change', { bubbles: true }));
         }
       });
-      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.click('#task-sheet textarea[aria-label="Message Claude"]');
       await page.type('Why integer cents?');
-      await page.click('#task-sheet [data-later] button', 'Ask on the side');
+      await page.click('#task-sheet [data-later-actions] button', 'Ask on the side');
       await page.until('the answer', () => !!document.querySelector('#task-sheet [data-aside][data-state="done"] strong'));
       const asked = (await mock.log()).findLast((e) => e.action === 'ask-aside' && e.sessionId === 's-invoice')!;
       assert.deepEqual(asked.body, { text: 'Why integer cents?', aside: null, model: 'opus', effort: 'max' });
       assert.deepEqual((await invoice()).asides.map((a) => [a.model, a.effort]), [['opus', 'max']]);
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-aside-model]')?.textContent), 'Opus · Max effort');
       assert.deepEqual(await page.eval(picker), [['Model', 'Opus 5.5'], ['Effort', 'Max']], 'the next question starts on the same pick');
-      await page.eval(() => document.querySelector('#task-sheet [data-later] textarea[aria-label="A message for later"]')!.scrollIntoView({ block: 'center' }));
+      await page.eval(() => document.querySelector('#task-sheet textarea[aria-label="Message Claude"]')!.scrollIntoView({ block: 'center' }));
       await shot('aside-model');
 
-      await page.click('#task-sheet [data-later] textarea[aria-label="A message for later"]');
+      await page.click('#task-sheet textarea[aria-label="Message Claude"]');
       await page.type('Mention the rounding test');
-      await page.key('Enter');
+      await page.click('#task-sheet [data-later-actions] button', 'Keep for later');
       await page.until('the draft', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
       const parked = (await mock.log()).findLast((e) => e.action === 'park' && e.sessionId === 's-invoice')!;
       assert.deepEqual(parked.body, { text: 'Mention the rounding test', auto: false });
@@ -367,11 +366,12 @@ export const schedulesLater: Check[] = [
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', parked: [{ id: 'k1', text: 'Also the credit notes.', auto: false, armedAt: null, at: Date.now() }] } });
       await openSheetOf(page, mock, 's-invoice');
       await page.until('the Later box', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
-      const tips = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-later] [data-explain]')]
+      const tips = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet :is([data-later], [data-later-actions]) [data-explain]')]
         .map((e) => [e.textContent.trim(), e.dataset.explain!.split('\n\n').map((l) => l.split(':')[0])]));
       const byName = Object.fromEntries(tips as [string, string[]][]);
       assert.deepEqual(byName['Send now'], ['Sends this draft as your next message, with 5 s to undo. While Claude works it reads it at its next step, which can change what it is doing.', 'What Claude has', 'Session']);
-      assert.deepEqual(byName['Keep for later ↵'].slice(1), ['What Claude has', 'Session']);
+      assert.deepEqual(byName['Keep for later'].slice(1), ['What Claude has', 'Session']);
+      assert.deepEqual(byName["Send when it's my turn"].slice(1), ['What Claude has', 'Session']);
       assert.ok(byName['Ask on the side'], 'Ask on the side explains itself');
       assert.deepEqual(await page.eval(() => [...document.querySelectorAll('[title]:not(svg *)')].map((e) => e.outerHTML.slice(0, 160))), [], 'no native tooltip is left');
       const tip = () => {
@@ -394,7 +394,7 @@ export const schedulesLater: Check[] = [
       await page.until('gone on Escape', () => !document.getElementById('tooltip')?.matches(':popover-open'));
       assert.equal(await page.eval(sheetOpen), true, 'that Escape only took the tooltip away');
 
-      await page.hover('#task-sheet [data-later] button', 'Ask on the side');
+      await page.hover('#task-sheet [data-later-actions] button', 'Ask on the side');
       assert.match((await page.until('a disabled button explains itself too', tip)).text, /^Asks the text as a question/);
 
       await page.hover('#task-sheet [data-explain="Claude Code\'s session id; claude --resume takes it"]');

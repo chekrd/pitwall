@@ -15,7 +15,7 @@
 
   .list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 
-  .item, .add {
+  .item {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -24,8 +24,6 @@
     border-radius: 14px;
     background: var(--card-2);
   }
-
-  .add { border-style: dashed; background: none; }
 
   .text { margin: 0; max-width: 90ch; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -49,7 +47,7 @@
 
   .spacer { flex: 1; }
 
-  /* The model picked is for Ask on the side and the tick for Keep for later, so each wraps with its button. */
+  /* The model picked is for Ask on the side, so it wraps with its button, and the two that keep a draft wrap together. */
   .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .group[data-keep] { margin-left: auto; }
 

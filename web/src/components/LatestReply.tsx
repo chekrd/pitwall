@@ -1,5 +1,5 @@
 import { uploadedImages } from '../../../server/uploadPaths.ts';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { CopyButton } from './CopyButton.tsx';
 import styles from './LatestReply.module.css';
 import { Markdown } from './Markdown.tsx';
@@ -28,8 +28,8 @@ export function Said({ text, prompt = false }: { text: string; prompt?: boolean 
   );
 }
 
-// `previous` while a newer message of yours waits for its reply.
-export function LatestReply({ text, prompt = null, previous = false }: { text: string; prompt?: string | null; previous?: boolean }) {
+// `previous` while a newer message of yours waits for its reply, which `children` shows under it.
+export function LatestReply({ text, prompt = null, previous = false, children }: { text: string; prompt?: string | null; previous?: boolean; children?: ReactNode }) {
   return (
     <section className={styles.reply} data-ux-section="latest reply">
       <h3>{previous ? "Claude's previous reply" : "Claude's latest reply"}<CopyButton value={text} what="Reply" /></h3>
@@ -37,6 +37,7 @@ export function LatestReply({ text, prompt = null, previous = false }: { text: s
       <div className={styles.body}>
         <Markdown source={text} />
       </div>
+      {children}
     </section>
   );
 }

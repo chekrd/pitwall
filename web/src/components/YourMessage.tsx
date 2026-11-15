@@ -32,13 +32,14 @@ function claudeLine(session: Session) {
 
 // Your latest message from the moment you send it until Claude replies to it: first as this page sends it, with its
 // Undo, then as Claude's transcript has it, with what Claude is doing about it.
-export function YourMessage({ session, send }: { session: Session; send: Item | null }) {
+// `inside` Claude's latest reply, it closes that box as the newest of the three.
+export function YourMessage({ session, send, inside = false }: { session: Session; send: Item | null; inside?: boolean }) {
   const text = waitingText(session, send);
   if (text === null) return null;
   const line = send ? null : claudeLine(session);
   const busy = !send && session.status === 'working' && !session.unanswered?.queued;
   return (
-    <section className={styles.message} data-your-message={send?.state ?? (session.unanswered?.queued ? 'queued' : 'unanswered')} data-ux-section="your message">
+    <section className={styles.message} data-inside={inside || undefined} data-your-message={send?.state ?? (session.unanswered?.queued ? 'queued' : 'unanswered')} data-ux-section="your message">
       <h3>
         Your latest message
         <span className={styles.when} data-when aria-live="polite">
