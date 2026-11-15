@@ -31,6 +31,36 @@ export const taskPage: Check[] = [
     },
   },
   {
+    name: 'P4.6.reply-first with a decision open, Overview shows Claude\'s latest reply first, then the decision, then Findings; a reply too long to see the decision under shows Decision waiting below at the top, which scrolls to the decision and leaves once it is in view',
+    async run({ page, mock, shot }) {
+      const order = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-ux-section]')].map((s) => s.dataset.uxSection)
+        .filter((s) => s === 'latest reply' || s === 'decision' || s === 'findings');
+      const below = () => !!document.querySelector('#task-sheet [data-decision-below]');
+      await openSheetOf(page, mock, 's-cart');
+      await page.until('the decision', () => !!document.querySelector('#task-sheet [data-queued]'));
+      assert.deepEqual(await page.eval(order), ['latest reply', 'decision']);
+      assert.equal(await page.eval(below), false, 'a short reply leaves the decision in view, without the pill');
+
+      const long = Array.from({ length: 40 }, (_, i) => `Paragraph ${i + 1} of the reasoning behind the merge rule, long enough to take a line of its own.`).join('\n\n');
+      await mock.post('/mock/patch', {
+        id: 's-cart',
+        patch: {
+          lastMessage: long,
+          findings: { basis: 't-cart-review', items: [{ title: 'Guest cart is read twice', location: 'src/cart/mergeCarts.ts:12', detail: 'The guest cart is fetched in both `onLogin` and `mergeCarts()`.' }] },
+        },
+      });
+      await page.until('the long reply', () => !!document.querySelector('#task-sheet [data-ux-section="latest reply"]')?.textContent?.includes('Paragraph 40'));
+      assert.deepEqual(await page.eval(order), ['latest reply', 'decision', 'findings']);
+      await page.until('Decision waiting below', () => document.querySelector<HTMLElement>('#task-sheet [data-decision-below]')?.innerText.trim() === 'Decision waiting below');
+      await shot('decision-below');
+      await page.click('#task-sheet [data-decision-below]');
+      await page.until('the decision in view, without the pill', () => {
+        const box = document.querySelector('#task-sheet [data-queued]')!.getBoundingClientRect();
+        return box.top < innerHeight && !document.querySelector('#task-sheet [data-decision-below]');
+      });
+    },
+  },
+  {
     name: 'P4.7 Artifacts: 4 opens the list as a column beside a sandboxed frame of the newest artifact, with Open in new tab as a link; another artifact replaces the entry',
     async run({ page, mock, shot }) {
       await openSheetOf(page, mock, 's-cart');

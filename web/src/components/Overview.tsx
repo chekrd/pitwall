@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { sessionAction } from '../api.ts';
 import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
 import type { Request } from '../outbox.ts';
@@ -284,6 +284,28 @@ function TurnError({ session, name }: { session: Session; name: string }) {
   );
 }
 
+// While the open decision sits under a long reply, out of view, a pill at the top says so and scrolls to it.
+function DecisionBelow({ scroller, what }: { scroller: RefObject<HTMLDivElement | null>; what: string }) {
+  const [below, setBelow] = useState(false);
+  useEffect(() => {
+    const root = scroller.current;
+    const target = root?.querySelector('[data-queued]');
+    if (!root || !target) return;
+    const seen = new IntersectionObserver(([e]) => setBelow(!e.isIntersecting && e.boundingClientRect.top > (e.rootBounds?.bottom ?? 0)), { root });
+    seen.observe(target);
+    return () => seen.disconnect();
+  }, [scroller]);
+  if (!below) return null;
+  return (
+    <div className={styles.below}>
+      <button type="button" data-decision-below data-ux="decision below" onClick={() => scroller.current?.querySelector('[data-queued]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+        {what} waiting below
+        <Icon name="chevron-down" size={15} />
+      </button>
+    </div>
+  );
+}
+
 export function Overview({ session, name, branch, repo }: { session: Session; name: string; branch?: string | undefined; repo?: RepoView | undefined }) {
   const { home, repos } = useStore();
   const task = folderTaskOf(repos, session);
@@ -308,8 +330,13 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const learnings = summary?.learnings ?? [];
   const artifacts = session.artifacts.toReversed();
   const links = session.links.toReversed();
+  const scroller = useRef<HTMLDivElement>(null);
+  const deciding = !archived && attention === 'decide';
+  const queued = deciding && !busy.has(session.id);
+  const reply = session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} previous={waits} />;
   return (
-    <div className={styles.scroll}>
+    <div className={styles.scroll} ref={scroller}>
+      {queued && <DecisionBelow scroller={scroller} what={session.menu ? 'Question' : kindOf(session) === 'round' ? 'Questions' : 'Decision'} />}
       <div className={styles.grid}>
         <div className={styles.main}>
           <SubtaskOf session={session} />
@@ -342,7 +369,8 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               {activity && <span className={styles.clock} data-explain="Time since your last message"><Clock since={activity.since} /></span>}
             </section>
           )}
-          {!archived && attention === 'decide' && !busy.has(session.id) && <Queued session={session} name={name} box={!writing} />}
+          {deciding && reply}
+          {queued && <Queued session={session} name={name} box={!writing} />}
           <Findings session={session} />
           {!archived && attention === 'focus' && (
             <section className={styles.blocked} data-ux-section="terminal prompt">
@@ -350,7 +378,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <FocusButton session={session} />
             </section>
           )}
-          {session.lastMessage && <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} previous={waits} />}
+          {!deciding && reply}
           <YourMessage session={session} send={sending} />
           {ended && !writing && (
             <section className={styles.blocked} data-ended data-ux-section="ended">
