@@ -130,6 +130,7 @@ async function runOne(mock: Mock, browser: Browser, check: Check, look: Look) {
     const themes = async (fn: (scheme: Look['scheme']) => Promise<void>) => {
       inside = true;
       try {
+        await settled();
         await fn(look.scheme);
         if (args.matrix) return;
         current = other(look.scheme);
