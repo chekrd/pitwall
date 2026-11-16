@@ -8,9 +8,9 @@ import { useRoundAnswers } from '../rounds.ts';
 import { closeSheet, closeSheetOf, closeSheetToQueue, showTab } from '../router.ts';
 import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
-import type { RepoView, Session } from '../types.ts';
+import type { Link, RepoView, Session } from '../types.ts';
 import { useDecision } from '../useDecision.ts';
-import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, modelName, shortUrl, tilde, underTask, worktreeName } from '../util.ts';
+import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, isDelivered, modelName, shortUrl, tilde, underTask, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
@@ -42,6 +42,21 @@ function Copy({ value, what, title, shown = value }: { value: string; what: stri
         {copied && 'Copied'}
       </span>
     </button>
+  );
+}
+
+function LinkList({ links }: { links: Link[] }) {
+  return (
+    <ul className={styles.links}>
+      {links.map((l) => (
+        <li key={l.url}>
+          <a href={l.url} target="_blank" rel="noreferrer" data-explain={l.context || l.url} data-ux="link">
+            <strong>{l.about || l.text || shortUrl(l.url)}</strong>
+            <span>{l.about || l.text ? `${shortUrl(l.url)} · ` : ''}{ago(l.at)}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -329,6 +344,8 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const learnings = summary?.learnings ?? [];
   const artifacts = session.artifacts.toReversed();
   const links = session.links.toReversed();
+  const delivered = links.filter((l) => isDelivered(l.url));
+  const cited = links.filter((l) => !isDelivered(l.url));
   const scroller = useRef<HTMLDivElement>(null);
   const deciding = !archived && attention === 'decide';
   const queued = deciding && !busy.has(session.id);
@@ -496,19 +513,16 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <dd><Copy value={session.conversation} what="Session id" title="Claude Code's session id; claude --resume takes it" /></dd>
             </dl>
           </section>
-          {links.length > 0 && (
-            <section data-links data-ux-section="links">
-              <h3 className={styles.label} data-explain="Every web link Claude gave in this task, newest first; each opens in your default browser">Links</h3>
-              <ul className={styles.links}>
-                {links.map((l) => (
-                  <li key={l.url}>
-                    <a href={l.url} target="_blank" rel="noreferrer" data-explain={l.context || l.url} data-ux="link">
-                      <strong>{l.about || l.text || shortUrl(l.url)}</strong>
-                      <span>{l.about || l.text ? `${shortUrl(l.url)} · ` : ''}{ago(l.at)}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+          {delivered.length > 0 && (
+            <section data-links="delivered" data-ux-section="pull requests and artifacts">
+              <h3 className={styles.label} data-explain="The pull requests and claude.ai pages among the links Claude gave in this task, newest first; each opens in your default browser">Pull requests and artifacts</h3>
+              <LinkList links={delivered} />
+            </section>
+          )}
+          {cited.length > 0 && (
+            <section data-links="cited" data-ux-section="links">
+              <h3 className={styles.label} data-explain={`Every ${delivered.length ? 'other ' : ''}web link Claude gave in this task, newest first; each opens in your default browser`}>{delivered.length ? 'Other links' : 'Links'}</h3>
+              <LinkList links={cited} />
             </section>
           )}
           <Subtasks session={session} />

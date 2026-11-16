@@ -146,6 +146,14 @@ export function shortUrl(url: string) {
   return u ? `${u.host.replace(/^www\./, '')}${u.pathname.replace(/\/$/, '')}${u.search}` : url;
 }
 
+const DELIVERED = [
+  /^https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+/,
+  /^https?:\/\/[^/]+\/.+\/(?:pull|pullrequest|-\/merge_requests)\/\d+(?:[/?#]|$)/,
+];
+
+// A pull or merge request, or a claude.ai page, as opposed to a link Claude only cited.
+export const isDelivered = (url: string) => DELIVERED.some((r) => r.test(url));
+
 // The finding numbers from the root task down, e.g. 1.2 for finding 2 of the subtask on finding 1.
 export const findingPath = (sessions: readonly Session[], s: Session) =>
   [...ancestorsOf(sessions, s).slice(1), s].map((o) => (o.parent ? o.parent.finding + 1 : '?')).join('.');

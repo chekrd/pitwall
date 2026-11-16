@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { menu, options, question, session, turn } from './testing.ts';
 import type { RepoView } from './types.ts';
-import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, settledAs, share, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
+import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, isDelivered, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, settledAs, share, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
 
 test('a decision is the open question or end-of-turn choice, and one the board answered is closed at once', () => {
   const asked = session('s', { question: question('q1') });
@@ -111,6 +111,24 @@ test('a link reads as its host and path', () => {
   assert.equal(shortUrl('https://www.github.com/o/r/pull/42/'), 'github.com/o/r/pull/42');
   assert.equal(shortUrl('https://x.dev/a?b=1'), 'x.dev/a?b=1');
   assert.equal(shortUrl('not a url'), 'not a url');
+});
+
+test('pull requests and claude.ai pages are told apart from other links', () => {
+  for (const url of [
+    'https://github.com/o/r/pull/42',
+    'https://github.com/o/r/pull/42/files',
+    'https://dev.azure.com/o/p/_git/r/pullrequest/7',
+    'https://gitlab.com/g/r/-/merge_requests/3',
+    'https://claude.ai/artifact/9QsVfDkHMHJwhbwst8dnxB',
+    'https://claude.ai/code/artifact/0b5f-41c2',
+  ]) assert.ok(isDelivered(url), url);
+  for (const url of [
+    'https://github.com/o/r/pulls',
+    'https://github.com/o/r/issues/42',
+    'https://jira.example.com/browse/CHK-412',
+    'https://claude.ai/chat/abc',
+    'https://react.dev/reference/react/Suspense',
+  ]) assert.ok(!isDelivered(url), url);
 });
 
 test('a model id reads as its family and version', () => {
