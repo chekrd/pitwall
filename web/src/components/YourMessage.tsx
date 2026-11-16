@@ -25,19 +25,17 @@ function Countdown({ session, send }: { session: Session; send: Item }) {
 
 function claudeLine(session: Session) {
   if (session.unanswered?.queued) return 'Queued: Claude reads it once its current step ends';
-  if (session.status === 'working') return session.activity?.between ? 'Claude waits on background work' : `Claude is working${session.activity?.step ? ` · ${session.activity.step}` : ''}`;
   if (session.status === 'exited') return 'Claude ended without replying';
   return session.status === 'idle' ? 'No reply yet' : null;
 }
 
 // Your latest message from the moment you send it until Claude replies to it: first as this page sends it, with its
-// Undo, then as Claude's transcript has it, with what Claude is doing about it.
+// Undo, then as Claude's transcript has it. What Claude is doing about it is the working banner's to say.
 // `inside` Claude's latest reply, it closes that box as the newest of the three.
 export function YourMessage({ session, send, inside = false }: { session: Session; send: Item | null; inside?: boolean }) {
   const text = waitingText(session, send);
   if (text === null) return null;
   const line = send ? null : claudeLine(session);
-  const busy = !send && session.status === 'working' && !session.unanswered?.queued;
   return (
     <section className={styles.message} data-inside={inside || undefined} data-your-message={send?.state ?? (session.unanswered?.queued ? 'queued' : 'unanswered')} data-ux-section="your message">
       <h3>
@@ -48,7 +46,7 @@ export function YourMessage({ session, send, inside = false }: { session: Sessio
         {send?.state === 'held' && <button type="button" className={styles.undo} data-explain="Take the message back into the reply box" onClick={() => undo(send.id)}>Undo</button>}
       </h3>
       <Said key={text} text={text} />
-      {line && <p className={styles.claude} data-claude data-busy={busy || undefined}>{busy && <span className={styles.spinner} aria-hidden />}<span>{line}</span></p>}
+      {line && <p className={styles.claude} data-claude>{line}</p>}
     </section>
   );
 }

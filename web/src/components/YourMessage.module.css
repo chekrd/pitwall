@@ -23,23 +23,5 @@
 
   .undo { height: 24px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; letter-spacing: 0; text-transform: none; }
 
-  .claude {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    font-size: 13.5px;
-    color: var(--text-2);
-    span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  }
-
-  .spinner {
-    flex: none;
-    width: 13px;
-    height: 13px;
-    border: 2px solid var(--line-2);
-    border-top-color: var(--work);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
+  .claude { min-width: 0; font-size: 13.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }

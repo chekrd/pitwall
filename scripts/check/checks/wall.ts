@@ -277,7 +277,7 @@ export const wall: Check[] = [
     },
   },
   {
-    name: 'P4.4.3 a message sent from Overview shows at once as Your latest message, counting down, with an Undo that puts it back in the reply box; sent again it waits queued while Claude ends its step, then reads Claude is working with its step, the banner names it and the reply above it is headed Claude\'s previous reply; once Claude replies, the reply quotes it and the message is gone',
+    name: 'P4.4.3 a message sent from Overview shows at once as Your latest message, counting down, with an Undo that puts it back in the reply box; sent again it waits queued while Claude ends its step, then Claude works on it, which only the working banner says, naming its step and the message, and the reply above it is headed Claude\'s previous reply; once Claude replies, the reply quotes it and the message is gone',
     async run({ page, mock, shot }) {
       const seen = () => {
         const sheet = document.querySelector<HTMLElement>('#task-sheet')!;
@@ -320,7 +320,8 @@ export const wall: Check[] = [
       assert.deepEqual([queued.text, queued.claude, queued.trigger], [message, 'Queued: Claude reads it once its current step ends', null]);
       const working = await inState('unanswered');
       assert.match(working.when!, /^Sent \d\d:\d\d$/);
-      assert.deepEqual({ ...working, when: null }, { state: 'unanswered', text: message, when: null, undo: false, claude: 'Claude is working · Bash: pnpm test', trigger: `You ${message}`, reply: "Claude's previous reply", quoted: asked });
+      assert.deepEqual({ ...working, when: null }, { state: 'unanswered', text: message, when: null, undo: false, claude: null, trigger: `You ${message}`, reply: "Claude's previous reply", quoted: asked });
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-ux-section="working"] code')?.textContent), 'Bash: pnpm test');
       await shot('your-message-working');
 
       await mock.post('/mock/patch', { id: 's-invoice', patch: { lastMessage: 'Rounded.', lastPrompt: message, unanswered: null } });
