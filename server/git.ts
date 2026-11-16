@@ -70,12 +70,17 @@ const adding = new Map<string, Promise<unknown>>();
 
 // One at a time in a repository: tasks now start without waiting for each other, and two fetches of the same branch
 // can fail on its ref lock, which git wt would report as origin being out of reach.
-export function addWorktree(repo: string, opts: { branch: string; task: string; base: string | null; root: string; path?: string | undefined }) {
-  const add = () => gitWt(repo, ['add', opts.branch, '--task', opts.task, ...(opts.base ? ['--base', opts.base] : []), '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]);
-  const turn = (adding.get(repo) ?? Promise.resolve()).then(add, add);
+function inTurn(repo: string, work: () => Promise<string>) {
+  const turn = (adding.get(repo) ?? Promise.resolve()).then(work, work);
   adding.set(repo, turn);
   return turn;
 }
+
+export const addWorktree = (repo: string, opts: { branch: string; task: string; base: string | null; root: string; path?: string | undefined }) =>
+  inTurn(repo, () => gitWt(repo, ['add', opts.branch, '--task', opts.task, ...(opts.base ? ['--base', opts.base] : []), '--root', opts.root, ...(opts.path ? ['--path', opts.path] : [])]));
+
+// Fast-forwards the branch to origin's, where it is checked out or else the local branch.
+export const pullBranch = (repo: string, branch: string) => inTurn(repo, () => gitWt(repo, ['pull', branch]));
 
 export const validBranch = (name: string) => ok(run('git', ['check-ref-format', '--branch', name]));
 

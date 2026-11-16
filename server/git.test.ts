@@ -130,9 +130,10 @@ function withOrigin(defaultBranch: string) {
   git(main, 'push', '-q', '-u', 'origin', defaultBranch);
   const other = join(root, 'other');
   git(root, 'clone', '-q', origin, other);
+  let landed = 0;
   const land = (branch: string) => {
-    git(other, 'switch', '-qC', branch);
-    write(other, `${branch}.txt`, 'x\n');
+    git(other, 'switch', '-qC', branch, ...(git(other, 'branch', '-r', '--list', `origin/${branch}`) ? [`origin/${branch}`] : []));
+    write(other, `${branch}.txt`, `${++landed}\n`);
     git(other, 'add', '-A');
     git(other, 'commit', '-qm', branch);
     git(other, 'push', '-q', 'origin', branch);
@@ -182,6 +183,70 @@ test('a configured base starts from origin\'s latest copy, named with origin/ or
   assert.equal(git(wt(main, 'add', 'one', '--base', 'develop'), 'rev-parse', 'HEAD'), latest);
   assert.equal(git(wt(main, 'add', 'two', '--base', 'origin/develop'), 'rev-parse', 'HEAD'), latest);
   assert.equal(git(wt(main, 'add', 'three', '--base', 'local-only'), 'rev-parse', 'HEAD'), git(main, 'rev-parse', 'local-only'));
+});
+
+test('a local branch origin has moved on is fast-forwarded before its worktree is added, keeping its own commits otherwise', () => {
+  const { main, land } = withOrigin('main');
+  land('behind');
+  git(main, 'fetch', '-q', 'origin', 'behind');
+  git(main, 'branch', '-q', 'behind', 'origin/behind');
+  const latest = land('behind');
+  assert.equal(git(wt(main, 'add', 'behind'), 'rev-parse', 'HEAD'), latest);
+
+  git(main, 'branch', '-q', 'ahead');
+  git(main, 'push', '-q', 'origin', 'ahead');
+  git(main, 'switch', '-qc', 'scratch');
+  write(main, 'ahead.txt', 'mine\n');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-qm', 'mine');
+  git(main, 'branch', '-qf', 'ahead');
+  git(main, 'switch', '-q', 'main');
+  const mine = git(main, 'rev-parse', 'ahead');
+  assert.equal(git(wt(main, 'add', 'ahead'), 'rev-parse', 'HEAD'), mine);
+});
+
+test('a branch that has diverged from origin is refused rather than started from a stale state', () => {
+  const { root, main, land } = withOrigin('main');
+  git(main, 'branch', '-q', 'split');
+  write(main, 'split.txt', 'mine\n');
+  git(main, 'switch', '-q', 'split');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-qm', 'mine');
+  git(main, 'switch', '-q', 'main');
+  land('split');
+
+  assert.throws(() => wt(main, 'add', 'split'), /diverged/);
+  assert.equal(existsSync(join(root, 'worktrees', 'split')), false);
+});
+
+test('an existing worktree reused for a task is fast-forwarded to origin, its uncommitted changes kept', () => {
+  const { main, land } = withOrigin('main');
+  land('shared');
+  const path = wt(main, 'add', 'shared');
+  write(path, 'wip.txt', 'mine\n');
+  const latest = land('shared');
+
+  assert.equal(wt(main, 'add', 'shared'), path);
+  assert.equal(git(path, 'rev-parse', 'HEAD'), latest);
+  assert.equal(readFileSync(join(path, 'wip.txt'), 'utf8'), 'mine\n');
+});
+
+test('pull fast-forwards a branch where it is checked out, or else the branch itself, and leaves a branch origin lacks alone', () => {
+  const { main, land } = withOrigin('main');
+  const latest = land('main');
+  wt(main, 'pull', 'main');
+  assert.equal(git(main, 'rev-parse', 'HEAD'), latest);
+
+  land('topic');
+  git(main, 'fetch', '-q', 'origin', 'topic');
+  git(main, 'branch', '-q', 'topic', 'origin/topic');
+  const topic = land('topic');
+  wt(main, 'pull', 'topic');
+  assert.equal(git(main, 'rev-parse', 'topic'), topic);
+
+  git(main, 'branch', '-q', 'only-here');
+  wt(main, 'pull', 'only-here');
+  assert.equal(git(main, 'rev-parse', 'only-here'), latest);
 });
 
 test('a worktree is refused rather than started from a stale state when origin cannot be reached, and leaves nothing behind', () => {

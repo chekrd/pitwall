@@ -14,7 +14,7 @@ import { checkDecision } from './decision.ts';
 import { handOver, taskOf } from './handover.ts';
 import { sessions, type Parent, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
-import { isClean, listBranches, switchBranch } from './git.ts';
+import { isClean, listBranches, pullBranch, switchBranch } from './git.ts';
 import { CLAUDE, headless } from './headless.ts';
 import { asking, type AskBody } from './asides.ts';
 import * as ghostty from './ghostty.ts';
@@ -483,11 +483,12 @@ export async function resolve(id: string, state: unknown) {
   await (state ? sync() : bringBack(id));
 }
 
-// Works where the branch is already checked out, else switches the main checkout to it.
+// Works where the branch is already checked out, else switches the main checkout to it; either way at origin's latest.
 export async function checkoutExistingBranch(repo: RepoView, branch: string) {
   const checkedOut = repo.worktrees.find((w) => w.branch === branch);
+  if (!checkedOut && !(await listBranches(repo.path)).some((b) => b.name === branch)) throw new Error(`no branch named ${branch}`);
+  await pullBranch(repo.path, branch);
   if (checkedOut) return checkedOut.path;
-  if (!(await listBranches(repo.path)).some((b) => b.name === branch)) throw new Error(`no branch named ${branch}`);
   const main = repo.worktrees.find((w) => w.isMain);
   if (!main) throw new Error('the main checkout is missing');
   const claudes = [...(await liveConversations()).values()].filter((p) => p.cwd === main.path || p.cwd.startsWith(`${main.path}/`));

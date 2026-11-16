@@ -6,6 +6,7 @@ set -eu
 usage() {
   cat >&2 <<'EOF'
 usage: git wt add <branch> [--task <name>] [--from <ref>] [--base <ref>] [--root <dir>] [--path <dir>]
+       git wt pull <branch>
        git wt rm [<branch> | <path>] [--force] [--delete-branch]
 
 add  Creates (or reuses) the worktree for <branch> and prints its path. The task folder
@@ -13,8 +14,12 @@ add  Creates (or reuses) the worktree for <branch> and prints its path. The task
      origin/<branch> when that exists, else --base, else the default branch origin reports;
      --base and the default start from origin's copy, fetched first. Without --from it
      refuses when origin cannot be reached. A repository with no origin starts from the
-     main checkout's branch.
+     main checkout's branch. Without --from, a branch that already exists, locally or
+     in a worktree, first gets origin's latest commits as by pull.
      Files matched by the main checkout's .worktreeinclude are copied in.
+pull Fetches <branch> from origin and fast-forwards it, in the worktree that has it
+     checked out or else the local branch. Refuses when origin cannot be reached or the
+     branch cannot fast-forward; a branch origin lacks is left as it is.
 rm   Removes the worktree of <branch>, the one at <path>, or the current one, and the
      task folder once it is empty.
 EOF
@@ -76,6 +81,7 @@ within() {
   status=0
   wait "$work" || status=$?
   kill "$watchdog" 2>/dev/null || true
+  wait "$watchdog" 2>/dev/null || true
   return "$status"
 }
 
@@ -92,6 +98,30 @@ refresh_from_origin() {
   if [ -n "$default" ]; then
     git -C "$main" remote set-head origin "$default" >/dev/null
   fi
+}
+
+# Fast-forward only: commits of the branch's own are kept, and a branch that has diverged from origin is refused.
+catch_up() {
+  remote=refs/remotes/origin/$branch
+  has_ref "refs/heads/$branch" && has_ref "$remote" || return 0
+  git -C "$main" merge-base --is-ancestor "$remote" "refs/heads/$branch" && return 0
+  git -C "$main" merge-base --is-ancestor "refs/heads/$branch" "$remote" ||
+    die "$branch and origin/$branch have diverged, so it cannot start from origin's latest state; merge or rebase it first"
+  checkout=$(worktree_of_branch "$branch")
+  if [ -n "$checkout" ]; then
+    git -C "$checkout" merge --quiet --ff-only "$remote" >&2 ||
+      die "$checkout cannot fast-forward to origin/$branch; commit or stash the changes in its way first"
+  else
+    git -C "$main" update-ref "refs/heads/$branch" "$remote" "$(git -C "$main" rev-parse "refs/heads/$branch")"
+  fi
+}
+
+pull() {
+  [ $# -eq 1 ] || usage
+  branch=$1 base=
+  git check-ref-format --branch "$branch" >/dev/null 2>&1 || die "not a valid branch name: $branch"
+  refresh_from_origin
+  catch_up
 }
 
 worktree_of_branch() {
@@ -140,11 +170,15 @@ add() {
     fi
     current=$(branch_of_worktree "$path")
     [ "$current" = "$branch" ] || die "$path already exists on branch ${current:-(detached)}, not $branch"
+    [ -n "$from" ] || { refresh_from_origin; catch_up; }
     (cd "$path" && pwd)
     return
   fi
 
-  has_ref "refs/heads/$branch" || [ -n "$from" ] || refresh_from_origin
+  if [ -z "$from" ]; then
+    refresh_from_origin
+    [ -n "$(worktree_of_branch "$branch")" ] || catch_up
+  fi
 
   if has_ref "refs/heads/$branch"; then
     git -C "$main" worktree add --quiet "$path" "$branch" >&2
@@ -205,6 +239,7 @@ main=$(main_checkout)
 
 case $command in
   add) add "$@" ;;
+  pull) pull "$@" ;;
   rm) rm_worktree "$@" ;;
   *) usage ;;
 esac
