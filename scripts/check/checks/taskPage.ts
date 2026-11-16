@@ -457,6 +457,39 @@ export const taskPage: Check[] = [
     },
   },
   {
+    name: 'P4.9.conversation-picture a prompt sent with a large picture is the one Overview quotes over Claude\'s latest reply, the reply to it alone, as in Conversation',
+    async run({ page, mock }) {
+      const at = Date.now() - 600_000;
+      const prompt = (n: number, content: unknown) => ({ type: 'user', uuid: `u-${n}`, timestamp: new Date(at + n * 60_000).toISOString(), origin: { kind: 'human' }, message: { role: 'user', content } });
+      const reply = (n: number, text: string) => ({
+        type: 'assistant', uuid: `a-${n}`, timestamp: new Date(at + n * 60_000 + 30_000).toISOString(),
+        message: { role: 'assistant', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text }] },
+      });
+      const picture = { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'A'.repeat(400_000) } };
+      await mock.post('/mock/transcript', {
+        id: 's-invoice',
+        entries: [
+          prompt(1, 'Why is the total a cent off?'),
+          reply(1, 'LineItem.total() rounds too late.'),
+          prompt(2, [{ type: 'text', text: '[Image #1] What about this invoice?' }, picture]),
+          reply(2, 'That invoice rounds each line first.'),
+        ],
+      });
+      await openFromWall(page, mock, 's-invoice');
+      const latest = await page.until('the latest reply', () => {
+        const section = document.querySelector<HTMLElement>('#task-sheet [data-ux-section="latest reply"]');
+        return section && { prompt: section.querySelector<HTMLElement>('[data-prompt] p')?.innerText, reply: section.querySelector<HTMLElement>(':scope > div')!.innerText.trim() };
+      });
+      assert.deepEqual(latest, { prompt: '[Image #1] What about this invoice?', reply: 'That invoice rounds each line first.' });
+      await page.click('#task-sheet [role="tab"]', 'Conversation');
+      const last = await page.until('the conversation', () => {
+        const a = [...document.querySelectorAll<HTMLElement>('#task-sheet article[data-exchange]')].at(-1);
+        return a && { prompt: a.querySelector<HTMLElement>('[data-prompt] p')!.innerText, reply: a.querySelector<HTMLElement>('[data-reply] > :not(h3)')!.innerText.trim() };
+      });
+      assert.deepEqual(last, latest);
+    },
+  },
+  {
     name: 'P4.9.conversation-long a long transcript opens on its last prompt with the replies near it drawn as Markdown and the far ones as written; scrolled up, the earliest is drawn as Markdown too, and the last prompt stays where it was until then',
     async run({ holds, page, mock }) {
       const now = Date.now();

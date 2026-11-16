@@ -1,7 +1,7 @@
 import { HOME } from './home.ts';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import { homedir } from 'node:os';
@@ -11,6 +11,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { z } from 'zod';
 import { answering, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
 import { clearings } from '../../server/clearing.ts';
+import { exchanges, fileMeta } from '../../server/conversations.ts';
 import {
   actionBodies, bodies, isAction, onDecision, type ActionHandlers, type ActionInput, type Responses, type Route, type RouteInput, type Snapshot, type State,
 } from '../../server/contract.ts';
@@ -126,6 +127,7 @@ let drift: Drift[] = [];
 // Each worktree's branch against its upstream; none has an upstream until a check sets one.
 const upstreams = new Map<string, Upstream>();
 let schedules: Schedule[] = [];
+const transcripts = new Map<string, string>();
 
 // As the server's: Esc stops a turn, and the pause prompt runs a short turn that stops the background tasks.
 const pausing = pauser({
@@ -205,6 +207,7 @@ function load(name: string) {
   ends = turnEnds();
   drift = [];
   schedules = [];
+  transcripts.clear();
   state = make(Date.now());
   if (args.legacy) for (const s of state.sessions) s.answered = null;
   answers = answeringFor(state);
@@ -932,8 +935,10 @@ route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => {
 });
 // Each earlier conversation ends on the reply it was cleared after; the current one has the first prompt, a reply that
 // asked for more, a prompt left without a reply, and the latest reply.
-api('GET /api/sessions/:id/conversation', ({ params }) => {
+api('GET /api/sessions/:id/conversation', async ({ params }) => {
   const s = must(params[0]);
+  const file = transcripts.get(s.id);
+  if (file) return [{ id: s.conversation, exchanges: await exchanges(file) }];
   const start = s.history.at(-1)?.until ?? s.createdAt;
   return [
     ...s.history.map((h) => ({ id: h.id, exchanges: [{ id: `${h.id}-1`, at: h.until - 600_000, prompt: 'Start with the failing test.', images: 0, reply: h.lastMessage, artifacts: [] }] })),
@@ -1060,6 +1065,18 @@ route('POST', '/mock/scenario/:name', ({ params }) => {
 route('POST', '/mock/patch', ({ body }) => {
   const s = must(body.id);
   merge(s, body.patch ?? {});
+  push();
+  return s;
+});
+// A task whose latest reply and conversation the server's own code reads from a transcript of these entries.
+route('POST', '/mock/transcript', async ({ body }) => {
+  const s = must(body.id);
+  const file = join(HOME, 'transcripts', `${s.conversation}.jsonl`);
+  await mkdir(join(HOME, 'transcripts'), { recursive: true });
+  await writeFile(file, body.entries.map((e: unknown) => `${JSON.stringify(e)}\n`).join(''));
+  transcripts.set(s.id, file);
+  const meta = (await fileMeta(file))!;
+  merge(s, { lastMessage: meta.lastMessage, lastPrompt: meta.lastPrompt, unanswered: meta.unanswered });
   push();
   return s;
 });

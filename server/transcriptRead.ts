@@ -12,13 +12,18 @@ export interface Entries {
   tail: Entry[];
 }
 
-// A line too long to read, or one that is not JSON, as a partly written last line.
+// A line that is not JSON, as a partly written last line.
 const SKIPPED = undefined;
 
+// Screenshots and pictures sent with a prompt are stored inline in base64, which nothing read from here needs; a long
+// line keeps its entry, such as the prompt a picture came with, without them.
+const withoutPictures = function (this: Entry, key: string, value: unknown) {
+  return key === 'data' && this.type === 'base64' ? '' : value;
+};
+
 function parse(line: string): Entry | typeof SKIPPED {
-  if (line.length > MAX_LINE) return SKIPPED;
   try {
-    return JSON.parse(line);
+    return line.length > MAX_LINE ? JSON.parse(line, withoutPictures) : JSON.parse(line);
   } catch {
     return SKIPPED;
   }
