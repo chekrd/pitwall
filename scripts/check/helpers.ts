@@ -249,7 +249,7 @@ export const meterIn = (inFrame: boolean) => {
     segments: [...doc.querySelectorAll('[data-segment]')].map((s) => Math.round(s.getBoundingClientRect().width * 10) / 10),
     bars: [...doc.querySelectorAll('[data-bar]')].map((b) => b.textContent),
     label: doc.querySelector('[data-meter] [role="group"]')?.getAttribute('aria-label') ?? null,
-    shown: (doc.querySelector('[data-meter]') as HTMLElement | null)?.innerText.trim() ?? null,
+    shown: doc.querySelector<HTMLElement>('[data-meter]')?.innerText.trim() ?? null,
     justIn: [...doc.querySelectorAll<HTMLElement>('[data-justin]')].map((j) => j.innerText.trim()),
   };
 };
