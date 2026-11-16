@@ -14,5 +14,5 @@ export type { Usage, UsageWindow } from '../../server/usage.ts';
 export type { Drift } from '../../server/claudeFormat.ts';
 export type { Run, Schedule, Scheduled, TaskRequest, When } from '../../server/schedule.ts';
 export type { Snapshot } from '../../server/app.ts';
-export type { WorktreeLoss } from '../../server/removal.ts';
+export type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 export type { ActionBody, ActionName } from '../../server/contract.ts';

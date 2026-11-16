@@ -153,6 +153,7 @@ export interface Responses {
   'POST /api/pause/now': Awaited<ReturnType<Pausing['hurry']>>;
   'POST /api/pause/resume': Resumed;
   'POST /api/pause/dismiss': void;
+  'POST /api/terminal-notices/:id/dismiss': void;
   'POST /api/ux': void;
   'POST /api/hooks/ask-user-question': void;
   'POST /api/hooks/event': void;

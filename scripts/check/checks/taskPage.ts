@@ -208,6 +208,38 @@ export const taskPage: Check[] = [
     },
   },
   {
+    name: 'P4.9.refused a clear whose tabs Ghostty refuses to close still clears the task, and a banner names the task and where its tabs are, says how to grant the Automation permission, and leaves on Dismiss; a clear Ghostty allows shows none',
+    async run({ page, mock, shot }) {
+      const notice = () => [...document.querySelectorAll<HTMLElement>('[data-terminal-notice]')].map((n) => n.innerText.replace(/\s+/g, ' ').trim());
+      await page.goto(`${mock.url}/s/s-edge/overview`);
+      await page.until('the task page', sheetOpen);
+      await page.click('#task-sheet button[aria-label="Clear task"]');
+      await page.until('the dialog', () => document.querySelector<HTMLDialogElement>('dialog#delete-worktree')?.open && !document.querySelector<HTMLElement>('dialog#delete-worktree')!.innerText.includes('Checking') && document.activeElement?.textContent === 'Clear task');
+      await page.key('Enter');
+      await logged(mock, 'the clearing', (e) => e.method === 'POST' && e.action === 'delete-worktree' && e.sessionId === 's-edge');
+      await page.until('the task to go', () => !document.querySelector('#task-sheet'));
+      assert.deepEqual(await page.eval(notice), [], 'a banner shows though Ghostty closed the tabs');
+
+      await mock.post('/mock/ghostty-refuses', {});
+      await page.goto(`${mock.url}/s/s-invoice/overview`);
+      await page.until('the task page', sheetOpen);
+      await page.click('#task-sheet button[aria-label="Clear task"]');
+      await page.until('the delete dialog', () => !!document.querySelector('dialog#delete-worktree[open] input[data-approve]'));
+      await approveLoss(page);
+      await page.click('dialog#delete-worktree button', 'Clear task');
+      const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree' && e.sessionId === 's-invoice');
+      assert.equal(deleted.status, 204, 'the refusal failed the clear');
+      await page.until('the task to go', () => !document.querySelector('#task-sheet'));
+      const text = await page.until('the banner', () => document.querySelector<HTMLElement>('[data-terminal-notice]')?.innerText.replace(/\s+/g, ' ').trim() || null);
+      assert.equal(text, 'Ghostty did not let Pitwall close the tabs of Fix invoice PDF rounding: the task is cleared, and any tab in ~/code/worktrees/invoice-rounding/billing-api and on /dev/ttys006 is still open. '
+        + 'To let Pitwall close them, turn on Ghostty under node in System Settings → Privacy & Security → Automation. Dismiss');
+      await shot('terminal-notice');
+      await page.click('[data-dismiss-terminal-notice]');
+      await page.until('the banner gone', () => !document.querySelector('[data-terminal-notice]'));
+      assert.deepEqual((await mock.get('/api/state')).terminalNotices, [], 'Dismiss left the notice on the server');
+    },
+  },
+  {
     name: 'P4.9.gone a task whose worktree was removed outside the board can still be cleared: the dialog says the worktree is already gone, and the task leaves',
     async run({ page, mock }) {
       await mock.post('/mock/patch', { id: 's-edge', patch: { worktree: `${await mock.home()}/code/worktrees/removed/storefront` } });

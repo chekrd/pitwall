@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { beforeEach, test } from 'node:test';
 import type { LiveProcess } from './conversations.ts';
 import { repos, sessions } from './db.ts';
-import { deleteWorktree, deleteWorktreeLoss, io, looseFiles } from './removal.ts';
+import { deleteWorktree, deleteWorktreeLoss, dismissTerminalNotice, io, looseFiles, terminalNotices } from './removal.ts';
 import { claudeOf } from './sessions.ts';
 import { makeTaskFolder, openWorktree } from './folderTasks.ts';
 import { refreshWorkspace } from './workspace.ts';
@@ -50,6 +50,8 @@ beforeEach(() => {
     return 0;
   };
   io.stopTerminal = async () => {};
+  io.tmuxTtys = async () => new Set();
+  for (const n of terminalNotices()) dismissTerminalNotice(n.id);
 });
 
 const running = (conversation: string, pid: number, cwd: string) => live.set(conversation, { pid, cwd, status: 'idle', waitingFor: null });
@@ -185,24 +187,64 @@ test('a task folder another task works in stays', async () => {
   assert.ok(sessions.get('two'));
 });
 
-test('Clear task still removes the worktree and the task when the terminal app refuses to have its tabs closed', async () => {
+const REFUSED = 'Command failed: /usr/bin/osascript\nexecution error: Not authorized to send Apple events to Ghostty. (-1743)';
+
+const quietly = async (work: () => Promise<void>) => {
+  const warn = console.warn;
+  const warned: string[] = [];
+  console.warn = (m: string) => warned.push(m);
+  try {
+    await work();
+  } finally {
+    console.warn = warn;
+  }
+  return warned;
+};
+
+test('Clear task still removes the worktree and the task when the terminal app refuses, and the board names what stays open', async () => {
   const { main, id, worktree } = await repoWithWorktree();
   task('refused', id, worktree, null);
   task('refused-in-checkout', id, main, 9301);
   running('refused-in-checkout', 9301, main);
   io.closeTerminalsIn = async () => {
-    throw new Error('Command failed: /usr/bin/osascript\nexecution error: Not authorized to send Apple events to Ghostty. (-1743)');
+    throw new Error(REFUSED);
   };
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
+  const warned = await quietly(async () => {
     await deleteWorktree('refused');
     await deleteWorktree('refused-in-checkout');
-  } finally {
-    console.warn = warn;
-  }
+  });
   assert.ok(!existsSync(worktree), 'the worktree is gone');
   assert.equal(git(main, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/feature'), '', 'its branch is gone');
   assert.equal(sessions.get('refused'), undefined);
   assert.equal(sessions.get('refused-in-checkout'), undefined);
+  assert.equal(warned.length, 2, 'the service log keeps the warning');
+  assert.deepEqual(terminalNotices().map(({ tasks, dir, ttys, permission }) => ({ tasks, dir, ttys, permission })), [
+    { tasks: ['refused'], dir: worktree, ttys: [], permission: true },
+    { tasks: ['refused-in-checkout'], dir: null, ttys: ['/dev/ttys9301'], permission: true },
+  ]);
+  dismissTerminalNotice(terminalNotices()[0].id);
+  assert.deepEqual(terminalNotices().map((n) => n.tasks), [['refused-in-checkout']]);
+});
+
+test('a clear whose tabs close leaves no notice, and a Claude in tmux has no tab to close', async () => {
+  const { main, id, worktree } = await repoWithWorktree();
+  task('closed', id, worktree, null);
+  task('in-tmux', id, main, 9401);
+  running('in-tmux', 9401, main);
+  io.tmuxTtys = async () => new Set(['/dev/ttys9401']);
+  await deleteWorktree('closed');
+  await deleteWorktree('in-tmux');
+  assert.deepEqual(closed, [{ dir: worktree, ttys: [] }], 'Ghostty was asked about a tmux pane');
+  assert.deepEqual(terminalNotices(), []);
+});
+
+test('a terminal app that fails for another reason gets a notice with its error, not the permission advice', async () => {
+  const { id, worktree } = await repoWithWorktree();
+  task('broken', id, worktree, null);
+  io.closeTerminalsIn = async () => {
+    throw new Error('Ghostty got an error: Connection is invalid. (-609)');
+  };
+  await quietly(() => deleteWorktree('broken'));
+  assert.ok(!existsSync(worktree));
+  assert.deepEqual(terminalNotices().map(({ permission, error }) => ({ permission, error })), [{ permission: false, error: 'Ghostty got an error: Connection is invalid. (-609)' }]);
 });

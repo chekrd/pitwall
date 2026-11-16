@@ -4,7 +4,7 @@ import { wsUrl } from './api.ts';
 import { orderKey } from './order.ts';
 import { active } from './outbox.ts';
 import { sends } from './sends.ts';
-import type { Drift, FolderView, RepoView, Schedule, Session, Snapshot, Usage } from './types.ts';
+import type { Drift, FolderView, RepoView, Schedule, Session, Snapshot, TerminalNotice, Usage } from './types.ts';
 import { menuOpen } from './layers.ts';
 import { isEditable } from './useKeys.ts';
 import { record } from './recorder.ts';
@@ -24,6 +24,7 @@ interface State {
   // Tasks Pause is still bringing to a stop, and those of them still finishing a turn.
   pause: { stopping: string[]; finishing: string[] };
   drift: Drift[];
+  terminalNotices: TerminalNotice[];
   // The checkout this Pitwall runs from, so drift can be fixed in a task on its repository.
   pitwall: string;
   link: Link;
@@ -35,7 +36,7 @@ interface State {
 const RELOAD_CAP_MS = 15_000;
 const RELOADED_FOR = 'pitwall:reloaded-for';
 
-let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], schedules: [], usage: null, pause: { stopping: [], finishing: [] }, drift: [], pitwall: '', link: 'connecting', newVersion: false };
+let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], schedules: [], usage: null, pause: { stopping: [], finishing: [] }, drift: [], terminalNotices: [], pitwall: '', link: 'connecting', newVersion: false };
 const subscribers = new Set<() => void>();
 let order = '';
 

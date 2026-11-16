@@ -145,6 +145,7 @@ test('the server serves every route of the contract, under its method and path',
     'POST /api/schedules/:id/run': true, 'POST /api/sessions': true, 'POST /api/shell': true, 'GET /api/sessions/:id/conversation': true,
     'GET /api/sessions/:id/delete-worktree': true, 'POST /api/restart/resume': true, 'POST /api/restart/dismiss': true,
     'POST /api/pause': true, 'POST /api/pause/now': true, 'POST /api/pause/resume': true, 'POST /api/pause/dismiss': true,
+    'POST /api/terminal-notices/:id/dismiss': true,
     'POST /api/ux': true, 'POST /api/hooks/ask-user-question': true, 'POST /api/hooks/event': true, 'GET /api/commands': true,
     'GET /api/diff/file': true, 'GET /api/upstream': true, 'GET /api/diff': true,
   } satisfies Record<Route, true>;

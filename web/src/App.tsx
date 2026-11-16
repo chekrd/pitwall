@@ -7,6 +7,7 @@ import { NewTaskDialog } from './components/NewTaskForm.tsx';
 import { Queue, useDeckSync } from './components/Queue.tsx';
 import { RestartBanner } from './components/RestartBanner.tsx';
 import { TaskSheet } from './components/TaskSheet.tsx';
+import { TerminalNoticeBanner } from './components/TerminalNoticeBanner.tsx';
 import { Toasts } from './components/Toasts.tsx';
 import { TopBar } from './components/TopBar.tsx';
 import { Wall } from './components/Wall.tsx';
@@ -46,6 +47,7 @@ export function App() {
       <TopBar route={route} deck={deck} />
       <RestartBanner />
       <DriftBanner />
+      <TerminalNoticeBanner />
       {/* Under an open task the view stays, so it comes back as it was left. */}
       <div className="views">
         <div className="view" data-covered={!!route.sheet || undefined} inert={!!route.sheet}>

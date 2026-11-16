@@ -10,6 +10,7 @@ import { stopExplanation } from './explain.ts';
 import { changedFiles, isClean, removeWorktree, unpushedCommits } from './git.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
+import * as tmux from './tmux.ts';
 import { ttyOf, withoutAdopting } from './ingest.ts';
 import { scheduleRerank } from './priority.ts';
 import { claudeOf, dropAsides, must } from './sessions.ts';
@@ -23,6 +24,7 @@ export const io = {
   ttyOf,
   closeTerminalsIn: ghostty.closeTerminalsIn,
   stopTerminal: terminal.stop,
+  tmuxTtys: async () => new Set((await tmux.panes().catch(() => new Map())).keys()),
 };
 
 // What Clear task would throw away or leave unpushed, for its confirmation.
@@ -43,11 +45,42 @@ export interface WorktreeLoss {
   loose?: number;
 }
 
-// A terminal app that refuses, as Ghostty does without the Automation permission, leaves its tabs open in the
-// removed directory rather than keep the task.
-const closeTerminals = (dir: string | null, ttys: string[]) =>
+// Tabs Clear task could not close, which stay open in the removed directory or on the ttys its Claudes had, until
+// dismissed. Ghostty refuses every Apple event without the Automation permission, so it cannot be asked which tabs those are.
+export interface TerminalNotice {
+  id: string;
+  tasks: string[];
+  dir: string | null;
+  ttys: string[];
+  permission: boolean;
+  error: string;
+}
+
+let notices: TerminalNotice[] = [];
+let noticeSerial = 0;
+
+export const terminalNotices = () => notices;
+
+export function dismissTerminalNotice(id: string) {
+  const before = notices.length;
+  notices = notices.filter((n) => n.id !== id);
+  if (notices.length !== before) notify();
+}
+
+const refusedPermission = (message: string) => /Not authorized to send Apple events|\(-1743\)/.test(message);
+
+// A tmux pane's tty is no terminal tab: its tmux session ends with the Claude in it.
+const tabTtys = async (ttys: string[]) => {
+  const panes = await io.tmuxTtys();
+  return ttys.filter((t) => !panes.has(t));
+};
+
+const closeTerminals = (tasks: Session[], dir: string | null, ttys: string[]) =>
   io.closeTerminalsIn(dir, ttys).catch((err: unknown) => {
-    console.warn(`left terminals open in ${dir ?? ttys.join(', ')}: ${err instanceof Error ? err.message : String(err)}`);
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(`left terminals open in ${dir ?? ttys.join(', ')}: ${error}`);
+    notices = [...notices, { id: String(++noticeSerial), tasks: tasks.length ? tasks.map((o) => o.title || basename(o.worktree)) : [basename(dir ?? '')], dir, ttys, permission: refusedPermission(error), error }];
+    notify();
   });
 
 const stopWork = (o: Session) => {
@@ -122,11 +155,12 @@ async function removeWorktreeNow(repo: RepoView, path: string, opts: { force: bo
       throw new Error('the worktree has uncommitted or untracked changes; tick Force to discard them');
     }
     const claudes = await claudesIn(path);
-    const ttys = (await Promise.all(claudes.map((p) => io.ttyOf(p.pid)))).filter((t) => t !== null);
-    for (const o of sessions.all().filter((o) => o.worktree === path)) stopWork(o);
+    const ttys = await tabTtys((await Promise.all(claudes.map((p) => io.ttyOf(p.pid)))).filter((t) => t !== null));
+    const tasks = sessions.all().filter((o) => o.worktree === path);
+    for (const o of tasks) stopWork(o);
     for (const p of claudes) io.signal(p.pid, 'SIGTERM');
     await waitForExit(claudes.map((p) => p.pid), 10_000);
-    await closeTerminals(path, ttys);
+    await closeTerminals(tasks, path, ttys);
     const keepBranch = !worktree.branch || longLived(repo, worktree.branch);
     await removeWorktree(repo.path, path, { force: opts.force, deleteBranch: opts.deleteBranch && !keepBranch });
     await stopWorktree(path);
@@ -229,12 +263,12 @@ async function removeTaskFolder(folder: string) {
   try {
     await withoutAdopting(folder, async () => {
       const claudes = await claudesIn(folder);
-      const ttys = (await Promise.all(claudes.map((p) => io.ttyOf(p.pid)))).filter((t) => t !== null);
+      const ttys = await tabTtys((await Promise.all(claudes.map((p) => io.ttyOf(p.pid)))).filter((t) => t !== null));
       const gone = sessions.all().filter((o) => inside(folder, o.worktree));
       for (const o of gone) stopWork(o);
       for (const p of claudes) io.signal(p.pid, 'SIGTERM');
       await waitForExit(claudes.map((p) => p.pid), 10_000);
-      await closeTerminals(folder, ttys);
+      await closeTerminals(gone, folder, ttys);
       await Promise.all(gone.map((o) => io.stopTerminal(o.id)));
       for (const { repo, worktree } of taskWorktrees(folder)) {
         await withoutAdopting(worktree.path, async () => {
@@ -281,10 +315,10 @@ async function stopTask(gone: Session[]) {
     const pid = claudeOf(o, live);
     return pid ? [{ pid, tty: o.tty }] : [];
   });
-  const ttys = (await Promise.all(claudes.map(async (c) => c.tty ?? io.ttyOf(c.pid)))).filter((t) => t !== null);
+  const ttys = await tabTtys((await Promise.all(claudes.map(async (c) => c.tty ?? io.ttyOf(c.pid)))).filter((t) => t !== null));
   for (const { pid } of claudes) io.signal(pid, 'SIGTERM');
   await waitForExit(claudes.map((c) => c.pid), 10_000);
-  if (ttys.length) await closeTerminals(null, ttys);
+  if (ttys.length) await closeTerminals(gone, null, ttys);
   await Promise.all(gone.map((o) => io.stopTerminal(o.id)));
   for (const o of gone) sessions.remove(o.id);
   await Promise.all([...gone.map((o) => rm(join(SESSIONS_DIR, o.id), { recursive: true, force: true })), dropAsides(gone)]);

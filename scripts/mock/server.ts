@@ -29,7 +29,7 @@ import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, 
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
-import type { WorktreeLoss } from '../../server/removal.ts';
+import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
 import { refuseLive } from '../isolate.ts';
@@ -124,6 +124,9 @@ let clearHold: { done: Promise<void>; release: (error?: string) => void } | null
 let dropUntil = 0;
 let announced: string | null = null;
 let drift: Drift[] = [];
+// While set by /mock/ghostty-refuses, Clear task finds Ghostty refusing its Apple events, as without the Automation permission.
+let ghosttyRefuses = false;
+let terminalNotices: TerminalNotice[] = [];
 // Each worktree's branch against its upstream; none has an upstream until a check sets one.
 const upstreams = new Map<string, Upstream>();
 let schedules: Schedule[] = [];
@@ -165,7 +168,7 @@ function snapshot(): State {
   }
   return {
     home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id) })),
-    usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, pitwall: `${HOME}/git/github/pitwall`,
+    usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, terminalNotices, pitwall: `${HOME}/git/github/pitwall`,
   };
 }
 
@@ -206,6 +209,8 @@ function load(name: string) {
   pausing.cancel();
   ends = turnEnds();
   drift = [];
+  ghosttyRefuses = false;
+  terminalNotices = [];
   schedules = [];
   transcripts.clear();
   state = make(Date.now());
@@ -536,7 +541,19 @@ function sharedWith(s: Session) {
   return state.sessions.some((o) => !own.has(o) && (o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)));
 }
 
+// As the server: Ghostty is asked for the tabs in a removed place, and for the tabs of the task's Claudes in one kept.
+function refusedTabs(s: Session, removesPlace: boolean) {
+  const tasks = removesPlace ? state.sessions.filter((o) => o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)) : [s, ...subtasksOf(s.id)];
+  const ttys = tasks.flatMap((o) => (o.status !== 'exited' && o.tty ? [o.tty] : []));
+  if (!ghosttyRefuses || (!removesPlace && !ttys.length)) return;
+  const error = 'Command failed: /usr/bin/osascript -e on run argv\nexecution error: Not authorized to send Apple events to Ghostty. (-1743)';
+  terminalNotices = [...terminalNotices, {
+    id: randomUUID(), tasks: tasks.map((o) => o.title || o.worktree.split('/').at(-1)!), dir: removesPlace ? s.worktree : null, ttys, permission: true, error,
+  }];
+}
+
 function clearTask(s: Session, removesPlace: boolean) {
+  refusedTabs(s, removesPlace);
   if (s.repoId === null && removesPlace) {
     for (const { repo, worktree } of taskWorktrees(s.worktree)) repo.worktrees = repo.worktrees.filter((w) => w !== worktree);
     state.sessions = state.sessions.filter((o) => o.worktree !== s.worktree && !o.worktree.startsWith(`${s.worktree}/`));
@@ -1079,6 +1096,15 @@ route('POST', '/mock/transcript', async ({ body }) => {
   merge(s, { lastMessage: meta.lastMessage, lastPrompt: meta.lastPrompt, unanswered: meta.unanswered });
   push();
   return s;
+});
+route('POST', '/mock/ghostty-refuses', ({ body }) => {
+  ghosttyRefuses = body.refuses !== false;
+  return NONE;
+});
+api('POST /api/terminal-notices/:id/dismiss', ({ params }) => {
+  terminalNotices = terminalNotices.filter((n) => n.id !== params[0]);
+  push();
+  return NONE;
 });
 route('POST', '/mock/drift', ({ body }) => {
   drift = body.drift ?? [];

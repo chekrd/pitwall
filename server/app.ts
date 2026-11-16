@@ -24,7 +24,7 @@ import { respond } from './findings.ts';
 import { folderDiff } from './folderTasks.ts';
 import { fullDiff, listBranches, repoRoot, upstreamOf } from './git.ts';
 import { handleMcp } from './mcp.ts';
-import { clearing, deleteWorktree, deleteWorktreeLoss, hideRepo, removeWorktreeAndSessions } from './removal.ts';
+import { clearing, deleteWorktree, deleteWorktreeLoss, dismissTerminalNotice, hideRepo, removeWorktreeAndSessions, terminalNotices } from './removal.ts';
 import { nextRun, parseSchedule, repeats } from './schedule.ts';
 import * as S from './sessions.ts';
 import { modelChoices, plan, startFolderTask, startRepoTask } from './tasks.ts';
@@ -84,7 +84,7 @@ const diffOf = (worktree: string, opts: { paths?: string[] } = {}) =>
 const withClearing = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id) })) });
 
 const stateWith = (usage: Usage | null) =>
-  ({ ...withClearing(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), pitwall: ROOT });
+  ({ ...withClearing(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), terminalNotices: terminalNotices(), pitwall: ROOT });
 
 // What /api/state answers, and /ws/events sends on every change.
 export type State = ReturnType<typeof stateWith>;
@@ -352,6 +352,11 @@ export function createApp({ usage, ui }: AppDeps) {
   app.post('/api/pause/now', async (c) => c.json((await S.hurryPause()) satisfies Responses['POST /api/pause/now']));
 
   app.post('/api/pause/resume', async (c) => c.json((await S.resumePaused((await read(c, 'POST /api/pause/resume')).id)) satisfies Responses['POST /api/pause/resume']));
+
+  app.post('/api/terminal-notices/:id/dismiss', (c) => {
+    dismissTerminalNotice(c.req.param('id'));
+    return c.body(null, 204);
+  });
 
   app.post('/api/pause/dismiss', (c) => {
     S.dismissInterrupted('pause');
