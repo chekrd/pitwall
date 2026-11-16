@@ -223,6 +223,26 @@ export function ParentCrumb({ session }: { session: Session }) {
   );
 }
 
+// The tasks a subtask sits under, from its root task down, as links that open each one's page.
+export function ParentPath({ session }: { session: Session }) {
+  const { sessions, repos } = useStore();
+  if (!session.parent) return null;
+  const chain = ancestorsOf(sessions, session);
+  if (!chain.length) return <span>its task</span>;
+  return (
+    <span className={styles.path} data-parent-path>
+      {chain.map((task, i) => (
+        <span key={task.id}>
+          {i > 0 && <span className={styles.crumbSep} aria-hidden> › </span>}
+          <button type="button" data-ux="task" data-task={task.id} data-explain="Open this task" onClick={() => openSheet(task.id)}>
+            {sessionLabel(task, locate(repos, task).branch)}
+          </button>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 // On a subtask's page: the task it belongs to, the finding it was started from with your answer, and the finding's
 // other subtasks, which work in the same worktree.
 export function SubtaskOf({ session }: { session: Session }) {

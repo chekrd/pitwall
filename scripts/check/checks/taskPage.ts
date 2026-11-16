@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { uploadsDir } from '../../../server/uploadPaths.ts';
 import { until } from '../cdp.ts';
-import { approveLoss, clearDisabled, logged, menuItems, openFromWall, openSheetOf, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
+import { approveLoss, clearDisabled, logged, menuItems, openFromWall, openQueue, openSheetOf, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
 
 export const taskPage: Check[] = [
   {
@@ -252,6 +252,54 @@ export const taskPage: Check[] = [
       const after = await mock.get('/api/state');
       assert.ok(after.sessions.some((x: { id: string }) => x.id === 's-search'), 'the other task went');
       assert.ok(after.repos.some((r: { worktrees: { path: string }[] }) => r.worktrees.some((w) => w.path === worktree)), 'the worktree went');
+    },
+  },
+  {
+    name: "P4.6.subtask-of a subtask's Facts and its card's rail name the task it sits under as a link, and its finding with the review round once the task had more than one; the task's Facts count its subtasks open and archived",
+    async run({ page, mock, shot }) {
+      const worktree = `${await mock.home()}/code/worktrees/search-typos/storefront`;
+      const now = Date.now();
+      const sub = (id: string, basis: string, finding: number, title: string, at: number, more: object = {}) => mock.post('/mock/add', {
+        template: 'idle', id, worktree, title, createdAt: at, ...more,
+        parent: { id: 's-search', basis, finding, title, kind: 'accept', text: '' },
+      });
+      await sub('s-r1a', 'r1', 1, 'Plural forms', now - 60_000, { archived: true, status: 'exited' });
+      await sub('s-r1b', 'r1', 0, 'Diacritics', now - 50_000);
+      await sub('s-r2', 'r2', 1, 'Stemming of short words', now - 10_000, { template: 'turn', rank: 0 });
+
+      // A subtask has a card of its own only once its task is archived.
+      await mock.post('/mock/patch', { id: 's-search', patch: { archived: true } });
+      await openQueue(page, mock, 's-r2');
+      const rail = await page.until('the rail', () => document.querySelector<HTMLElement>('[data-card] [data-rail]')?.innerText ?? null);
+      assert.match(rail, /Subtask of Typo-tolerant search/);
+      assert.match(rail, /Finding #2, round 2: Stemming of short words/);
+      await shot('subtask-rail');
+      await page.click('[data-card] [data-rail] [data-parent-path] button', 'Typo-tolerant search');
+      await page.until('the task page from the rail', () => location.pathname.startsWith('/s/s-search'));
+      const counts = await page.until('the counts', () => document.querySelector<HTMLElement>('#task-sheet [data-subtask-counts]')?.innerText ?? null);
+      assert.equal(counts, '2 open · 1 archived');
+
+      await page.goto(`${mock.url}/s/s-r2/overview`);
+      await page.until('the task page', sheetOpen);
+      const facts = () => {
+        const dl = document.querySelector('#task-sheet [aria-label="Facts"] dl')!;
+        const rows: Record<string, string> = {};
+        for (const dt of dl.querySelectorAll('dt')) rows[dt.textContent] = dt.nextElementSibling!.textContent;
+        return rows;
+      };
+      await page.until('the facts', () => !!document.querySelector('#task-sheet [aria-label="Facts"] [data-parent-path]'));
+      const rows = await page.eval(facts);
+      assert.equal(rows['Subtask of'], 'Typo-tolerant search');
+      assert.equal(rows['Finding'], '#2, round 2 Stemming of short words');
+      assert.equal(rows['Subtasks'], undefined, 'a subtask without subtasks has no count');
+      await shot('subtask-facts');
+
+      await page.click('#task-sheet [aria-label="Facts"] [data-parent-path] button', 'Typo-tolerant search');
+      await page.until('the task page of the task', () => location.pathname.startsWith('/s/s-search') && !!document.querySelector('#task-sheet [data-subtask-counts]'));
+
+      await page.goto(`${mock.url}/s/s-r1b/overview`);
+      await page.until('the earlier round', () => document.querySelector<HTMLElement>('#task-sheet [data-finding]')?.innerText ?? null);
+      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-finding]')!.innerText), '#1, round 1 Diacritics');
     },
   },
   {

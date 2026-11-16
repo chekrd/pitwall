@@ -10,11 +10,11 @@ import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { Link, RepoView, Session } from '../types.ts';
 import { useDecision } from '../useDecision.ts';
-import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, folderTaskOf, isDelivered, modelName, shortUrl, tilde, underTask, worktreeName } from '../util.ts';
+import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, findingNumber, folderTaskOf, isDelivered, modelName, shortUrl, subtaskCounts, tilde, underTask, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
-import { Findings, Subtasks, SubtaskOf } from './Findings.tsx';
+import { Findings, ParentPath, Subtasks, SubtaskOf } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
 import { Later, LaterActions } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
@@ -321,8 +321,9 @@ function DecisionBelow({ scroller, what }: { scroller: RefObject<HTMLDivElement 
 }
 
 export function Overview({ session, name, branch, repo }: { session: Session; name: string; branch?: string | undefined; repo?: RepoView | undefined }) {
-  const { home, repos } = useStore();
+  const { home, repos, sessions } = useStore();
   const task = folderTaskOf(repos, session);
+  const counts = subtaskCounts(sessions, session.id);
   const busy = useBusy();
   const { summary, activity } = session;
   const attention = attentionOf(session);
@@ -450,13 +451,21 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             <dl className={styles.facts}>
               {session.parent ? (
                 <>
-                  <dt>Finding</dt>
-                  <dd>#{session.parent.finding + 1} {session.parent.title}</dd>
+                  <dt>Subtask of</dt>
+                  <dd><ParentPath session={session} /></dd>
+                  <dt data-explain="The finding of the task's review this subtask was started from">Finding</dt>
+                  <dd data-finding>{findingNumber(sessions, session)} {session.parent.title}</dd>
                 </>
               ) : (
                 <>
                   <dt>Task</dt>
                   <dd>{session.firstPrompt ?? '—'}</dd>
+                </>
+              )}
+              {(counts.open > 0 || counts.archived > 0) && (
+                <>
+                  <dt data-explain="The subtasks started from this task's findings, and theirs">Subtasks</dt>
+                  <dd data-subtask-counts>{counts.open} open · {counts.archived} archived</dd>
                 </>
               )}
               {session.scheduled && (

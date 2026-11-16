@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { menu, options, question, session, turn } from './testing.ts';
 import type { RepoView } from './types.ts';
-import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingPath, isDelivered, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, settledAs, share, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
+import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingNumber, findingPath, isDelivered, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, roundOf, settledAs, share, subtaskCounts, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
 
 test('a decision is the open question or end-of-turn choice, and one the board answered is closed at once', () => {
   const asked = session('s', { question: question('q1') });
@@ -72,6 +72,23 @@ test('a worktree is named by its folder, without the repository folder git-wt pu
   assert.equal(worktreeName('/g/board', repo), 'None');
   assert.equal(worktreeName('/g/worktrees/gone/board', repo), 'None');
   assert.equal(worktreeName('/g/worktrees/x/board', undefined), 'board');
+});
+
+test("a subtask's review round counts the rounds that started subtasks in the order the first of each started, then the task's current findings; one round is no round", () => {
+  const sub = (id: string, basis: string, finding: number, createdAt: number, archived = false) =>
+    session(id, { createdAt, archived, parent: { id: 'review', basis, finding, title: 'f', kind: 'accept', text: '' } });
+  const late = sub('late', 'b2', 1, 30);
+  const early = sub('early', 'b1', 1, 10, true);
+  const alone = [session('review'), sub('x', 'b1', 0, 5)];
+  assert.equal(roundOf(alone, alone[1]), null);
+  assert.equal(findingNumber(alone, alone[1]), '#1');
+  const two = [session('review'), late, early, sub('more', 'b1', 2, 40)];
+  assert.equal(roundOf(two, early), 1);
+  assert.equal(findingNumber(two, late), '#2, round 2');
+  const reviewedAgain = [session('review', { findings: { basis: 'b3', items: [] } }), sub('x', 'b1', 0, 5)];
+  assert.equal(findingNumber(reviewedAgain, reviewedAgain[1]), '#1, round 1');
+  assert.deepEqual(subtaskCounts(two, 'review'), { open: 2, archived: 1 });
+  assert.deepEqual(subtaskCounts(two, 'late'), { open: 0, archived: 0 });
 });
 
 test('subtasks nest: the chain up to the root task, the tree under a task, and the finding numbers down to a subtask', () => {

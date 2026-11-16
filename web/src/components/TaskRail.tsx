@@ -1,5 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { useStore } from '../store.ts';
 import type { Session } from '../types.ts';
+import { findingNumber } from '../util.ts';
+import { ParentPath } from './Findings.tsx';
 import { Age } from './Parts.tsx';
 import parts from './Parts.module.css';
 import styles from './TaskRail.module.css';
@@ -7,8 +10,9 @@ import styles from './TaskRail.module.css';
 // What the task is for and where it stands, beside every card, so a decision can be made without its Overview. A
 // Your-turn card's headline is the summary already, so its rail leaves the summary's text out.
 export function TaskRail({ session, summaryText = true }: { session: Session; summaryText?: boolean }) {
+  const { sessions } = useStore();
   const { summary, parent } = session;
-  const goal = parent ? `Finding #${parent.finding + 1}: ${parent.title}` : session.firstPrompt;
+  const goal = parent ? `Finding ${findingNumber(sessions, session)}: ${parent.title}` : session.firstPrompt;
   const progress = summary?.progress ?? [];
   const text = summaryText ? summary?.text : null;
   return (
@@ -16,6 +20,7 @@ export function TaskRail({ session, summaryText = true }: { session: Session; su
       {goal && (
         <section>
           <h3 className={parts.label}>Task</h3>
+          {parent && <p className={styles.of}>Subtask of <ParentPath session={session} /></p>}
           <Goal key={goal} text={goal} />
         </section>
       )}

@@ -154,6 +154,37 @@ const DELIVERED = [
 // A pull or merge request, or a claude.ai page, as opposed to a link Claude only cited.
 export const isDelivered = (url: string) => DELIVERED.some((r) => r.test(url));
 
+// Which review round of its task a subtask's finding came from, counting the rounds that started a subtask in the
+// order their first one started, then the task's current findings; null while the task had only one round, where
+// the round adds nothing to the finding's number.
+export function roundOf(sessions: readonly Session[], s: Session) {
+  const p = s.parent;
+  if (!p) return null;
+  const started = new Map<string, number>();
+  for (const o of sessions) {
+    if (o.parent?.id !== p.id) continue;
+    started.set(o.parent.basis, Math.min(started.get(o.parent.basis) ?? Infinity, o.createdAt));
+  }
+  const bases = [...started].sort((a, b) => a[1] - b[1]).map(([basis]) => basis);
+  const current = sessions.find((o) => o.id === p.id)?.findings?.basis;
+  if (current && !bases.includes(current)) bases.push(current);
+  return bases.length > 1 ? bases.indexOf(p.basis) + 1 : null;
+}
+
+// A subtask's finding as it reads beside its title, e.g. "#2, round 2".
+export function findingNumber(sessions: readonly Session[], s: Session) {
+  if (!s.parent) return '';
+  const round = roundOf(sessions, s);
+  return `#${s.parent.finding + 1}${round ? `, round ${round}` : ''}`;
+}
+
+// A task's own subtasks and theirs, how many are still open and how many archived.
+export function subtaskCounts(sessions: readonly Session[], id: string) {
+  const all = descendantsOf(sessions, id).map((d) => d.session);
+  const archived = all.filter((o) => o.archived).length;
+  return { open: all.length - archived, archived };
+}
+
 // The finding numbers from the root task down, e.g. 1.2 for finding 2 of the subtask on finding 1.
 export const findingPath = (sessions: readonly Session[], s: Session) =>
   [...ancestorsOf(sessions, s).slice(1), s].map((o) => (o.parent ? o.parent.finding + 1 : '?')).join('.');
