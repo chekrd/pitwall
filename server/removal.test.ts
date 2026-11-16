@@ -184,3 +184,25 @@ test('a task folder another task works in stays', async () => {
   assert.ok(existsSync(path));
   assert.ok(sessions.get('two'));
 });
+
+test('Clear task still removes the worktree and the task when the terminal app refuses to have its tabs closed', async () => {
+  const { main, id, worktree } = await repoWithWorktree();
+  task('refused', id, worktree, null);
+  task('refused-in-checkout', id, main, 9301);
+  running('refused-in-checkout', 9301, main);
+  io.closeTerminalsIn = async () => {
+    throw new Error('Command failed: /usr/bin/osascript\nexecution error: Not authorized to send Apple events to Ghostty. (-1743)');
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await deleteWorktree('refused');
+    await deleteWorktree('refused-in-checkout');
+  } finally {
+    console.warn = warn;
+  }
+  assert.ok(!existsSync(worktree), 'the worktree is gone');
+  assert.equal(git(main, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/feature'), '', 'its branch is gone');
+  assert.equal(sessions.get('refused'), undefined);
+  assert.equal(sessions.get('refused-in-checkout'), undefined);
+});

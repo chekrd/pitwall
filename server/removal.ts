@@ -43,6 +43,13 @@ export interface WorktreeLoss {
   loose?: number;
 }
 
+// A terminal app that refuses, as Ghostty does without the Automation permission, leaves its tabs open in the
+// removed directory rather than keep the task.
+const closeTerminals = (dir: string | null, ttys: string[]) =>
+  io.closeTerminalsIn(dir, ttys).catch((err: unknown) => {
+    console.warn(`left terminals open in ${dir ?? ttys.join(', ')}: ${err instanceof Error ? err.message : String(err)}`);
+  });
+
 const stopWork = (o: Session) => {
   stopAdvice(o.id);
   stopExplanation(o.id);
@@ -119,7 +126,7 @@ async function removeWorktreeNow(repo: RepoView, path: string, opts: { force: bo
     for (const o of sessions.all().filter((o) => o.worktree === path)) stopWork(o);
     for (const p of claudes) io.signal(p.pid, 'SIGTERM');
     await waitForExit(claudes.map((p) => p.pid), 10_000);
-    await io.closeTerminalsIn(path, ttys);
+    await closeTerminals(path, ttys);
     const keepBranch = !worktree.branch || longLived(repo, worktree.branch);
     await removeWorktree(repo.path, path, { force: opts.force, deleteBranch: opts.deleteBranch && !keepBranch });
     await stopWorktree(path);
@@ -227,7 +234,7 @@ async function removeTaskFolder(folder: string) {
       for (const o of gone) stopWork(o);
       for (const p of claudes) io.signal(p.pid, 'SIGTERM');
       await waitForExit(claudes.map((p) => p.pid), 10_000);
-      await io.closeTerminalsIn(folder, ttys);
+      await closeTerminals(folder, ttys);
       await Promise.all(gone.map((o) => io.stopTerminal(o.id)));
       for (const { repo, worktree } of taskWorktrees(folder)) {
         await withoutAdopting(worktree.path, async () => {
@@ -277,7 +284,7 @@ async function stopTask(gone: Session[]) {
   const ttys = (await Promise.all(claudes.map(async (c) => c.tty ?? io.ttyOf(c.pid)))).filter((t) => t !== null);
   for (const { pid } of claudes) io.signal(pid, 'SIGTERM');
   await waitForExit(claudes.map((c) => c.pid), 10_000);
-  if (ttys.length) await io.closeTerminalsIn(null, ttys);
+  if (ttys.length) await closeTerminals(null, ttys);
   await Promise.all(gone.map((o) => io.stopTerminal(o.id)));
   for (const o of gone) sessions.remove(o.id);
   await Promise.all([...gone.map((o) => rm(join(SESSIONS_DIR, o.id), { recursive: true, force: true })), dropAsides(gone)]);
