@@ -17,7 +17,7 @@ function Notice({ notice, home }: { notice: TerminalNotice; home: string }) {
         <strong>Ghostty did not let Pitwall close the tabs of {list(notice.tasks)}</strong>: the task is cleared, and any tab {list(where)} is still open.
         {' '}
         {notice.permission
-          ? 'To let Pitwall close them, turn on Ghostty under node in System Settings → Privacy & Security → Automation.'
+          ? "To let Pitwall close them, turn on Ghostty under pitwall, Pitwall's launcher, in System Settings → Privacy & Security → Automation."
           : notice.error}
       </p>
       <button type="button" data-dismiss-terminal-notice onClick={dismiss}>Dismiss</button>

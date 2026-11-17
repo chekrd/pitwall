@@ -232,7 +232,7 @@ export const taskPage: Check[] = [
       await page.until('the task to go', () => !document.querySelector('#task-sheet'));
       const text = await page.until('the banner', () => document.querySelector<HTMLElement>('[data-terminal-notice]')?.innerText.replace(/\s+/g, ' ').trim() || null);
       assert.equal(text, 'Ghostty did not let Pitwall close the tabs of Fix invoice PDF rounding: the task is cleared, and any tab in ~/code/worktrees/invoice-rounding/billing-api and on /dev/ttys006 is still open. '
-        + 'To let Pitwall close them, turn on Ghostty under node in System Settings → Privacy & Security → Automation. Dismiss');
+        + "To let Pitwall close them, turn on Ghostty under pitwall, Pitwall's launcher, in System Settings → Privacy & Security → Automation. Dismiss");
       await shot('terminal-notice');
       await page.click('[data-dismiss-terminal-notice]');
       await page.until('the banner gone', () => !document.querySelector('[data-terminal-notice]'));
@@ -253,7 +253,7 @@ export const taskPage: Check[] = [
       assert.equal(shell.status, 500);
       const [toast] = await page.until('the error', toastsOf, 'error');
       await shot('shell-refused');
-      assert.equal(toast.text, 'Ghostty does not let Pitwall control it: turn on Ghostty under node in System Settings → Privacy & Security → Automation.');
+      assert.equal(toast.text, "Ghostty does not let Pitwall control it: turn on Ghostty under pitwall, Pitwall's launcher, in System Settings → Privacy & Security → Automation.");
     },
   },
   {

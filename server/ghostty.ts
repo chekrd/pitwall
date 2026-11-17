@@ -11,7 +11,7 @@ export const io = {
 // Ghostty refuses every Apple event from a process macOS has not let control it.
 export class NotPermitted extends Error {
   constructor(options?: ErrorOptions) {
-    super('Ghostty does not let Pitwall control it: turn on Ghostty under node in System Settings → Privacy & Security → Automation.', options);
+    super("Ghostty does not let Pitwall control it: turn on Ghostty under pitwall, Pitwall's launcher, in System Settings → Privacy & Security → Automation.", options);
   }
 }
 

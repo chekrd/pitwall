@@ -50,7 +50,7 @@ test('a Ghostty that refuses Apple events says how to grant the Automation permi
     if (source === 'application "Ghostty" is running') return 'true';
     throw failed('50:75: execution error: Not authorized to send Apple events to Ghostty. (-1743)\n');
   };
-  await assert.rejects(newTab('/work/task', ''), { name: 'Error', message: /^Ghostty does not let Pitwall control it: turn on Ghostty under node in System Settings → Privacy & Security → Automation\.$/ });
+  await assert.rejects(newTab('/work/task', ''), { name: 'Error', message: /^Ghostty does not let Pitwall control it: turn on Ghostty under pitwall, Pitwall's launcher, in System Settings → Privacy & Security → Automation\.$/ });
   await assert.rejects(newTab('/work/task', ''), NotPermitted);
   await assert.rejects(focus('/dev/ttys001'), NotPermitted);
   await assert.rejects(keys('/dev/ttys001', [{ key: 'enter' }]), NotPermitted, 'a refusal typed nothing, so it is no partial typing');

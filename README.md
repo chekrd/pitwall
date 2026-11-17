@@ -66,7 +66,7 @@ The board's window runs in Brave Beta, not Brave. Installed from Brave it shares
 
 ## Notes
 
-- Needs tmux and Ghostty 1.3+ (AppleScript), and macOS Automation permission for the server to control Ghostty; no screen recording.
+- Needs tmux and Ghostty 1.3+ (AppleScript), and macOS Automation permission for the server to control Ghostty; no screen recording. Node's hardened runtime cannot hold that permission, so `pnpm service:install` builds a small launcher (`scripts/launcher/launcher.c`, ad-hoc signed with the Apple Events entitlement, in Pitwall's Application Support folder) that launchd starts and that runs the server as its child. macOS asks once to let **pitwall** control Ghostty; the launcher is rebuilt only when its source changes, since a rebuilt one has to be allowed again.
 - Brand-new folders trigger Claude's "trust this folder" prompt once. Claude registers itself only after it, so a hidden session shows as waiting on its start-up prompt; answer it through **Terminal**.
 - A Claude running in another terminal app or in your own tmux still shows up, but Terminal and answering need it to be a hidden session or the foreground process of a Ghostty tab.
 - Light/dark follows the system until the top bar's theme button picks Light or Dark; the choice is kept in that browser, and System follows the system again.
