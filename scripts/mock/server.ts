@@ -18,6 +18,7 @@ import {
 import type { FullDiff, Upstream } from '../../server/git.ts';
 import type { Session, SubtaskKind } from '../../server/db.ts';
 import { checkDecision, DECLINED, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
+import { failure, NotPermitted } from '../../server/ghostty.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { archivePatch, pickedUp } from '../../server/restart.ts';
@@ -124,8 +125,9 @@ let clearHold: { done: Promise<void>; release: (error?: string) => void } | null
 let dropUntil = 0;
 let announced: string | null = null;
 let drift: Drift[] = [];
-// While set by /mock/ghostty-refuses, Clear task finds Ghostty refusing its Apple events, as without the Automation permission.
+// While set by /mock/ghostty-refuses, Ghostty refuses Pitwall's Apple events, as without the Automation permission.
 let ghosttyRefuses = false;
+const REFUSED = '50:75: execution error: Not authorized to send Apple events to Ghostty. (-1743)';
 let terminalNotices: TerminalNotice[] = [];
 // Each worktree's branch against its upstream; none has an upstream until a check sets one.
 const upstreams = new Map<string, Upstream>();
@@ -546,7 +548,7 @@ function refusedTabs(s: Session, removesPlace: boolean) {
   const tasks = removesPlace ? state.sessions.filter((o) => o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)) : [s, ...subtasksOf(s.id)];
   const ttys = tasks.flatMap((o) => (o.status !== 'exited' && o.tty ? [o.tty] : []));
   if (!ghosttyRefuses || (!removesPlace && !ttys.length)) return;
-  const error = 'Command failed: /usr/bin/osascript -e on run argv\nexecution error: Not authorized to send Apple events to Ghostty. (-1743)';
+  const error = new NotPermitted().message;
   terminalNotices = [...terminalNotices, {
     id: randomUUID(), tasks: tasks.map((o) => o.title || o.worktree.split('/').at(-1)!), dir: removesPlace ? s.worktree : null, ttys, permission: true, error,
   }];
@@ -944,7 +946,10 @@ api('POST /api/sessions', ({ body }) => {
   update(existing.id, { ...(existing.conversation !== body.continueId && handOver(existing, body.continueId, Date.now())), status: 'idle', pid: 41_500, tty: '/dev/ttys042', archived: false });
   return { id: existing.id };
 });
-api('POST /api/shell', () => NONE);
+api('POST /api/shell', () => {
+  if (ghosttyRefuses) throw new HttpError(500, failure(Object.assign(new Error('Command failed: /usr/bin/osascript'), { stderr: REFUSED })).message);
+  return NONE;
+});
 route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => {
   const artifact = find(params[0])?.artifacts.find((a) => a.id === params[1]);
   if (!artifact) throw new HttpError(404, 'artifact not found');

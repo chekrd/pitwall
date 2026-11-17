@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { beforeEach, test } from 'node:test';
 import type { LiveProcess } from './conversations.ts';
 import { repos, sessions } from './db.ts';
+import { NotPermitted } from './ghostty.ts';
 import { deleteWorktree, deleteWorktreeLoss, dismissTerminalNotice, io, looseFiles, terminalNotices } from './removal.ts';
 import { claudeOf } from './sessions.ts';
 import { makeTaskFolder, openWorktree } from './folderTasks.ts';
@@ -187,8 +188,6 @@ test('a task folder another task works in stays', async () => {
   assert.ok(sessions.get('two'));
 });
 
-const REFUSED = 'Command failed: /usr/bin/osascript\nexecution error: Not authorized to send Apple events to Ghostty. (-1743)';
-
 const quietly = async (work: () => Promise<void>) => {
   const warn = console.warn;
   const warned: string[] = [];
@@ -207,7 +206,7 @@ test('Clear task still removes the worktree and the task when the terminal app r
   task('refused-in-checkout', id, main, 9301);
   running('refused-in-checkout', 9301, main);
   io.closeTerminalsIn = async () => {
-    throw new Error(REFUSED);
+    throw new NotPermitted();
   };
   const warned = await quietly(async () => {
     await deleteWorktree('refused');
@@ -242,9 +241,9 @@ test('a terminal app that fails for another reason gets a notice with its error,
   const { id, worktree } = await repoWithWorktree();
   task('broken', id, worktree, null);
   io.closeTerminalsIn = async () => {
-    throw new Error('Ghostty got an error: Connection is invalid. (-609)');
+    throw new Error('Ghostty failed: Ghostty got an error: Connection is invalid. (-609)');
   };
   await quietly(() => deleteWorktree('broken'));
   assert.ok(!existsSync(worktree));
-  assert.deepEqual(terminalNotices().map(({ permission, error }) => ({ permission, error })), [{ permission: false, error: 'Ghostty got an error: Connection is invalid. (-609)' }]);
+  assert.deepEqual(terminalNotices().map(({ permission, error }) => ({ permission, error })), [{ permission: false, error: 'Ghostty failed: Ghostty got an error: Connection is invalid. (-609)' }]);
 });

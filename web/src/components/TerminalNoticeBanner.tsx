@@ -18,7 +18,7 @@ function Notice({ notice, home }: { notice: TerminalNotice; home: string }) {
         {' '}
         {notice.permission
           ? 'To let Pitwall close them, turn on Ghostty under node in System Settings → Privacy & Security → Automation.'
-          : `Ghostty answered: ${notice.error}`}
+          : notice.error}
       </p>
       <button type="button" data-dismiss-terminal-notice onClick={dismiss}>Dismiss</button>
     </section>

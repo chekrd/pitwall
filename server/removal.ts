@@ -67,8 +67,6 @@ export function dismissTerminalNotice(id: string) {
   if (notices.length !== before) notify();
 }
 
-const refusedPermission = (message: string) => /Not authorized to send Apple events|\(-1743\)/.test(message);
-
 // A tmux pane's tty is no terminal tab: its tmux session ends with the Claude in it.
 const tabTtys = async (ttys: string[]) => {
   const panes = await io.tmuxTtys();
@@ -79,7 +77,7 @@ const closeTerminals = (tasks: Session[], dir: string | null, ttys: string[]) =>
   io.closeTerminalsIn(dir, ttys).catch((err: unknown) => {
     const error = err instanceof Error ? err.message : String(err);
     console.warn(`left terminals open in ${dir ?? ttys.join(', ')}: ${error}`);
-    notices = [...notices, { id: String(++noticeSerial), tasks: tasks.length ? tasks.map((o) => o.title || basename(o.worktree)) : [basename(dir ?? '')], dir, ttys, permission: refusedPermission(error), error }];
+    notices = [...notices, { id: String(++noticeSerial), tasks: tasks.length ? tasks.map((o) => o.title || basename(o.worktree)) : [basename(dir ?? '')], dir, ttys, permission: err instanceof ghostty.NotPermitted, error }];
     notify();
   });
 

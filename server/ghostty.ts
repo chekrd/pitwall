@@ -8,12 +8,31 @@ export const io = {
   osascript: async (source: string, args: string[]) => (await run('/usr/bin/osascript', ['-e', source, ...args])).stdout.trim(),
 };
 
+// Ghostty refuses every Apple event from a process macOS has not let control it.
+export class NotPermitted extends Error {
+  constructor(options?: ErrorOptions) {
+    super('Ghostty does not let Pitwall control it: turn on Ghostty under node in System Settings → Privacy & Security → Automation.', options);
+  }
+}
+
+// A failed osascript's message repeats the whole script; what Ghostty answered is in its stderr.
+export function failure(err: unknown) {
+  const said = (err as { stderr?: unknown }).stderr;
+  const answer = typeof said === 'string' && said.trim() ? said.trim() : err instanceof Error ? err.message : String(err);
+  if (/Not authorized to send Apple events|\(-1743\)/.test(answer)) return new NotPermitted({ cause: err });
+  return new Error(`Ghostty failed: ${answer.replace(/^\d+:\d+: (execution error: )?/, '')}`, { cause: err });
+}
+
+const osascript = (source: string, args: string[]) => io.osascript(source, args).catch((err: unknown) => {
+  throw failure(err);
+});
+
 // Telling a Ghostty that is not running launches it, with an empty window.
 const script = (body: string, ...args: string[]) =>
-  io.osascript(`on run argv\ntell application "Ghostty"\n${body}\nend tell\nend run`, args);
+  osascript(`on run argv\ntell application "Ghostty"\n${body}\nend tell\nend run`, args);
 
 // Asked in a script of its own: one that also tells Ghostty launches it before the question runs.
-const running = async () => (await io.osascript('application "Ghostty" is running', [])) === 'true';
+const running = async () => (await osascript('application "Ghostty" is running', [])) === 'true';
 
 const NOT_FOUND = 'NOT_FOUND';
 
@@ -56,7 +75,7 @@ export async function keys(tty: string, strokes: Keystroke[]) {
   end if
   delay 0.2
 end repeat`, ...args).catch((err: unknown) => {
-    throw err instanceof NoTab ? err : new PartlyTyped('Ghostty failed while it typed the keys', { cause: err });
+    throw err instanceof NoTab || err instanceof NotPermitted ? err : new PartlyTyped('Ghostty failed while it typed the keys', { cause: err });
   });
 }
 

@@ -240,6 +240,23 @@ export const taskPage: Check[] = [
     },
   },
   {
+    name: 'P4.9.shell Open in Ghostty that Ghostty refuses says Pitwall may not control Ghostty and how to grant the Automation permission, not the script that failed',
+    expectedErrors: [/status of 500/, /Ghostty does not let Pitwall control it/],
+    async run({ page, mock, shot }) {
+      await mock.post('/mock/ghostty-refuses', {});
+      await page.goto(`${mock.url}/s/s-invoice/overview`);
+      await page.until('the task page', sheetOpen);
+      await page.click('#task-sheet button[aria-label="Session actions"]');
+      await page.until('the menu', menuItems);
+      await page.click(':popover-open button', 'Open in Ghostty');
+      const [shell] = await logged(mock, 'the shell', (e) => e.path === '/api/shell');
+      assert.equal(shell.status, 500);
+      const [toast] = await page.until('the error', toastsOf, 'error');
+      await shot('shell-refused');
+      assert.equal(toast.text, 'Ghostty does not let Pitwall control it: turn on Ghostty under node in System Settings → Privacy & Security → Automation.');
+    },
+  },
+  {
     name: 'P4.9.gone a task whose worktree was removed outside the board can still be cleared: the dialog says the worktree is already gone, and the task leaves',
     async run({ page, mock }) {
       await mock.post('/mock/patch', { id: 's-edge', patch: { worktree: `${await mock.home()}/code/worktrees/removed/storefront` } });
