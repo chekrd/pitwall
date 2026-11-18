@@ -61,6 +61,7 @@ interface Meta {
   turnError: TurnError | null;
   model: string | null;
   effort: string | null;
+  context: number | null;
 }
 
 export interface MenuQuestion {
@@ -290,6 +291,15 @@ function settings(entries: Record<string, any>[]) {
   const request = entries.findLast((e) => e.type === 'api-request' && String(e.querySource ?? '').startsWith('repl_main_thread'))?.params;
   const model = request?.model ?? entries.findLast((e) => e.type === 'assistant' && !e.isSidechain && e.message?.model && e.message.model !== '<synthetic>')?.message.model;
   return { model: model ?? null, effort: request?.output_config?.effort ?? null };
+}
+
+// The tokens Claude's latest request sent, which is how much of the context window the conversation fills; a compaction
+// after it leaves it unknown until the next reply.
+function context(entries: Record<string, any>[]) {
+  const e = entries.findLast((e) => e.isCompactSummary || e.subtype === 'compact_boundary' || (blocks(e).length && e.message?.usage && e.message.model !== '<synthetic>'));
+  const u = e?.message?.usage;
+  if (!u || e.isCompactSummary) return null;
+  return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 }
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -639,6 +649,7 @@ async function readMeta(file: string, mtime: number): Promise<Meta | null> {
     turns: turns(tail),
     turnError: turnError(tail),
     ...settings(tail),
+    context: context(tail),
   };
   return remember(metaCache, MAX_CACHED, file, meta);
 }

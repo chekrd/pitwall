@@ -106,6 +106,10 @@ export const migrations: Migration[] = [
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN round TEXT; ALTER TABLE sessions ADD COLUMN dismissed_round TEXT');
   },
+  // 10: how much of the context window each task's conversation fills.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN context INTEGER');
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

@@ -44,6 +44,15 @@ export function modelName(model: string) {
   return `${family[0].toUpperCase()}${family.slice(1)}${major ? ` ${major}` : ''}${minor ? `.${minor}` : ''}`;
 }
 
+// Claude Code tells the size of the context window only to the status line; a request names the model without the
+// [1m] of a 1M context, which the model picked keeps, and a conversation past 200k tokens can only be in a 1M one.
+export function contextUse(session: Pick<Session, 'context' | 'model'>) {
+  if (session.context === null) return null;
+  const window = session.model?.endsWith('[1m]') || session.context > 200_000 ? 1_000_000 : 200_000;
+  const k = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`);
+  return `${k(session.context)} of ${k(window)} (${Math.round((session.context / window) * 100)}%)`;
+}
+
 export const EFFORTS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
 
 export const effortName = (effort: string) => EFFORTS[effort] ?? effort;

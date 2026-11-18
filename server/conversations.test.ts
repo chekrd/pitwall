@@ -492,3 +492,12 @@ test('a round written as text in the grill-me format is read from the message it
   const later = await meta([prompt('x'), first, prompt('Q1: only me'), assistant([toolUse('r2', 'mcp__pitwall__ask_questions', QUESTIONS)], 5)]);
   assert.equal(later.round?.key, 'r2');
 });
+
+test('the context is the tokens Claude\'s latest main-thread request sent, unknown after a compaction until the next reply', async () => {
+  const replied = (usage: object, fields: object = {}) => ({ ...assistant([text('Done.')]), message: { content: [text('Done.')], model: 'claude-opus-5-5', usage }, ...fields });
+  const used = { input_tokens: 2, cache_read_input_tokens: 80_000, cache_creation_input_tokens: 4_000 };
+  assert.equal((await meta([prompt('x'), replied(used)])).context, 84_002);
+  assert.equal((await meta([prompt('x'), replied(used), replied({ input_tokens: 9 }, { isSidechain: true })])).context, 84_002, 'a subagent has its own context');
+  assert.equal((await meta([prompt('x'), replied(used), { type: 'system', subtype: 'compact_boundary', uuid: 'cb', timestamp: at(1) }])).context, null);
+  assert.equal((await meta([prompt('x')])).context, null);
+});

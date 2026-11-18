@@ -137,6 +137,7 @@ async function readTranscript(s: Session, p?: LiveProcess) {
   // A request names the model without the [1m] of a 1M context, which the model picked keeps.
   if (meta.model && meta.model !== s.model?.replace('[1m]', '')) patch.model = meta.model;
   if (meta.effort && meta.effort !== s.effort) patch.effort = meta.effort;
+  if (meta.context !== s.context) patch.context = meta.context;
   const lastTurn = meta.turns.at(-1)?.id ?? null;
   if (lastTurn !== s.lastTurn) patch.lastTurn = lastTurn;
   if (JSON.stringify(meta.turnError) !== JSON.stringify(s.turnError)) patch.turnError = meta.turnError;

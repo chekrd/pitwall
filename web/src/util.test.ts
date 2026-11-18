@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { menu, options, question, session, turn } from './testing.ts';
 import type { RepoView } from './types.ts';
-import { ancestorsOf, attentionChangesAt, attentionOf, clock, decisionOf, descendantsOf, findingNumber, findingPath, isDelivered, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, roundOf, settledAs, share, subtaskCounts, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
+import { ancestorsOf, attentionChangesAt, attentionOf, clock, contextUse, decisionOf, descendantsOf, findingNumber, findingPath, isDelivered, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, roundOf, settledAs, share, subtaskCounts, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
 
 test('a decision is the open question or end-of-turn choice, and one the board answered is closed at once', () => {
   const asked = session('s', { question: question('q1') });
@@ -195,4 +195,11 @@ test('share keeps each part equal to the one before as that very object: a sessi
   assert.notEqual(fewer, before.sessions);
   assert.equal(fewer[0], cart);
   assert.deepEqual(Object.keys(share({ a: 1 }, { a: 1, b: undefined })), ['a', 'b'], 'a key that came is kept');
+});
+
+test('the context reads as tokens of the window, a 1M one for a [1m] model or past 200k tokens', () => {
+  assert.equal(contextUse({ context: 84_200, model: 'claude-opus-5-5' }), '84k of 200k (42%)');
+  assert.equal(contextUse({ context: 84_200, model: 'opus[1m]' }), '84k of 1M (8%)');
+  assert.equal(contextUse({ context: 420_000, model: 'claude-opus-5-5' }), '420k of 1M (42%)');
+  assert.equal(contextUse({ context: null, model: 'claude-opus-5-5' }), null);
 });

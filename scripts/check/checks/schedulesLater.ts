@@ -434,6 +434,7 @@ export const schedulesLater: Check[] = [
       const plain = await page.until('a plain title as a tooltip', tip);
       assert.equal(plain.text, "Claude Code's session id; claude --resume takes it");
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [aria-describedby="tooltip"]')?.getAttribute('data-explain') ?? null), "Claude Code's session id; claude --resume takes it", 'described by the tooltip while it shows');
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-task-context]')?.textContent ?? null), '84k of 200k (42%)', 'the facts show how much of the context window the conversation fills');
 
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-later] li[data-parked] button')!.focus());

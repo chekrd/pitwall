@@ -271,6 +271,8 @@ export interface Session {
   resolution: Resolution | null;
   model: string | null;
   effort: string | null;
+  // Tokens of the context window the conversation fills, as Claude's latest request counted them.
+  context: number | null;
   interrupted: Interrupted | null;
   turnError: TurnError | null;
   scheduled: Scheduled | null;
@@ -338,6 +340,7 @@ const toSession = (r: Row): Session => ({
   resolution: r.resolution ? JSON.parse(r.resolution) : null,
   model: r.model,
   effort: r.effort,
+  context: r.context ?? null,
   interrupted: r.interrupted ? JSON.parse(r.interrupted) : null,
   turnError: r.turn_error ? JSON.parse(r.turn_error) : null,
   scheduled: r.scheduled ? JSON.parse(r.scheduled) : null,
@@ -424,6 +427,7 @@ const columns: Record<string, string> = {
   resolution: 'resolution',
   model: 'model',
   effort: 'effort',
+  context: 'context',
   interrupted: 'interrupted',
   turnError: 'turn_error',
   scheduled: 'scheduled',
@@ -455,7 +459,7 @@ export const sessions = {
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
     parsed.delete(s.id);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'context' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');

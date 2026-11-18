@@ -10,7 +10,7 @@ import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { Link, RepoView, Session } from '../types.ts';
 import { useDecision } from '../useDecision.ts';
-import { adviceFor, ago, attentionOf, coverageOf, decisionOf, effortName, findingNumber, folderTaskOf, isDelivered, modelName, shortUrl, subtaskCounts, tilde, underTask, worktreeName } from '../util.ts';
+import { adviceFor, ago, attentionOf, contextUse, coverageOf, decisionOf, effortName, findingNumber, folderTaskOf, isDelivered, modelName, shortUrl, subtaskCounts, tilde, underTask, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
@@ -516,6 +516,8 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               )}
               <dt data-explain="The model Claude runs on now and its effort, as its last request named them; /model and /effort change them">Model</dt>
               <dd>{session.model ? modelName(session.model) : '—'}{session.effort && ` ${effortName(session.effort).toLowerCase()}`}</dd>
+              <dt data-explain="How much of the model's context window the conversation fills, as Claude's latest request counted it; /compact or /clear frees it">Context</dt>
+              <dd data-task-context>{contextUse(session) ?? '—'}</dd>
               <dt data-explain="The terminal device Claude runs on">Terminal</dt>
               <dd data-explain="The terminal device Claude runs on">{session.tty ? <code>{session.tty}</code> : '—'}</dd>
               <dt data-explain="Claude Code's session id; claude --resume takes it">Session</dt>
