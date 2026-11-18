@@ -4,6 +4,20 @@ import type { CodeRef } from './types.ts';
 
 type Side = 'additions' | 'deletions';
 
+// Where a draft's lines are, as the Diff tab's item in the page's address: `new:89-91:server/git.ts`.
+export const spotOf = (r: Pick<CodeRef, 'path' | 'side' | 'start' | 'end'>) => encodeURIComponent(`${r.side}:${r.start}-${r.end}:${r.path}`);
+
+export function parseSpot(item: string | null): Omit<CodeRef, 'lines'> | null {
+  let text: string;
+  try {
+    text = decodeURIComponent(item ?? '');
+  } catch {
+    return null;
+  }
+  const m = text.match(/^(old|new):(\d+)-(\d+):(.+)$/);
+  return m ? { side: m[1] as CodeRef['side'], start: Number(m[2]), end: Number(m[3]), path: m[4] } : null;
+}
+
 // A partial diff holds only its hunks' lines, so a line number is found through the hunk it falls in.
 function lineAt(file: FileDiffMetadata, side: Side, n: number) {
   const all = side === 'additions' ? file.additionLines : file.deletionLines;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parsePatchFiles } from '@pierre/diffs';
-import { codeRef } from './diffLines.ts';
+import { codeRef, parseSpot, spotOf } from './diffLines.ts';
 
 const patch = `diff --git a/cart.ts b/cart.ts
 --- a/cart.ts
@@ -25,4 +25,13 @@ test('lines picked in the diff are taken from the version they were picked in, b
   assert.deepEqual(codeRef(file, { start: 11, end: 11, side: 'deletions' }).lines, ['const b = 2;']);
   assert.deepEqual(codeRef(file, { start: 42, end: 41, side: 'additions' }), { path: 'cart.ts', side: 'new', start: 41, end: 42, lines: ['next();', 'end();'] }, 'dragged upwards');
   assert.deepEqual(codeRef(file, { start: 12, end: 41, side: 'additions' }).lines, ['const c = 4;', 'export { a };'], 'stops where the diff hides lines');
+});
+
+test("a draft's lines go into the page's address and come back out whole", () => {
+  const at = { path: 'web/src/a b/c:d.ts', side: 'old' as const, start: 3, end: 9 };
+  assert.ok(!spotOf(at).includes('/'), 'one part of the path');
+  assert.deepEqual(parseSpot(spotOf(at)), at);
+  assert.equal(parseSpot('nonsense'), null);
+  assert.equal(parseSpot('%E0%A4%A'), null);
+  assert.equal(parseSpot(null), null);
 });

@@ -3,13 +3,14 @@ import type { ThemeRegistration } from 'shiki';
 import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { api } from '../api.ts';
-import { codeRef } from '../diffLines.ts';
+import { codeRef, parseSpot } from '../diffLines.ts';
 import type { FullDiff, Session } from '../types.ts';
 import { ChangeRuler } from './ChangeRuler.tsx';
 import styles from './DiffView.module.css';
 import { counts, fileAnchor, FileTree, inDir, matching, treeOrder } from './FileTree.tsx';
 import { Icon } from './Icon.tsx';
 import { LineNote } from './LineNote.tsx';
+import { toast } from './Toasts.tsx';
 
 registerCustomTheme('darcula', async () => (await import('../themes/darcula.json')).default as ThemeRegistration);
 
@@ -77,11 +78,12 @@ interface Picked {
 const NO_NOTES: DiffLineAnnotation[] = [];
 
 // Typing in the filter or dragging the file list's edge renders the toolbar and the tree, not every file's diff again.
-const FileDiffs = memo(function FileDiffs({ files, root, around, picked, onPick, note }: {
+const FileDiffs = memo(function FileDiffs({ files, root, around, picked, marked, onPick, note }: {
   files: FileDiffMetadata[];
   root: RefObject<HTMLDivElement | null>;
   around: string | null;
   picked: Picked | null;
+  marked: Picked | null;
   onPick: (file: string, range: SelectedLineRange) => void;
   note: ReactNode;
 }) {
@@ -112,11 +114,11 @@ const FileDiffs = memo(function FileDiffs({ files, root, around, picked, onPick,
 
   return files.map((f) => (
     <section key={f.name} id={fileAnchor(f.name)} data-file={f.name} className={styles.file} style={{ containIntrinsicSize: `auto ${estimate(f)}px` }}>
-      {files.length === 1 || drawn.has(f.name) || picked?.file === f.name ? (
+      {files.length === 1 || drawn.has(f.name) || marked?.file === f.name ? (
         <FileDiff
           fileDiff={f}
           options={optionsOf(f.name)}
-          selectedLines={picked?.file === f.name ? picked.range : null}
+          selectedLines={marked?.file === f.name ? marked.range : null}
           lineAnnotations={picked?.file === f.name ? [{ side: picked.range.side!, lineNumber: picked.range.end }] : NO_NOTES}
           renderAnnotation={() => note}
         />
@@ -125,15 +127,16 @@ const FileDiffs = memo(function FileDiffs({ files, root, around, picked, onPick,
   ));
 });
 
-export function DiffView({ session }: { session: Session }) {
+// `at` is the place a draft was written about, from Later, which the file opens at with its lines marked.
+export function DiffView({ session, at }: { session: Session; at: string | null }) {
   return (
     <WorkerPoolContextProvider {...POOL}>
-      <Diffs session={session} />
+      <Diffs session={session} at={at} />
     </WorkerPoolContextProvider>
   );
 }
 
-function Diffs({ session }: { session: Session }) {
+function Diffs({ session, at }: { session: Session; at: string | null }) {
   const worktree = session.worktree;
   const pool = useWorkerPool();
   const [diff, setDiff] = useState<(FullDiff & { files: FileDiffMetadata[] }) | null>(null);
@@ -151,8 +154,12 @@ function Diffs({ session }: { session: Session }) {
   const returnTo = useRef<string | null>(null);
   const opening = useRef<string | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [shownAt, setShownAt] = useState<Picked | null>(null);
+  const seekLine = useRef<Picked | null>(null);
+  const revealed = useRef<string | null>(null);
   // A drag across both columns of the split view keeps the column it started in.
   const pick = useCallback((file: string, r: SelectedLineRange) => {
+    setShownAt(null);
     setPicked({ file, range: { start: Math.min(r.start, r.end), end: Math.max(r.start, r.end), side: r.side ?? r.endSide ?? 'additions' } });
   }, []);
 
@@ -211,6 +218,8 @@ function Diffs({ session }: { session: Session }) {
 
   const leaveFile = () => {
     opening.current = null;
+    seekLine.current = null;
+    setShownAt(null);
     setSeeking(null);
     returnTo.current = focused;
     setFocused(null);
@@ -243,11 +252,16 @@ function Diffs({ session }: { session: Session }) {
     diffsRef.current?.scrollTo({ top: 0 });
     let frame = 0;
     const started = performance.now();
+    const target = seekLine.current?.file === seeking ? seekLine.current.range : null;
     const seek = () => {
-      const line = diffsRef.current?.querySelector('diffs-container')?.shadowRoot?.querySelector('[data-line-type^="change-"]');
+      const root = diffsRef.current?.querySelector('diffs-container')?.shadowRoot;
+      const line = target
+        ? root?.querySelector(`[data-${target.side}] [data-column-number="${target.start}"]`)
+        : root?.querySelector('[data-line-type^="change-"]');
       if (!line && performance.now() - started < 2000) frame = requestAnimationFrame(seek);
       else {
         line?.scrollIntoView({ block: 'center' });
+        seekLine.current = null;
         setSeeking(null);
       }
     };
@@ -302,6 +316,23 @@ function Diffs({ session }: { session: Session }) {
   );
   const rulerFile = focused && whole?.name === focused ? whole : null;
   const pickedFile = picked && shown.find((f) => f.name === picked.file);
+  const marked = pickedFile ? picked : shownAt;
+
+  // Once, when the diff first came: a file no longer in it says so and the diff opens on all files.
+  useEffect(() => {
+    if (!diff || !at || revealed.current === at) return;
+    revealed.current = at;
+    const spot = parseSpot(at);
+    if (!spot) return;
+    if (!files.some((f) => f.name === spot.path)) {
+      toast('info', `${spot.path} has no changes against ${diff.base} any more`);
+      return;
+    }
+    const place = { file: spot.path, range: { start: spot.start, end: spot.end, side: spot.side === 'new' ? 'additions' : 'deletions' } } as const;
+    seekLine.current = place;
+    setShownAt(place);
+    focus(spot.path);
+  }, [diff, at]);
   const note = pickedFile ? <LineNote key={JSON.stringify(picked)} session={session} at={codeRef(pickedFile, picked.range)} onDone={() => setPicked(null)} /> : null;
   const dirStat = listed.map(counts).reduce((sum, c) => ({ add: sum.add + c.add, del: sum.del + c.del }), { add: 0, del: 0 });
 
@@ -416,7 +447,7 @@ function Diffs({ session }: { session: Session }) {
               {files.length > 0 && !listed.length && (
                 <p className={styles.empty}>{shownQuery ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${shownQuery.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
               )}
-              <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} picked={pickedFile ? picked : null} onPick={pick} note={note} />
+              <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} picked={pickedFile ? picked : null} marked={marked} onPick={pick} note={note} />
             </div>
             {rulerFile && <ChangeRuler file={rulerFile} pane={diffsRef} />}
           </div>

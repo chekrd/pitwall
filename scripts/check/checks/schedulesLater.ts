@@ -459,7 +459,7 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: "L1.lines lines picked in the Diff tab with the + beside a line number, clicked or dragged over them, open a draft under the last one that names the file and lines; Enter keeps it for later and nothing reaches Claude; the Overview's Later shows the file, the lines and their code above the draft, and Send now sends them before it",
+    name: "L1.lines lines picked in the Diff tab with the + beside a line number, clicked or dragged over them, open a draft under the last one that names the file and lines; Enter keeps it for later and nothing reaches Claude; the Overview's Later shows the file, the lines and their code above the draft, and Send now sends them before it; a click on the file and lines opens the Diff at them, marked, or says the file has no changes any more",
     async run({ page, mock, shot }) {
       type Snap = { sessions: { id: string; parked: { text: string; auto: boolean; ref?: { path: string; side: string; start: number; end: number; lines: string[] } }[]; answered: { text: string } | null }[] };
       const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
@@ -515,6 +515,28 @@ export const schedulesLater: Check[] = [
       const sent = await until('the draft sent', (s) => s.parked.length === 0 && !!s.answered);
       const code = ref.lines.join('\n');
       assert.equal(sent.answered!.text, `About \`server/git.ts\` lines 89–91:\n\`\`\`\n${code}\n\`\`\`\n\nWhy does this run twice?`);
+
+      // The file and lines above a draft open the Diff at them, marked: lines far from the file's first change, and a file no longer changed.
+      const far = { path: 'server/git.ts', side: 'new', start: 150, end: 152, lines: ['a', 'b', 'c'] };
+      const gone = { ...far, path: 'server/nowhere.ts' };
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { parked: [far, gone].map((ref, i) => ({ id: `r${i}`, text: `About ${ref.path}`, auto: false, armedAt: null, at: Date.now(), ref })) } });
+      await page.click('#task-sheet [data-later] li[data-parked="r0"] [data-ref] button', 'lines 150–152');
+      const opened = await page.until('the Diff at lines 150–152', () => {
+        const pane = document.querySelector<HTMLElement>('section[data-file]')?.parentElement;
+        const sections = document.querySelectorAll('section[data-file]');
+        const root = sections[0]?.querySelector('diffs-container')?.shadowRoot;
+        const line = root?.querySelector('[data-additions] [data-column-number="150"]')?.getBoundingClientRect();
+        if (!pane || sections.length !== 1 || pane.hasAttribute('data-seeking') || !line) return null;
+        const box = pane.getBoundingClientRect();
+        const selected = [...root!.querySelectorAll<HTMLElement>('[data-additions] [data-selected-line][data-column-number]')].map((e) => Number(e.dataset.columnNumber));
+        return { path: location.pathname.split('/').slice(3, 4).join(), file: sections[0].getAttribute('data-file'), inView: line.top >= box.top && line.bottom <= box.bottom, selected };
+      });
+      assert.deepEqual(opened, { path: 'diff', file: 'server/git.ts', inView: true, selected: [150, 151, 152] });
+      await shot('diff-at-draft-lines');
+      await page.goto(`${mock.url}/s/s-invoice/overview`);
+      await page.click('#task-sheet [data-later] li[data-parked="r1"] [data-ref] button', 'server/nowhere.ts');
+      await page.until('the toast for a file no longer changed', () => [...document.querySelectorAll('[data-toast]')].some((t) => t.textContent?.includes('server/nowhere.ts has no changes against')));
+      assert.equal(await page.eval(() => document.querySelectorAll('section[data-file]').length > 1), true, 'all files');
     },
   },
 ];

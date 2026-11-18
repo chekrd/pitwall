@@ -45,6 +45,17 @@
     }
   }
 
+  .where {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    &:hover, &:focus-visible { text-decoration: underline; code { color: var(--text); } }
+  }
+
   .num { display: inline-block; min-width: 4ch; margin-right: 10px; text-align: right; color: var(--muted); user-select: none; }
 
   .text { margin: 0; max-width: 90ch; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -2,6 +2,8 @@ import { useState, type KeyboardEvent } from 'react';
 import { editDraft, useDraft } from './Composer.tsx';
 import { draftMessage, refLines } from '../../../server/codeRef.ts';
 import { sessionAction } from '../api.ts';
+import { spotOf } from '../diffLines.ts';
+import { showTab } from '../router.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
 import { useStore } from '../store.ts';
@@ -50,9 +52,11 @@ const onEnter = (run: () => void, cancel?: () => void) => (e: KeyboardEvent<HTML
 function Lines({ at }: { at: CodeRef }) {
   const count = at.end - at.start + 1;
   return (
-    <figure className={styles.ref} data-ref data-explain="The lines of the diff this draft is about; Claude gets them with it">
+    <figure className={styles.ref} data-ref>
       <figcaption>
-        <code>{at.path}</code> {refLines(at)}{at.side === 'old' && ', as the base branch has them'}
+        <button type="button" className={styles.where} data-explain="Opens the Diff at these lines; Claude gets them with the draft" onClick={() => showTab('diff', spotOf(at))}>
+          <code>{at.path}</code> {refLines(at)}{at.side === 'old' && ', as the base branch has them'}
+        </button>
       </figcaption>
       {at.lines.length > 0 && (
         <pre>
