@@ -31,6 +31,15 @@ export function parseUsage(text: string, readAt = Date.now()): Usage | null {
   }
 }
 
+// Every Claude session's status line replaces the file, and Claude Code leaves out a window whose reset time has passed
+// by the last reply that session saw, so a session idle since the last reset drops a window that is still read
+// elsewhere; the window it leaves out keeps the reading before.
+export function nextUsage(prev: Usage | null, text: string, readAt = Date.now()): Usage | null {
+  const next = parseUsage(text, readAt);
+  if (!next || !prev) return next ?? prev;
+  return { ...next, fiveHour: next.fiveHour ?? prev.fiveHour, sevenDay: next.sevenDay ?? prev.sevenDay };
+}
+
 // Polled, as the script replaces the file on every redraw of the status line. The first read is synchronous, so a page
 // that reconnects right after a restart does not get a snapshot without the reading.
 export function watchUsage(file: string, onChange: () => void, everyMs = 2000) {
@@ -45,9 +54,9 @@ export function watchUsage(file: string, onChange: () => void, everyMs = 2000) {
     const next = await readFile(file, 'utf8').catch(() => null);
     if (next !== null && next !== text) {
       text = next;
-      const parsed = parseUsage(next);
-      if (parsed) {
-        usage = parsed;
+      const merged = nextUsage(usage, next);
+      if (merged !== usage) {
+        usage = merged;
         onChange();
       }
     }

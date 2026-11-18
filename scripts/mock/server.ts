@@ -30,6 +30,7 @@ import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, 
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
+import { nextUsage } from '../../server/usage.ts';
 import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
@@ -1129,6 +1130,11 @@ route('POST', '/mock/upstream', ({ body }) => {
 });
 route('POST', '/mock/usage', ({ body }) => {
   state.usage = body.usage ?? null;
+  push();
+  return NONE;
+});
+route('POST', '/mock/status-line', ({ body }) => {
+  state.usage = nextUsage(state.usage, JSON.stringify(body));
   push();
   return NONE;
 });

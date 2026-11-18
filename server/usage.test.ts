@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseUsage } from './usage.ts';
+import { nextUsage, parseUsage } from './usage.ts';
 
 test('the status line copy of rate_limits gives both windows, their reset times in ms', () => {
   const text = JSON.stringify({
@@ -23,4 +23,12 @@ test('no windows, no rate_limits or a half-written file give no reading', () => 
   for (const text of ['{"at":1,"rate_limits":{}}', '{"at":1,"rate_limits":null}', '{"at":1}', '{"at":1,"rate_lim', '']) {
     assert.equal(parseUsage(text), null, text);
   }
+});
+
+test('a reading without a window keeps that window from the reading before; a reading with neither changes nothing', () => {
+  const prev = { fiveHour: { percent: 23, resetsAt: 2_000 }, sevenDay: { percent: 12, resetsAt: 9_000 }, at: 1 };
+  const weekly = JSON.stringify({ at: 5, rate_limits: { seven_day: { used_percentage: 13, resets_at: 9 } } });
+  assert.deepEqual(nextUsage(prev, weekly), { fiveHour: { percent: 23, resetsAt: 2_000 }, sevenDay: { percent: 13, resetsAt: 9_000 }, at: 5 });
+  assert.equal(nextUsage(prev, '{"at":6,"rate_limits":{}}'), prev);
+  assert.deepEqual(nextUsage(null, weekly), { fiveHour: null, sevenDay: { percent: 13, resetsAt: 9_000 }, at: 5 });
 });

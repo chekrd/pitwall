@@ -54,6 +54,19 @@ export const usageFindings: Check[] = [
     },
   },
   {
+    name: 'usage a status line copy without the 5-hour window, as Claude Code writes from a session whose last-seen 5-hour reset has passed, keeps the 5-hour reading the board had instead of showing –',
+    async run({ page, mock }) {
+      await openQueue(page, mock);
+      const now = Math.floor(Date.now() / 1000);
+      const shown = () => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-window]')].map((w) => w.innerText.replace(/\s+/g, ' ').trim().split(' ↻')[0]);
+      await mock.post('/mock/status-line', { at: Date.now(), rate_limits: { five_hour: { used_percentage: 23, resets_at: now + 7200 }, seven_day: { used_percentage: 12, resets_at: now + 86_400 } } });
+      await page.until('the full reading', () => (document.querySelector('header [data-usage]') as HTMLElement | null)?.innerText.includes('23%') || null);
+      await mock.post('/mock/status-line', { at: Date.now(), rate_limits: { seven_day: { used_percentage: 13, resets_at: now + 86_400 } } });
+      await page.until('the weekly-only reading', () => (document.querySelector('header [data-usage]') as HTMLElement | null)?.innerText.includes('13%') || null);
+      assert.deepEqual(await page.eval(shown), ['5h 23%', '7d 13%']);
+    },
+  },
+  {
     name: 'drift a banner says which Claude Code version changed which file Pitwall reads, Fix it opens New task on Pitwall with a prompt to update it, and the banner leaves when the drift is gone',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
