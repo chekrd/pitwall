@@ -601,6 +601,41 @@ export const wall: Check[] = [
     },
   },
   {
+    name: 'P4.5s Diff: text selected in a file\'s code is marked wherever else it occurs in that file, a name only as a whole name, on both sides; the marks go with the selection',
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/s/s-cart/diff`);
+      await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
+      await page.until('server/git.ts whole', wholeFile, 'server/git.ts');
+      await page.until('its code', () => !document.querySelector('[data-seeking]') &&
+        !!document.querySelector('diffs-container')?.shadowRoot?.querySelector('[data-content] [data-line]'));
+      const picked = await page.eval(() => {
+        const root = document.querySelector('diffs-container')!.shadowRoot!;
+        const lines = [...root.querySelectorAll('[data-content] [data-line]')].map((l) => l.textContent ?? '');
+        const count = (word: string) => lines.reduce((n, l) => n + (l.match(new RegExp(`(?<![\\w$])${word}(?![\\w$])`, 'g'))?.length ?? 0), 0);
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode as Text;
+          if (!node.parentElement?.closest('[data-content] [data-line]')) continue;
+          const m = /(?<![\w$])worktree(?![\w$])/.exec(node.data);
+          if (!m || count(m[0]) < 2) continue;
+          document.getSelection()!.setBaseAndExtent(node, m.index, node, m.index + m[0].length);
+          return { word: m[0], count: count(m[0]) };
+        }
+        return null;
+      });
+      assert.ok(picked, 'worktree is not twice in server/git.ts');
+      const marked = await page.until('the marks', (n: number) => {
+        const m = [...CSS.highlights.get('diff-same') ?? []].map((r) => (r as Range).toString());
+        return m.length === n && m;
+      }, picked.count);
+      assert.ok(marked.every((t) => t === picked.word), `marked ${marked.join(', ')}`);
+      await shot('diff-same-text');
+
+      await page.eval(() => document.getSelection()!.removeAllRanges());
+      await page.until('the marks to go', () => CSS.highlights.get('diff-same')?.size === 0);
+    },
+  },
+  {
     name: 'P4.5d Diff: a large diff, 120 files, draws only the files near the part in view and the rest as it scrolls to them; the file list marks the file at the top of the diff and scrolls to keep it in sight; a file opened from far down goes back to all files drawn where it was',
     async run({ page, mock }) {
       // The page's own fetch gives ten copies of the fixture's diff, each under a folder of its own.

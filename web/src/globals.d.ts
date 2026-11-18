@@ -11,6 +11,11 @@ declare module 'react' {
 }
 
 declare global {
+  // Chromium's selection inside a shadow root; document.getSelection() only reaches its host.
+  interface ShadowRoot {
+    getSelection?(): Selection | null;
+  }
+
   interface WebSocketStreamOptions {
     protocols?: string[];
     signal?: AbortSignal;

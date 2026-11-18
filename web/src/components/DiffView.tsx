@@ -4,6 +4,7 @@ import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diff
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { api } from '../api.ts';
 import { codeRef, parseSpot } from '../diffLines.ts';
+import { markSameText } from '../sameText.ts';
 import type { FullDiff, Session } from '../types.ts';
 import { ChangeRuler } from './ChangeRuler.tsx';
 import styles from './DiffView.module.css';
@@ -17,7 +18,7 @@ registerCustomTheme('darcula', async () => (await import('../themes/darcula.json
 // The code keeps the user's Darcula; only the file headers take the board's greys around it.
 const FILE_OPTIONS = {
   diffStyle: 'split', theme: 'darcula', themeType: 'dark', overflow: 'wrap', lineDiffType: 'word', stickyHeader: true, enableGutterUtility: true,
-  unsafeCSS: '[data-diffs-header][data-diffs-header] { background-color: #2f2f2f; border-bottom: 1px solid #383838; }',
+  unsafeCSS: '[data-diffs-header][data-diffs-header] { background-color: #2f2f2f; border-bottom: 1px solid #383838; } ::highlight(diff-same) { background-color: rgb(190 150 40 / 0.45); }',
 } as const;
 
 // Highlighting runs in workers, so a large diff never holds the page.
@@ -204,6 +205,7 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
     });
 
   useEffect(load, [worktree]);
+  useEffect(() => markSameText(diffsRef.current!), []);
 
   // The file swaps in only once it is whole, so its hunks alone never flash first.
   const focus = (name: string) => {
