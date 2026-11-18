@@ -22,7 +22,6 @@ export function addParked(list: readonly Parked[], body: { text: string; auto?: 
   return [...list, { id: randomUUID(), text: cleanText(body.text), auto, armedAt: auto ? now : null, at: now, ...(body.ref && { ref: body.ref }) }];
 }
 
-// Arming counts from the moment it is switched on, so a turn that had already ended does not send it.
 export function editParked(list: readonly Parked[], body: { draft: string; text?: string | undefined; auto?: boolean | undefined }, now = Date.now()): Parked[] {
   const found = list.find((p) => p.id === body.draft);
   if (!found) throw new Error('this draft is gone');
@@ -47,7 +46,8 @@ export interface Due {
 // Watches each task for a real end of its turn: working, then idle (a permission prompt or a menu is not one). The first
 // draft armed before that end goes out once the turn's summary says whether it ended on a question, which a draft would
 // answer by accident; the next one waits for the end of the turn it starts. Not when you replied meanwhile, a prompt in
-// the terminal set Claude working again, or the task is paused or archived. Only ends seen while the board runs count.
+// the terminal set Claude working again, or the task is paused or archived. Only ends seen while the board runs count,
+// and arming one while it is already your turn, as no other end is coming.
 export function turnEnds() {
   const last = new Map<string, Session['status']>();
   const ends = new Map<string, number>();
@@ -64,7 +64,7 @@ export function turnEnds() {
       if (was === 'working') ends.set(s.id, now);
       const end = ends.get(s.id);
       if (!end) continue;
-      const armed = s.parked.filter((p) => p.auto && p.armedAt !== null && p.armedAt < end);
+      const armed = s.parked.filter((p) => p.auto && p.armedAt !== null && p.armedAt <= end);
       const replied = !!s.answered && s.answered.at >= end;
       if (!armed.length || replied || s.archived || s.interrupted || s.turnError || pausing.includes(s.id) || s.menu || s.question) {
         ends.delete(s.id);
@@ -79,5 +79,11 @@ export function turnEnds() {
     return due;
   }
 
-  return { observe };
+  function armed(s: Session, now = Date.now()) {
+    if (s.status !== 'idle') return;
+    last.set(s.id, s.status);
+    ends.set(s.id, now);
+  }
+
+  return { observe, armed };
 }

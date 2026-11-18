@@ -1,6 +1,31 @@
 import assert from 'node:assert/strict';
-import { sleep } from '../cdp.ts';
+import { sleep, type Page } from '../cdp.ts';
 import { logged, matches, openNewTask, openQueue, openSheetOf, pickRepo, sheetOpen, stateOf, tiles, typeInPrompt, type Check } from '../helpers.ts';
+
+// Opens a draft under lines 89–91 of server/git.ts in s-invoice's Diff, picked with the + beside a line number.
+async function openLineDraft(page: Page, url: string) {
+  await page.goto(`${url}/s/s-invoice/diff`);
+  await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
+  // The middle of a line number of the new version, in the diff's shadow root.
+  const number = (n: number) => page.until(`line ${n}'s number`, (n: number) => {
+    const pane = document.querySelector('section[data-file]')?.parentElement;
+    const el = document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector<HTMLElement>(`[data-additions] [data-column-number="${n}"]`);
+    if (!pane || !el || pane.hasAttribute('data-seeking')) return null;
+    const r = el.getBoundingClientRect();
+    return r.height > 0 && r.top >= pane.getBoundingClientRect().top && r.bottom <= innerHeight ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+  }, n);
+  // The whole file opens scrolled to its first change, lines 89 and 90.
+  await page.until('its first change in view', () => !!document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-line-type^="change-"]'));
+  const first = await number(89);
+  const last = await number(91);
+  await page.pointAt(first.x, first.y);
+  const plus = await page.until('the + on line 89', () => {
+    const r = document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-utility-button]')?.getBoundingClientRect();
+    return r && r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+  });
+  await page.drag(plus, { x: plus.x, y: last.y });
+  await page.until('the draft under the lines', () => document.querySelector<HTMLElement>('[data-line-note] p')?.innerText.trim() === 'server/git.ts lines 89–91');
+}
 
 export const schedulesLater: Check[] = [
   {
@@ -468,27 +493,7 @@ export const schedulesLater: Check[] = [
         throw new Error(`timed out waiting for ${what}: ${JSON.stringify(await invoice())}`);
       };
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', question: null, menu: null, answered: null, parked: [] } });
-      await page.goto(`${mock.url}/s/s-invoice/diff`);
-      await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
-      // The middle of a line number of the new version, in the diff's shadow root.
-      const number = (n: number) => page.until(`line ${n}'s number`, (n: number) => {
-        const pane = document.querySelector('section[data-file]')?.parentElement;
-        const el = document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector<HTMLElement>(`[data-additions] [data-column-number="${n}"]`);
-        if (!pane || !el || pane.hasAttribute('data-seeking')) return null;
-        const r = el.getBoundingClientRect();
-        return r.height > 0 && r.top >= pane.getBoundingClientRect().top && r.bottom <= innerHeight ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
-      }, n);
-      // The whole file opens scrolled to its first change, lines 89 and 90.
-      await page.until('its first change in view', () => !!document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-line-type^="change-"]'));
-      const first = await number(89);
-      const last = await number(91);
-      await page.pointAt(first.x, first.y);
-      const plus = await page.until('the + on line 89', () => {
-        const r = document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-utility-button]')?.getBoundingClientRect();
-        return r && r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
-      });
-      await page.drag(plus, { x: plus.x, y: last.y });
-      await page.until('the draft under the lines', () => document.querySelector<HTMLElement>('[data-line-note] p')?.innerText.trim() === 'server/git.ts lines 89–91');
+      await openLineDraft(page, mock.url);
       assert.equal(await page.eval(() => document.activeElement?.getAttribute('aria-label')), 'A draft about server/git.ts lines 89–91', 'the draft takes the typing');
       await page.type('Why does this run twice?');
       await shot('diff-line-draft');
@@ -537,6 +542,44 @@ export const schedulesLater: Check[] = [
       await page.click('#task-sheet [data-later] li[data-parked="r1"] [data-ref] button', 'server/nowhere.ts');
       await page.until('the toast for a file no longer changed', () => [...document.querySelectorAll('[data-toast]')].some((t) => t.textContent?.includes('server/nowhere.ts has no changes against')));
       assert.equal(await page.eval(() => document.querySelectorAll('section[data-file]').length > 1), true, 'all files');
+    },
+  },
+  {
+    name: "L1.now a draft set to Send when it's my turn while it already is your turn goes to Claude at once, from the lines picked in the Diff tab and from Message Claude; one set while Claude works still waits for the end of the turn",
+    async run({ page, mock }) {
+      type Snap = { sessions: { id: string; status: string; parked: { text: string }[]; answered: { text: string } | null }[] };
+      const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
+      const until = async (what: string, ok: (s: Awaited<ReturnType<typeof invoice>>) => boolean) => {
+        for (const end = Date.now() + 8000; Date.now() < end; await sleep(100)) if (ok(await invoice())) return invoice();
+        throw new Error(`timed out waiting for ${what}: ${JSON.stringify(await invoice())}`);
+      };
+      const yourTurn = (turn: string) => ({ status: 'idle', activity: null, question: null, menu: null, lastTurn: turn, summary: { text: 'Done', basis: turn, at: Date.now(), question: null, decision: null } });
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { ...yourTurn('t-now'), answered: null, parked: [] } });
+      await openLineDraft(page, mock.url);
+      await page.type('Why does this run twice?');
+      await page.click('[data-line-note] button', "Send when it's my turn");
+      const sent = await until('the line draft sent', (s) => !!s.answered);
+      assert.match(sent.answered!.text, /^About `server\/git\.ts` lines 89–91:\n```\n[\s\S]*\n```\n\nWhy does this run twice\?$/);
+      await until('the draft gone from Later and Claude at work on it', (s) => s.parked.length === 0 && s.status === 'working');
+
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { ...yourTurn('t-now-2'), answered: null, parked: [] } });
+      await page.goto(`${mock.url}/s/s-invoice/overview`);
+      await page.click('#task-sheet textarea[data-draft]');
+      await page.type('Also the credit notes.');
+      await page.click('#task-sheet [data-later-actions] button', "Send when it's my turn");
+      assert.equal((await until('the message box draft sent', (s) => !!s.answered)).answered!.text, 'Also the credit notes.');
+      await until('Claude at work on it', (s) => s.status === 'working');
+
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', answered: null, parked: [] } });
+      await page.until('Message Claude empty', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea[data-draft]')?.value === '');
+      await page.click('#task-sheet textarea[data-draft]');
+      await page.type('Then the refunds.');
+      await page.click('#task-sheet [data-later-actions] button', "Send when it's my turn");
+      await until('the draft kept', (s) => s.parked.length === 1);
+      await sleep(500);
+      assert.equal((await invoice()).answered, null, 'it waits while Claude works');
+      await mock.post('/mock/patch', { id: 's-invoice', patch: yourTurn('t-now-3') });
+      assert.equal((await until('sent at the end of the turn', (s) => !!s.answered)).answered!.text, 'Then the refunds.');
     },
   },
 ];

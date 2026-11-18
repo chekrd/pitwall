@@ -481,8 +481,14 @@ function respond(s: Session, body: ActionInput<'finding'>) {
 const actions: ActionHandlers<Session> = {
   finding: respond,
   answer: (s, body) => (args.legacy ? legacyAnswer(s, body) : answerWithDrafts(s, body)),
-  park: (s, body) => update(s.id, { parked: addParked(s.parked, body) }),
-  'edit-park': (s, body) => update(s.id, { parked: editParked(s.parked, body) }),
+  park: (s, body) => {
+    update(s.id, { parked: addParked(s.parked, body) });
+    if (body.auto) ends.armed(s);
+  },
+  'edit-park': (s, body) => {
+    update(s.id, { parked: editParked(s.parked, body) });
+    if (body.auto) ends.armed(s);
+  },
   unpark: (s, body) => update(s.id, { parked: removeParked(s.parked, [body.draft]) }),
   'ask-aside': (s, body) => ({ id: asides.ask(s.id, body) }),
   'stop-aside': (s, body) => asides.stop(s.id, body.aside),

@@ -40,10 +40,24 @@ test('only drafts armed to send are sent, not the ones kept for a press', () => 
   assert.deepEqual(w.observe([idle], [], 200)[0].ids, ['a']);
 });
 
-test('a draft armed after the turn ended waits for the next end', () => {
+test('a draft armed while it is already your turn goes out at once, with the same holds as at the end of a turn', () => {
   const { w, idle } = ended({}, []);
   assert.deepEqual(w.observe([idle], [], 200), []);
-  assert.deepEqual(w.observe([{ ...idle, parked: [draft('late', 250)] }], [], 260), []);
+  const late = { ...idle, parked: [draft('late', 250, 'Late')] };
+  assert.deepEqual(w.observe([late], [], 260), [], 'not without having been armed');
+  w.armed(late, 250);
+  assert.deepEqual(w.observe([late], [], 260), [{ id: 's', ids: ['late'], text: 'Late' }]);
+  const fresh = turnEnds();
+  const board = session({ status: 'idle', parked: [draft('a', 300)], summary: summary('t2') });
+  fresh.armed(board, 300);
+  assert.deepEqual(fresh.observe([board], [], 300).length, 1, 'also on a task the board never saw work');
+  const decided = turnEnds();
+  const asked = { ...board, summary: summary('t2', true) };
+  decided.armed(asked, 300);
+  assert.deepEqual(decided.observe([asked], [], 300), [], 'not onto a question the turn ended on');
+  const working = turnEnds();
+  working.armed(session({ parked: [draft('a', 300)] }), 300);
+  assert.deepEqual(working.observe([session({ parked: [draft('a', 300)] })], [], 310), [], 'while Claude works it waits');
 });
 
 test('no end of turn without having seen Claude work: a board that starts on an idle task sends nothing', () => {

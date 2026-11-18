@@ -195,7 +195,7 @@ export function Later({ session, name }: { session: Session; name: string }) {
       )}
       {drafts.length > 1 && (
         <div className={styles.all}>
-          {armed > 0 && <span className={styles.hint}>{armed === drafts.length ? 'All go' : `${armed} go`} as one message when Claude ends its turn.</span>}
+          {armed > 0 && <span className={styles.hint}>{armed === drafts.length ? 'All go' : `${armed} go`} one per turn, as Claude ends each.</span>}
           <span className={styles.spacer} />
           <button type="button" {...explain(asked ? TIPS.sendAsked : TIPS.sendAll)} disabled={!canSend} onClick={() => sendNow(session, drafts, name)}>Send all now, as one message</button>
         </div>

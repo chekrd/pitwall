@@ -31,7 +31,7 @@ export function LineNote({ session, at, onDone }: { session: Session; at: CodeRe
     void park(session, 'park', { text: t, auto, ref: at }).then((ok) => {
       setSaving(false);
       if (!ok) return;
-      toast('info', auto ? `Goes to Claude when its turn ends, with ${at.path} ${refLines(at)}` : `Kept for later, with ${at.path} ${refLines(at)}`, { session: session.id });
+      toast('info', auto ? `Goes to Claude when it's your turn, with ${at.path} ${refLines(at)}` : `Kept for later, with ${at.path} ${refLines(at)}`, { session: session.id });
       onDone();
     });
   };

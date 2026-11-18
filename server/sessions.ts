@@ -256,11 +256,13 @@ export async function answer(id: string, reply: Parameters<typeof answers.answer
 
 export function park(id: string, body: Parameters<typeof addParked>[1]) {
   sessions.update(id, { parked: addParked(must(id).parked, body) });
+  if (body.auto) ends.armed(must(id));
   notify();
 }
 
 export function editPark(id: string, body: { draft: string; text?: string | undefined; auto?: boolean | undefined }) {
   sessions.update(id, { parked: editParked(must(id).parked, body) });
+  if (body.auto) ends.armed(must(id));
   notify();
 }
 
