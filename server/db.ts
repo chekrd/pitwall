@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, SESSIONS_DIR } from './config.ts';
 import type { Activity, Menu, TurnError, Unanswered } from './conversations.ts';
@@ -8,6 +9,11 @@ import { migrate } from './migrations.ts';
 import type { Round } from './rounds.ts';
 import type { Schedule, Scheduled } from './schedule.ts';
 import { migrateUx, uxStore } from './uxlog.ts';
+
+// userInfo() reads the passwd entry, so it still names the real home after isolate.ts moves HOME.
+if (process.env.NODE_TEST_CONTEXT && homedir() === userInfo().homedir) {
+  throw new Error('tests must run isolated: use pnpm test or node scripts/isolate.ts node --test …');
+}
 
 mkdirSync(DATA_DIR, { recursive: true });
 
