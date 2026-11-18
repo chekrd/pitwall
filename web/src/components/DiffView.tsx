@@ -77,6 +77,17 @@ interface Picked {
 
 const NO_NOTES: DiffLineAnnotation[] = [];
 
+// Where each task's diff was left, so coming back to its Diff tab opens there again: the file at the top of the view
+// and how far into it, or the file opened whole and how far down it.
+interface Place {
+  file: string;
+  offset: number;
+  whole: boolean;
+  dir: string | null;
+}
+
+const places = new Map<string, Place>();
+
 // Typing in the filter or dragging the file list's edge renders the toolbar and the tree, not every file's diff again.
 const FileDiffs = memo(function FileDiffs({ files, root, around, picked, marked, onPick, note }: {
   files: FileDiffMetadata[];
@@ -131,7 +142,7 @@ const FileDiffs = memo(function FileDiffs({ files, root, around, picked, marked,
 export function DiffView({ session, at }: { session: Session; at: string | null }) {
   return (
     <WorkerPoolContextProvider {...POOL}>
-      <Diffs session={session} at={at} />
+      <Diffs key={session.id} session={session} at={at} />
     </WorkerPoolContextProvider>
   );
 }
@@ -143,9 +154,10 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [treeWidth, setTreeWidth] = useState(storedTreeWidth);
   const [loading, startLoading] = useTransition();
-  const [selected, setSelected] = useState<string | null>(null);
+  const kept = useRef(at ? undefined : places.get(session.id));
+  const [selected, setSelected] = useState<string | null>(() => (kept.current && !kept.current.whole ? kept.current.file : null));
   const [focused, setFocused] = useState<string | null>(null);
-  const [dir, setDir] = useState<string | null>(null);
+  const [dir, setDir] = useState<string | null>(() => kept.current?.dir ?? null);
   const [whole, setWhole] = useState<FileDiffMetadata | null>(null);
   const [seeking, setSeeking] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -157,6 +169,7 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
   const [shownAt, setShownAt] = useState<Picked | null>(null);
   const seekLine = useRef<Picked | null>(null);
   const revealed = useRef<string | null>(null);
+  const keptTop = useRef<number | null>(null);
   // A drag across both columns of the split view keeps the column it started in.
   const pick = useCallback((file: string, r: SelectedLineRange) => {
     setShownAt(null);
@@ -253,14 +266,19 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
     let frame = 0;
     const started = performance.now();
     const target = seekLine.current?.file === seeking ? seekLine.current.range : null;
+    const top = keptTop.current;
     const seek = () => {
       const root = diffsRef.current?.querySelector('diffs-container')?.shadowRoot;
-      const line = target
-        ? root?.querySelector(`[data-${target.side}] [data-column-number="${target.start}"]`)
-        : root?.querySelector('[data-line-type^="change-"]');
+      const line = top !== null
+        ? root?.querySelector('[data-line-type]')
+        : target
+          ? root?.querySelector(`[data-${target.side}] [data-column-number="${target.start}"]`)
+          : root?.querySelector('[data-line-type^="change-"]');
       if (!line && performance.now() - started < 2000) frame = requestAnimationFrame(seek);
       else {
-        line?.scrollIntoView({ block: 'center' });
+        if (top !== null) diffsRef.current?.scrollTo({ top });
+        else line?.scrollIntoView({ block: 'center' });
+        keptTop.current = null;
         seekLine.current = null;
         setSeeking(null);
       }
@@ -333,6 +351,68 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
     setShownAt(place);
     focus(spot.path);
   }, [diff, at]);
+
+  // Before the paint, so the diff comes back at the place it was left and not at its top first.
+  useLayoutEffect(() => {
+    const place = kept.current;
+    if (!diff || !place) return;
+    kept.current = undefined;
+    const file = files.find((f) => f.name === place.file);
+    if (!file || (place.dir && !inDir(place.dir)(file))) {
+      if (place.dir && !files.some(inDir(place.dir))) setDir(null);
+      return;
+    }
+    if (place.whole) {
+      keptTop.current = place.offset;
+      focus(place.file);
+      return;
+    }
+    const root = diffsRef.current;
+    const section = document.getElementById(fileAnchor(place.file));
+    if (!root || !section) return;
+    // The files around it change height as they draw, and a drawn file has none until its highlighting comes back from
+    // the workers, so the place is held until it stops moving: hidden for two seconds, in sight after that on a busy
+    // machine, and let go as soon as the user scrolls.
+    setSeeking(place.file);
+    let frame = 0;
+    let still = 0;
+    const started = performance.now();
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      setSeeking(null);
+      for (const type of ['wheel', 'pointerdown', 'keydown', 'touchstart'] as const) root.removeEventListener(type, stop);
+    };
+    for (const type of ['wheel', 'pointerdown', 'keydown', 'touchstart'] as const) root.addEventListener(type, stop, { passive: true });
+    const hold = () => {
+      const by = Math.round(section.getBoundingClientRect().top - root.getBoundingClientRect().top + place.offset);
+      root.scrollTop += by;
+      still = by === 0 && section.querySelector('diffs-container')?.shadowRoot?.querySelector('pre') ? still + 1 : 0;
+      const held = performance.now() - started;
+      if (held > 2000) setSeeking(null);
+      if (still < 3 && held < 10_000) frame = requestAnimationFrame(hold);
+      else stop();
+    };
+    hold();
+    return stop;
+  }, [diff]);
+
+  const leftAt = useRef<() => Place | null>(null);
+  leftAt.current = () => {
+    const root = diffsRef.current;
+    if (!root) return null;
+    if (focused) return { file: focused, offset: root.scrollTop, whole: true, dir };
+    const top = root.getBoundingClientRect().top;
+    const section = [...root.querySelectorAll<HTMLElement>('section[data-file]')].find((s) => s.getBoundingClientRect().bottom > top);
+    return section ? { file: section.dataset.file!, offset: top - section.getBoundingClientRect().top, whole: false, dir } : null;
+  };
+  // A layout cleanup runs while the diff is still in the page, so where it was scrolled can still be read.
+  useLayoutEffect(() => () => {
+    if (kept.current) return;
+    const place = leftAt.current?.();
+    if (place) places.set(session.id, place);
+    else places.delete(session.id);
+  }, []);
+
   const note = pickedFile ? <LineNote key={JSON.stringify(picked)} session={session} at={codeRef(pickedFile, picked.range)} onDone={() => setPicked(null)} /> : null;
   const dirStat = listed.map(counts).reduce((sum, c) => ({ add: sum.add + c.add, del: sum.del + c.del }), { add: 0, del: 0 });
 

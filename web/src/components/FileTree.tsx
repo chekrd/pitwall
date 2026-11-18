@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from '@pierre/diffs';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from './FileTree.module.css';
 import { Icon } from './Icon.tsx';
 
@@ -140,8 +140,19 @@ export function FileTree({ files, all, onAll, query, onQuery, ...picks }: TreePr
       return next;
     });
   const found = query ? files.filter(matching(query)) : files;
+  const nav = useRef<HTMLElement>(null);
+  // The file the diff is at stays in sight as the diff scrolls; the list alone scrolls, never the page around it.
+  useEffect(() => {
+    const list = nav.current;
+    const link = list?.querySelector('a[aria-current]');
+    if (!list || !link) return;
+    const box = list.getBoundingClientRect();
+    const at = link.getBoundingClientRect();
+    if (at.top < box.top) list.scrollTop -= box.top - at.top + 28;
+    else if (at.bottom > box.bottom) list.scrollTop += at.bottom - box.bottom + 28;
+  }, [picks.selected]);
   return (
-    <nav className={styles.tree} aria-label="Changed files">
+    <nav ref={nav} className={styles.tree} aria-label="Changed files">
       <div className={styles.filter}>
         <Icon name="search" size={14} />
         <input

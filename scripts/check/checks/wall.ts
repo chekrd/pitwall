@@ -528,7 +528,80 @@ export const wall: Check[] = [
     },
   },
   {
-    name: 'P4.5d Diff: a large diff, 120 files, draws only the files near the part in view and the rest as it scrolls to them; a file opened from far down goes back to all files drawn where it was',
+    name: 'P4.5k Diff: leaving the tab, or the task, and coming back opens the diff where it was left, at the file in view and as far into it, or at the file opened whole and as far down it',
+    async run({ page, mock }) {
+      await page.goto(`${mock.url}/s/s-cart/diff`);
+      await page.until('every file drawn', () => document.querySelectorAll('section[data-file]').length === 12 &&
+        document.querySelectorAll('section[data-file] diffs-container').length === 12 &&
+        [...document.querySelectorAll('section[data-file] diffs-container')].every((d) => d.shadowRoot?.querySelector('pre')));
+      await page.until('the diff to scroll', () => {
+        const root = document.querySelector('section[data-file]')!.parentElement!;
+        return root.scrollHeight > root.clientHeight * 4;
+      });
+      // A section is laid out at its estimated height until it has been on screen once, so the diff is walked first.
+      await page.eval(async () => {
+        const root = document.querySelector('section[data-file]')!.parentElement!;
+        for (let y = 0; y < root.scrollHeight; y += root.clientHeight / 2) {
+          root.scrollTop = y;
+          await new Promise(requestAnimationFrame);
+          await new Promise(requestAnimationFrame);
+        }
+        root.scrollTop = 0;
+      });
+      // A drawn file has no height until its highlighting comes back, so the place is set again until it holds.
+      let held = 0;
+      const left = await until('the place to hold', async () => {
+        const now = await page.eval(() => {
+          const root = document.querySelector('section[data-file]')!.parentElement!;
+          const s = document.querySelectorAll<HTMLElement>('section[data-file]')[5];
+          const by = Math.round(s.getBoundingClientRect().top - root.getBoundingClientRect().top + 37);
+          root.scrollTop += by;
+          return { file: s.dataset.file!, offset: 37, by };
+        });
+        held = now.by === 0 ? held + 1 : 0;
+        if (held < 5) await new Promise((r) => setTimeout(r, 100));
+        return held >= 5 && { file: now.file, offset: now.offset };
+      }, 15_000);
+      const away = async (tab: string) => {
+        await page.click('#task-sheet [role="tab"]', tab);
+        await page.until(tab, () => !document.querySelector('section[data-file]'));
+        await page.click('#task-sheet [role="tab"]', 'Diff');
+      };
+      const back = async (want: { file: string; offset: number }) =>
+        page.until('the diff where it was left', (want: { file: string; offset: number }) => {
+          const root = document.querySelector('section[data-file]')?.parentElement;
+          if (!root || document.querySelectorAll('section[data-file]').length !== 12) return null;
+          const top = root.getBoundingClientRect().top;
+          const s = [...root.querySelectorAll<HTMLElement>('section[data-file]')].find((e) => e.getBoundingClientRect().bottom > top)!;
+          return s.dataset.file === want.file && Math.abs(top - s.getBoundingClientRect().top - want.offset) <= 1;
+        }, want);
+
+      await away('Overview');
+      await back(left);
+
+      await page.eval(() => window.navigation.navigate('/s/s-invoice/diff').finished);
+      await page.until("the other task's diff", () => location.pathname === '/s/s-invoice/diff' && document.querySelectorAll('section[data-file]').length > 0);
+      assert.equal(await page.eval(() => Math.round(document.querySelector('section[data-file]')!.parentElement!.scrollTop)), 0, "the other task's diff opened scrolled");
+      await page.eval(() => window.navigation.navigate('/s/s-cart/diff').finished);
+      await back(left);
+
+      await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
+      await page.until('server/git.ts whole', wholeFile, 'server/git.ts');
+      await page.until('its lines', () => !document.querySelector('[data-seeking]'));
+      const down = await page.eval(() => {
+        const root = document.querySelector('section[data-file]')!.parentElement!;
+        root.scrollTop = Math.min(400, root.scrollHeight - root.clientHeight);
+        return Math.round(root.scrollTop);
+      });
+      assert.ok(down > 0, 'the whole file does not scroll');
+      await away('Artifacts');
+      await page.until('server/git.ts whole again', wholeFile, 'server/git.ts');
+      await page.until('as far down it', (down: number) => !document.querySelector('[data-seeking]') &&
+        Math.round(document.querySelector('section[data-file]')!.parentElement!.scrollTop) === down, down);
+    },
+  },
+  {
+    name: 'P4.5d Diff: a large diff, 120 files, draws only the files near the part in view and the rest as it scrolls to them; the file list marks the file at the top of the diff and scrolls to keep it in sight; a file opened from far down goes back to all files drawn where it was',
     async run({ page, mock }) {
       // The page's own fetch gives ten copies of the fixture's diff, each under a folder of its own.
       await page.initScript(`(${(() => {
@@ -561,6 +634,24 @@ export const wall: Check[] = [
         list.scrollTop = list.scrollHeight;
       });
       await page.until('the last file drawn', (last: string) => !!document.querySelector(`section[data-file="${last}"] diffs-container`)?.shadowRoot?.querySelector('pre'), last);
+      // The file list follows the diff: the file at the top of the diff is marked and scrolled into the list's sight.
+      const marked = (file: string | null) => {
+        if (!file) {
+          const list = document.querySelector('section[data-file]')!.parentElement!;
+          const top = list.getBoundingClientRect().top;
+          file = [...list.querySelectorAll<HTMLElement>('section[data-file]')].find((s) => s.getBoundingClientRect().bottom > top)!.dataset.file!;
+        }
+        const nav = document.querySelector<HTMLElement>('nav[aria-label="Changed files"]')!;
+        const link = nav.querySelector<HTMLElement>('a[aria-current]');
+        if (link?.dataset.explain !== file) return null;
+        const box = nav.getBoundingClientRect();
+        const at = link.getBoundingClientRect();
+        return at.top >= box.top && at.bottom <= box.bottom;
+      };
+      assert.ok(await page.eval(() => document.querySelector('nav[aria-label="Changed files"]')!.scrollHeight > document.querySelector('nav[aria-label="Changed files"]')!.clientHeight * 2), 'the file list does not scroll');
+      await page.until('the list at the file at the top of the diff', marked, null);
+      await page.eval(() => { document.querySelector('section[data-file]')!.parentElement!.scrollTop = 0; });
+      await page.until('the list back at the top file', marked, top);
 
       await page.click(`nav[aria-label="Changed files"] a[data-explain="${last}"]`);
       await page.until('the last file whole', wholeFile, last);
