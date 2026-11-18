@@ -22,12 +22,12 @@ const FORK = "a separate one, forked from the task's; it can read files and the 
 export const TIPS = {
   keep: { does: 'Keeps the text as a draft on this task. Nothing is sent.', sees: 'nothing of it until you send it', session: `${TASK}, once you send it` },
   autoKeep: {
-    does: "Keeps the text as a draft that sends by itself when Claude ends its turn, with every other draft set so, as one message. Not when you replied first, the turn ended on a question, or the task is paused or archived; then it waits for the next end.",
+    does: "Keeps the text as a draft that sends by itself when Claude ends its turn. With several set so, one goes at each end, in their order, so each starts a turn of its own. Not when you replied first, the turn ended on a question, or the task is paused or archived; then it waits for the next end.",
     sees: WHOLE,
     session: TASK,
   },
   auto: {
-    does: "Sends this by itself when Claude ends its turn, with every other draft ticked so, as one message. Not when you replied first, the turn ended on a question, or the task is paused or archived; then it waits for the next end.",
+    does: "Sends this by itself when Claude ends its turn. With several ticked so, one goes at each end, in their order, so each starts a turn of its own. Not when you replied first, the turn ended on a question, or the task is paused or archived; then it waits for the next end.",
     sees: WHOLE,
     session: TASK,
   },

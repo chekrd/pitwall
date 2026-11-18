@@ -37,18 +37,16 @@ export function editParked(list: readonly Parked[], body: { draft: string; text?
 
 export const removeParked = (list: readonly Parked[], ids: readonly unknown[]) => list.filter((p) => !ids.includes(p.id));
 
-export const parkedMessage = (items: readonly Pick<Parked, 'text'>[]) => items.map((p) => p.text).join('\n\n');
-
 export interface Due {
   id: string;
   ids: string[];
   text: string;
 }
 
-// Watches each task for a real end of its turn: working, then idle (a permission prompt or a menu is not one). The drafts
-// armed before that end go out as one message once the turn's summary says whether it ended on a question, which a
-// draft would answer by accident; not when you replied meanwhile, a prompt in the terminal set Claude working again, or
-// the task is paused or archived. Only ends seen while the board runs count.
+// Watches each task for a real end of its turn: working, then idle (a permission prompt or a menu is not one). The first
+// draft armed before that end goes out once the turn's summary says whether it ended on a question, which a draft would
+// answer by accident; the next one waits for the end of the turn it starts. Not when you replied meanwhile, a prompt in
+// the terminal set Claude working again, or the task is paused or archived. Only ends seen while the board runs count.
 export function turnEnds() {
   const last = new Map<string, Session['status']>();
   const ends = new Map<string, number>();
@@ -74,7 +72,7 @@ export function turnEnds() {
       if (s.summary?.basis !== s.lastTurn && now - end < SUMMARY_WAIT_MS) continue;
       ends.delete(s.id);
       if (decisionKey(s)) continue;
-      due.push({ id: s.id, ids: armed.map((p) => p.id), text: parkedMessage(armed) });
+      due.push({ id: s.id, ids: [armed[0].id], text: armed[0].text });
     }
     for (const id of last.keys()) if (!all.some((s) => s.id === id)) last.delete(id);
     return due;

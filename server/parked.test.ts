@@ -24,15 +24,19 @@ function ended(patch: Partial<Session> = {}, parked = [draft('a', 150, 'First'),
   return { w, idle: session({ status: 'idle', parked, summary: summary('t2'), ...patch }) };
 }
 
-test('drafts armed during a turn go out as one message when it ends, once', () => {
+test('drafts armed during a turn go out one per turn: the first when it ends, the next when the turn it started ends', () => {
   const { w, idle } = ended();
-  assert.deepEqual(w.observe([idle], [], 200), [{ id: 's', ids: ['a', 'b'], text: 'First\n\nSecond' }]);
-  assert.deepEqual(w.observe([idle], [], 300), []);
+  assert.deepEqual(w.observe([idle], [], 200), [{ id: 's', ids: ['a'], text: 'First' }]);
+  const left = [draft('b', 160, 'Second')];
+  assert.deepEqual(w.observe([{ ...idle, parked: left }], [], 300), [], 'the end was used up');
+  const answered = { key: null, text: 'First', at: 200 };
+  assert.deepEqual(w.observe([session({ parked: left, answered })], [], 400), []);
+  assert.deepEqual(w.observe([session({ status: 'idle', parked: left, answered, lastTurn: 't3', summary: summary('t3') })], [], 500), [{ id: 's', ids: ['b'], text: 'Second' }]);
 });
 
 test('only drafts armed to send are sent, not the ones kept for a press', () => {
-  const { w, idle } = ended({}, [draft('a', 150), draft('k', null), draft('b', 160)]);
-  assert.deepEqual(w.observe([idle], [], 200)[0].ids, ['a', 'b']);
+  const { w, idle } = ended({}, [draft('k', null), draft('a', 150), draft('b', 160)]);
+  assert.deepEqual(w.observe([idle], [], 200)[0].ids, ['a']);
 });
 
 test('a draft armed after the turn ended waits for the next end', () => {

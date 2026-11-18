@@ -168,7 +168,7 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: "L1 Later keeps messages written while Claude works on the task's Overview: Keep for later under Message Claude keeps one, the card counts them; the ones set to Send when it's my turn go out as one message at the end of the turn, a reply after that end holds them back, and Send now sends one held with its Undo",
+    name: "L1 Later keeps messages written while Claude works on the task's Overview: Keep for later under Message Claude keeps one, the card counts them; the ones set to Send when it's my turn go out one per turn, the first when this turn ends and the next when the turn it started ends, a reply after that end holds them back, and Send now sends one held with its Undo",
     clock: 'fast',
     async run({ holds, page, mock, shot }) {
       type Snap = { sessions: { id: string; parked: { id: string; text: string; auto: boolean }[]; answered: { text: string } | null }[] };
@@ -211,15 +211,23 @@ export const schedulesLater: Check[] = [
       await shot('later-drafts');
 
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, summary: { text: 'Fixed', basis: 't-later', at: Date.now(), question: null, decision: null } } });
-      const sent = await until('the armed drafts sent', (s) => s.parked.length === 1);
-      assert.equal(sent.answered?.text, 'Also check the credit notes.\n\nThen rename the helper.');
+      const first = await until('the first armed draft sent', (s) => s.parked.length === 2);
+      assert.equal(first.answered?.text, 'Also check the credit notes.', 'only the first goes out at this end');
+      await page.until('two drafts left', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 2);
+      assert.deepEqual(await page.eval(drafts), [['Then rename the helper.', true], ['Kept for a press.', false]]);
+      await until('Claude at work on the first', (s) => (s as unknown as { status: string }).status === 'working');
+      await holds('the second to wait while Claude works on the first', 1500, async () => (await invoice()).answered?.text === 'Also check the credit notes.');
+
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, lastTurn: 't-later-2', summary: { text: 'Checked', basis: 't-later-2', at: Date.now(), question: null, decision: null } } });
+      const second = await until('the second armed draft sent', (s) => s.parked.length === 1);
+      assert.equal(second.answered?.text, 'Then rename the helper.');
       await page.until('one draft left', () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 1);
       assert.deepEqual(await page.eval(drafts), [['Kept for a press.', false]]);
 
-      await until('Claude at work on them', (s) => (s as unknown as { status: string }).status === 'working');
+      await until('Claude at work on the second', (s) => (s as unknown as { status: string }).status === 'working');
       await page.click('#task-sheet [data-later] li[data-parked] input[type="checkbox"]');
       await until('the last one armed', (s) => s.parked[0].auto);
-      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, lastTurn: 't-later-2', answered: { key: null, text: 'Typed on the card', at: Date.now() + 60_000 }, summary: { text: 'Fixed', basis: 't-later-2', at: Date.now(), question: null, decision: null } } });
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', activity: null, lastTurn: 't-later-3', answered: { key: null, text: 'Typed on the card', at: Date.now() + 60_000 }, summary: { text: 'Fixed', basis: 't-later-3', at: Date.now(), question: null, decision: null } } });
       await holds('a reply after the end to hold the draft back', 6000, async () => matches((await invoice()).parked.map((p) => p.text), ['Kept for a press.']));
 
       await page.click('#task-sheet [data-later] li[data-parked] button', 'Send now');
