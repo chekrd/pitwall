@@ -85,7 +85,7 @@ export const wall: Check[] = [
       assert.doesNotMatch(bar.shown ?? '', /\d/, 'the top bar shows a count');
       await shot('top-bar');
 
-      await withoutBoard(async (url) => {
+      await withoutBoard(page, async (url) => {
         for (const path of ['/', '/wall', '/s/s-cart/overview']) {
           await page.goto(`${url}${path}`);
           await page.until(`${path} to say Connecting…`, () => {

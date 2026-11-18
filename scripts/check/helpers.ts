@@ -171,8 +171,9 @@ const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.json': 'application/json',
 };
 
-// The build with no board behind it: the page loads, and its socket never opens, so no snapshot ever arrives.
-export async function withoutBoard(run: (url: string) => Promise<void>) {
+// The build with no board behind it: the page loads, and its socket never opens, so no snapshot ever arrives. The page
+// leaves before the server closes, as icons and fonts it still loads would fail as errors in the page.
+export async function withoutBoard(page: Page, run: (url: string) => Promise<void>) {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://board').pathname;
     if (path === '/favicon.ico') return void res.writeHead(204).end();
@@ -187,6 +188,7 @@ export async function withoutBoard(run: (url: string) => Promise<void>) {
   try {
     await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
   } finally {
+    await page.goto('about:blank').catch(() => {});
     server.closeAllConnections();
     await new Promise((ok) => server.close(ok));
   }

@@ -4,7 +4,7 @@ import { approveLoss, byText, frontIs, logged, luminance, menuItems, openFromWal
 
 export const usageFindings: Check[] = [
   {
-    name: 'usage the top bar shows the 5-hour and weekly limits on the queue and the Wall, each with its share, its level and its reset time, the weekday too when it is not today; a new reading shows at once, a passed reset shows 0 % and no reading shows –',
+    name: 'usage the top bar shows the 5-hour and weekly limits on the queue and the Wall, each with its share, its level, its reset time and a mark where an even pace would have it, the weekday too when it is not today; a new reading shows at once, a passed reset shows 0 % and no reading shows –',
     async run({ page, mock, shot }) {
       const usage = () => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-window]')].map((w) => ({
         window: w.dataset.window, text: w.innerText.replace(/\s+/g, ' ').trim(), level: w.dataset.level ?? null, title: w.dataset.explain ?? "",
@@ -14,8 +14,17 @@ export const usageFindings: Check[] = [
       assert.deepEqual(queue.map((w) => ({ window: w.window, level: w.level })), [{ window: '5h', level: 'low' }, { window: '7d', level: 'mid' }]);
       assert.match(queue[0].text, /^5h 34% ↻ (?:\w+ )?\d\d:\d\d$/);
       assert.match(queue[1].text, /^7d 61% ↻ \w+ \d\d:\d\d$/);
-      assert.match(queue[0].title, /^5-hour limit: 34% used · resets \d\d:\d\d · read at \d\d:\d\d$/);
-      assert.match(queue[1].title, /^Weekly limit: 61% used · resets \w+ \d\d:\d\d · read at \d\d:\d\d$/);
+      assert.match(queue[0].title, /^5-hour limit: 34% used, 2\d under an even pace of 5\d% · resets \d\d:\d\d · read at \d\d:\d\d$/);
+      assert.match(queue[1].title, /^Weekly limit: 61% used, 4 over an even pace of 57% · resets \w+ \d\d:\d\d · read at \d\d:\d\d$/);
+      const paces = await page.eval(() => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-pace]')].map((p) => {
+        const track = p.parentElement!.getBoundingClientRect();
+        const mark = p.getBoundingClientRect();
+        return { pace: Number(p.dataset.pace), at: track.width ? Math.round(((mark.left + mark.width / 2 - track.left) / track.width) * 100) : null };
+      }));
+      assert.equal(paces.length, 2, 'each limit marks its even pace');
+      const bars = await page.eval(() => innerWidth >= 1300);
+      for (const p of paces) assert.ok(bars ? p.at !== null && Math.abs(p.at - p.pace) <= 3 : p.at === null, `the even pace mark sits at ${p.at}% of its bar, not ${p.pace}%`);
+      assert.ok(paces[0].pace >= 55 && paces[0].pace <= 59 && paces[1].pace === 57, `even paces ${paces.map((p) => p.pace).join(", ")}`);
       assert.equal(await page.eval(whole, 'header [data-usage]'), true, 'the usage limits do not show whole');
       await shot('usage');
 
@@ -33,6 +42,8 @@ export const usageFindings: Check[] = [
       assert.equal(after[0].text, '5h 0%', 'a passed reset still shows its time');
       assert.match(after[1].text, /^7d 93% ↻ (?:\w+ )?\d\d:\d\d$/);
       assert.match(after[0].title, /^5-hour limit: reset at \d\d:\d\d, with no reading since$/);
+      assert.match(after[1].title, /^Weekly limit: 93% used, 6 under an even pace of 99% · resets /);
+      assert.equal(await page.eval(() => document.querySelectorAll('header [data-usage] [data-pace]').length), 1, 'a passed reset marks no even pace');
 
       await mock.post('/mock/usage', { usage: null });
       await page.goto(`${mock.url}/wall`);

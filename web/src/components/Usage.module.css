@@ -19,9 +19,12 @@
 
   .label { grid-column: 1; font-weight: 650; }
 
-  .track { grid-column: 2; width: 38px; height: 5px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+  .track { position: relative; grid-column: 2; width: 38px; height: 5px; border-radius: 3px; background: var(--line-2); }
 
   .fill { display: block; height: 100%; border-radius: inherit; background: var(--level); }
+
+  /* Where the share would be if the window were spent evenly until its reset. */
+  .pace { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); }
 
   .percent {
     grid-column: 3;
@@ -31,8 +34,8 @@
     [data-level="high"] > & { color: var(--danger); }
   }
 
-  /* Below 1500 px the meter needs the room, so the share's colour alone tells the level. */
-  @media (max-width: 1500px) {
+  /* Below 1300 px the meter needs the room, so the share's colour alone tells the level and the reading alone the even pace. */
+  @media (max-width: 1299px) {
     .usage { grid-template-columns: repeat(3, auto); }
     .track { display: none; }
     .percent { grid-column: 2; color: var(--level); }

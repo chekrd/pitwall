@@ -40,7 +40,7 @@ export const dock: Check[] = [
     expectedErrors: [/WebSocket/],
     async run({ page, mock, shot }) {
       const repos = () => document.querySelector<HTMLDialogElement>('dialog#workspace')?.open && document.querySelector<HTMLElement>('dialog#workspace')!.innerText;
-      await withoutBoard(async (url) => {
+      await withoutBoard(page, async (url) => {
         await page.goto(`${url}/`);
         await page.click('[data-repos]');
         const text = await page.until('Repos', repos);
