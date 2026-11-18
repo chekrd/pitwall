@@ -458,4 +458,63 @@ export const schedulesLater: Check[] = [
       assert.match(cont[0], /“The Mac restarted while you were working/);
     },
   },
+  {
+    name: "L1.lines lines picked in the Diff tab with the + beside a line number, clicked or dragged over them, open a draft under the last one that names the file and lines; Enter keeps it for later and nothing reaches Claude; the Overview's Later shows the file, the lines and their code above the draft, and Send now sends them before it",
+    async run({ page, mock, shot }) {
+      type Snap = { sessions: { id: string; parked: { text: string; auto: boolean; ref?: { path: string; side: string; start: number; end: number; lines: string[] } }[]; answered: { text: string } | null }[] };
+      const invoice = async () => ((await mock.get('/api/state')) as Snap).sessions.find((s) => s.id === 's-invoice')!;
+      const until = async (what: string, ok: (s: Awaited<ReturnType<typeof invoice>>) => boolean) => {
+        for (const end = Date.now() + 8000; Date.now() < end; await sleep(100)) if (ok(await invoice())) return invoice();
+        throw new Error(`timed out waiting for ${what}: ${JSON.stringify(await invoice())}`);
+      };
+      await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'idle', question: null, menu: null, answered: null, parked: [] } });
+      await page.goto(`${mock.url}/s/s-invoice/diff`);
+      await page.click('nav[aria-label="Changed files"] a[data-explain="server/git.ts"]');
+      // The middle of a line number of the new version, in the diff's shadow root.
+      const number = (n: number) => page.until(`line ${n}'s number`, (n: number) => {
+        const pane = document.querySelector('section[data-file]')?.parentElement;
+        const el = document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector<HTMLElement>(`[data-additions] [data-column-number="${n}"]`);
+        if (!pane || !el || pane.hasAttribute('data-seeking')) return null;
+        const r = el.getBoundingClientRect();
+        return r.height > 0 && r.top >= pane.getBoundingClientRect().top && r.bottom <= innerHeight ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+      }, n);
+      // The whole file opens scrolled to its first change, lines 89 and 90.
+      await page.until('its first change in view', () => !!document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-line-type^="change-"]'));
+      const first = await number(89);
+      const last = await number(91);
+      await page.pointAt(first.x, first.y);
+      const plus = await page.until('the + on line 89', () => {
+        const r = document.querySelector('section[data-file] diffs-container')?.shadowRoot?.querySelector('[data-utility-button]')?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+      });
+      await page.drag(plus, { x: plus.x, y: last.y });
+      await page.until('the draft under the lines', () => document.querySelector<HTMLElement>('[data-line-note] p')?.innerText.trim() === 'server/git.ts lines 89–91');
+      assert.equal(await page.eval(() => document.activeElement?.getAttribute('aria-label')), 'A draft about server/git.ts lines 89–91', 'the draft takes the typing');
+      await page.type('Why does this run twice?');
+      await shot('diff-line-draft');
+      await page.key('Enter');
+      const kept = await until('the draft kept', (s) => s.parked.length === 1);
+      assert.equal(kept.parked[0].text, 'Why does this run twice?');
+      assert.equal(kept.parked[0].auto, false, 'Enter keeps it for later');
+      const ref = kept.parked[0].ref!;
+      assert.deepEqual([ref.path, ref.side, ref.start, ref.end, ref.lines.length], ['server/git.ts', 'new', 89, 91, 3]);
+      await page.until('the draft gone from the diff', () => !document.querySelector('[data-line-note]'));
+      assert.equal((await invoice()).answered, null, 'nothing reached Claude');
+
+      await page.key('Escape');
+      await page.goto(`${mock.url}/s/s-invoice/overview`);
+      const shown = await page.until('the draft with its lines', () => {
+        const li = document.querySelector<HTMLElement>('#task-sheet [data-later] li[data-parked]');
+        const ref = li?.querySelector<HTMLElement>('[data-ref]');
+        return ref && { where: ref.querySelector('figcaption')!.textContent, rows: ref.querySelectorAll('pre > span').length, text: li!.querySelector('p')?.textContent };
+      });
+      assert.deepEqual(shown, { where: 'server/git.ts lines 89–91', rows: 3, text: 'Why does this run twice?' });
+      await page.eval(() => document.querySelector('#task-sheet [data-later]')!.scrollIntoView({ block: 'center' }));
+      await shot('later-draft-lines');
+      await page.click('#task-sheet [data-later] li[data-parked] button', 'Send now');
+      const sent = await until('the draft sent', (s) => s.parked.length === 0 && !!s.answered);
+      const code = ref.lines.join('\n');
+      assert.equal(sent.answered!.text, `About \`server/git.ts\` lines 89–91:\n\`\`\`\n${code}\n\`\`\`\n\nWhy does this run twice?`);
+    },
+  },
 ];

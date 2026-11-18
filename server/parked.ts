@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Parked, Session } from './db.ts';
+import { draftMessage } from './codeRef.ts';
+import type { CodeRef, Parked, Session } from './db.ts';
 import { decisionKey } from './decision.ts';
 
 export const MAX_PARKED = 50;
@@ -15,10 +16,10 @@ function cleanText(text: string) {
   return t;
 }
 
-export function addParked(list: readonly Parked[], body: { text: string; auto?: boolean | undefined }, now = Date.now()): Parked[] {
+export function addParked(list: readonly Parked[], body: { text: string; auto?: boolean | undefined; ref?: CodeRef | undefined }, now = Date.now()): Parked[] {
   if (list.length >= MAX_PARKED) throw new Error(`a task holds at most ${MAX_PARKED} drafts`);
   const auto = body.auto === true;
-  return [...list, { id: randomUUID(), text: cleanText(body.text), auto, armedAt: auto ? now : null, at: now }];
+  return [...list, { id: randomUUID(), text: cleanText(body.text), auto, armedAt: auto ? now : null, at: now, ...(body.ref && { ref: body.ref }) }];
 }
 
 // Arming counts from the moment it is switched on, so a turn that had already ended does not send it.
@@ -72,7 +73,7 @@ export function turnEnds() {
       if (s.summary?.basis !== s.lastTurn && now - end < SUMMARY_WAIT_MS) continue;
       ends.delete(s.id);
       if (decisionKey(s)) continue;
-      due.push({ id: s.id, ids: [armed[0].id], text: armed[0].text });
+      due.push({ id: s.id, ids: [armed[0].id], text: draftMessage(armed[0]) });
     }
     for (const id of last.keys()) if (!all.some((s) => s.id === id)) last.delete(id);
     return due;

@@ -140,6 +140,16 @@ export interface Findings {
   items: Finding[];
 }
 
+// Lines of the task's diff a draft was written about. `side` is the version they are in: `new` is the worktree's,
+// `old` the base branch's, for lines the diff removed.
+export interface CodeRef {
+  path: string;
+  side: 'old' | 'new';
+  start: number;
+  end: number;
+  lines: string[];
+}
+
 // A message written for the task's Claude to send later. `armedAt` is when Send when it's my turn was switched on.
 export interface Parked {
   id: string;
@@ -147,6 +157,7 @@ export interface Parked {
   auto: boolean;
   armedAt: number | null;
   at: number;
+  ref?: CodeRef;
 }
 
 // A question asked on the side: a fork of the task's conversation answers it, and the task's Claude never sees it.

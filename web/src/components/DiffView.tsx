@@ -1,19 +1,21 @@
-import { parsePatchFiles, registerCustomTheme, type FileDiffMetadata } from '@pierre/diffs';
+import { parsePatchFiles, registerCustomTheme, type DiffLineAnnotation, type FileDiffMetadata, type SelectedLineRange } from '@pierre/diffs';
 import type { ThemeRegistration } from 'shiki';
 import { FileDiff, useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent, type RefObject } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { api } from '../api.ts';
-import type { FullDiff } from '../types.ts';
+import { codeRef } from '../diffLines.ts';
+import type { FullDiff, Session } from '../types.ts';
 import { ChangeRuler } from './ChangeRuler.tsx';
 import styles from './DiffView.module.css';
 import { counts, fileAnchor, FileTree, inDir, matching, treeOrder } from './FileTree.tsx';
 import { Icon } from './Icon.tsx';
+import { LineNote } from './LineNote.tsx';
 
 registerCustomTheme('darcula', async () => (await import('../themes/darcula.json')).default as ThemeRegistration);
 
 // The code keeps the user's Darcula; only the file headers take the board's greys around it.
 const FILE_OPTIONS = {
-  diffStyle: 'split', theme: 'darcula', themeType: 'dark', overflow: 'wrap', lineDiffType: 'word', stickyHeader: true,
+  diffStyle: 'split', theme: 'darcula', themeType: 'dark', overflow: 'wrap', lineDiffType: 'word', stickyHeader: true, enableGutterUtility: true,
   unsafeCSS: '[data-diffs-header][data-diffs-header] { background-color: #2f2f2f; border-bottom: 1px solid #383838; }',
 } as const;
 
@@ -66,9 +68,32 @@ const estimate = (f: FileDiffMetadata) => 44 + f.splitLineCount * 18 + f.hunks.l
 const NEAR_PX = 1500;
 const AT_ONCE = 12;
 
+// Lines picked with the gutter's + in one file, the draft about them written under the last one.
+interface Picked {
+  file: string;
+  range: SelectedLineRange;
+}
+
+const NO_NOTES: DiffLineAnnotation[] = [];
+
 // Typing in the filter or dragging the file list's edge renders the toolbar and the tree, not every file's diff again.
-const FileDiffs = memo(function FileDiffs({ files, root, around }: { files: FileDiffMetadata[]; root: RefObject<HTMLDivElement | null>; around: string | null }) {
+const FileDiffs = memo(function FileDiffs({ files, root, around, picked, onPick, note }: {
+  files: FileDiffMetadata[];
+  root: RefObject<HTMLDivElement | null>;
+  around: string | null;
+  picked: Picked | null;
+  onPick: (file: string, range: SelectedLineRange) => void;
+  note: ReactNode;
+}) {
   const [drawn, setDrawn] = useState<ReadonlySet<string>>(() => new Set());
+  // One options object per file for the life of the view, so picking lines in one does not draw the others again.
+  const pick = useRef(onPick);
+  pick.current = onPick;
+  const options = useMemo(() => new Map<string, typeof FILE_OPTIONS & { onGutterUtilityClick: (r: SelectedLineRange) => void }>(), []);
+  const optionsOf = (name: string) => {
+    if (!options.has(name)) options.set(name, { ...FILE_OPTIONS, onGutterUtilityClick: (r) => pick.current(name, r) });
+    return options.get(name)!;
+  };
   const draw = (names: string[]) => setDrawn((was) => (names.every((n) => was.has(n)) ? was : new Set([...was, ...names])));
 
   // Before the paint, so a file scrolled to on the way back from it is there at once.
@@ -87,20 +112,29 @@ const FileDiffs = memo(function FileDiffs({ files, root, around }: { files: File
 
   return files.map((f) => (
     <section key={f.name} id={fileAnchor(f.name)} data-file={f.name} className={styles.file} style={{ containIntrinsicSize: `auto ${estimate(f)}px` }}>
-      {files.length === 1 || drawn.has(f.name) ? <FileDiff fileDiff={f} options={FILE_OPTIONS} /> : <div style={{ height: estimate(f) }} />}
+      {files.length === 1 || drawn.has(f.name) || picked?.file === f.name ? (
+        <FileDiff
+          fileDiff={f}
+          options={optionsOf(f.name)}
+          selectedLines={picked?.file === f.name ? picked.range : null}
+          lineAnnotations={picked?.file === f.name ? [{ side: picked.range.side!, lineNumber: picked.range.end }] : NO_NOTES}
+          renderAnnotation={() => note}
+        />
+      ) : <div style={{ height: estimate(f) }} />}
     </section>
   ));
 });
 
-export function DiffView({ worktree }: { worktree: string }) {
+export function DiffView({ session }: { session: Session }) {
   return (
     <WorkerPoolContextProvider {...POOL}>
-      <Diffs worktree={worktree} />
+      <Diffs session={session} />
     </WorkerPoolContextProvider>
   );
 }
 
-function Diffs({ worktree }: { worktree: string }) {
+function Diffs({ session }: { session: Session }) {
+  const worktree = session.worktree;
   const pool = useWorkerPool();
   const [diff, setDiff] = useState<(FullDiff & { files: FileDiffMetadata[] }) | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +150,11 @@ function Diffs({ worktree }: { worktree: string }) {
   const diffsRef = useRef<HTMLDivElement>(null);
   const returnTo = useRef<string | null>(null);
   const opening = useRef<string | null>(null);
+  const [picked, setPicked] = useState<Picked | null>(null);
+  // A drag across both columns of the split view keeps the column it started in.
+  const pick = useCallback((file: string, r: SelectedLineRange) => {
+    setPicked({ file, range: { start: Math.min(r.start, r.end), end: Math.max(r.start, r.end), side: r.side ?? r.endSide ?? 'additions' } });
+  }, []);
 
   const loadWhole = async (file: FileDiffMetadata) => {
     const paths = [file.name, ...(file.prevName ? [file.prevName] : [])].map((p) => `&path=${encodeURIComponent(p)}`).join('');
@@ -262,6 +301,8 @@ function Diffs({ worktree }: { worktree: string }) {
     [focused, whole, files, listed],
   );
   const rulerFile = focused && whole?.name === focused ? whole : null;
+  const pickedFile = picked && shown.find((f) => f.name === picked.file);
+  const note = pickedFile ? <LineNote key={JSON.stringify(picked)} session={session} at={codeRef(pickedFile, picked.range)} onDone={() => setPicked(null)} /> : null;
   const dirStat = listed.map(counts).reduce((sum, c) => ({ add: sum.add + c.add, del: sum.del + c.del }), { add: 0, del: 0 });
 
   // From all files, J opens the file in view and K the one before it.
@@ -375,7 +416,7 @@ function Diffs({ worktree }: { worktree: string }) {
               {files.length > 0 && !listed.length && (
                 <p className={styles.empty}>{shownQuery ? `No changed file${dir ? ` in ${dir}/` : ''} matches “${shownQuery.trim()}”.` : `No changes in ${dir}/ any more.`}</p>
               )}
-              <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} />
+              <FileDiffs files={shown} root={diffsRef} around={focused ? null : selected} picked={pickedFile ? picked : null} onPick={pick} note={note} />
             </div>
             {rulerFile && <ChangeRuler file={rulerFile} pane={diffsRef} />}
           </div>

@@ -328,6 +328,15 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
         await mouse('mousePressed', x, y, count);
         await mouse('mouseReleased', x, y, count);
       },
+      // Presses at one point of the viewport, moves with the button held and releases at another, as a drag does.
+      async drag(from: { x: number; y: number }, to: { x: number; y: number }) {
+        await mouse('mouseMoved', from.x, from.y);
+        await mouse('mousePressed', from.x, from.y);
+        for (const t of [0.5, 1]) {
+          await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, button: 'left', buttons: 1 });
+        }
+        await mouse('mouseReleased', to.x, to.y);
+      },
       async key(key: string, { shift = false, meta = false } = {}) {
         const k = KEYS[key] ?? { code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0), text: key };
         const modifiers = (shift ? 8 : 0) | (meta ? 4 : 0);

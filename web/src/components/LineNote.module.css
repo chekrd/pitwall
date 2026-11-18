@@ -1,0 +1,38 @@
+@layer components {
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 6px 12px 10px;
+    padding: 10px 12px;
+    max-width: 80ch;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card-2);
+    font-family: var(--font);
+    color: var(--text);
+    white-space: normal;
+  }
+
+  .where { margin: 0; font-size: 12.5px; color: var(--muted); code { color: var(--text-2); } }
+
+  .field {
+    width: 100%;
+    min-height: 44px;
+    max-height: 30vh;
+    field-sizing: content;
+    resize: none;
+    padding: 2px 0;
+    border: 0;
+    outline: none;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  .spacer { flex: 1; }
+}

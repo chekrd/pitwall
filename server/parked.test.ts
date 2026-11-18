@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { draftMessage } from './codeRef.ts';
 import type { Parked, Session } from './db.ts';
 import { addParked, editParked, removeParked, SUMMARY_WAIT_MS, turnEnds } from './parked.ts';
 
@@ -117,4 +118,23 @@ test('drafts are added, edited, armed from the moment they are switched on, and 
   assert.throws(() => addParked([], { text: '   ' }), /empty/);
   assert.throws(() => editParked(list, { draft: 'gone', text: 'x' }), /gone/);
   assert.deepEqual(removeParked(list, [id]), []);
+});
+
+test('a draft written about lines of the diff reaches Claude with their path, numbers and code, then the draft', () => {
+  const ref = { path: 'web/src/cart.ts', side: 'new' as const, start: 12, end: 13, lines: ['const total = sum(items);', 'return total;'] };
+  assert.equal(draftMessage({ text: 'Round it.', ref }), 'About `web/src/cart.ts` lines 12–13:\n```\nconst total = sum(items);\nreturn total;\n```\n\nRound it.');
+  assert.equal(draftMessage({ text: 'Why?', ref: { ...ref, side: 'old', end: 12, lines: ['x = ```y```'] } }),
+    'About `web/src/cart.ts` line 12 as the base branch has them (the diff removes or changes them):\n````\nx = ```y```\n````\n\nWhy?');
+  assert.match(draftMessage({ text: 'Split it.', ref: { ...ref, end: 100 } }), /``` \(the first 2 of 89 lines\)\n\nSplit it\.$/);
+  assert.equal(draftMessage({ text: 'Plain.' }), 'Plain.');
+});
+
+test('a kept draft keeps the lines it was written about, and the turn end sends them with it', () => {
+  const ref = { path: 'a.ts', side: 'new' as const, start: 3, end: 3, lines: ['let a = 1;'] };
+  const [kept] = addParked([], { text: 'Make it const.', auto: true, ref }, 50);
+  assert.deepEqual(kept.ref, ref);
+  assert.deepEqual(editParked([kept], { draft: kept.id, text: 'Inline it.' })[0].ref, ref, 'editing the text keeps the lines');
+  assert.equal(addParked([], { text: 'No lines.' })[0].ref, undefined);
+  const { w, idle } = ended({}, [kept]);
+  assert.equal(w.observe([idle], [], 200)[0]?.text, 'About `a.ts` line 3:\n```\nlet a = 1;\n```\n\nMake it const.');
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_REF_LINE, MAX_REF_LINES } from './codeRef.ts';
 import type { Snapshot, State } from './app.ts';
 import type { Command } from './commands.ts';
 import type { ConversationLog } from './conversations.ts';
@@ -60,7 +61,13 @@ export const actionBodies = {
   'delete-worktree': z.strictObject({ discard: z.boolean().optional() }),
   'dismiss-clear-error': none,
   finding: z.strictObject({ basis: z.string(), finding: z.number().int(), kind: z.string(), text: z.string().optional() }),
-  park: z.strictObject({ text: z.string(), auto: z.boolean().optional() }),
+  park: z.strictObject({
+    text: z.string(), auto: z.boolean().optional(),
+    ref: z.strictObject({
+      path: z.string().min(1).max(1000), side: z.enum(['old', 'new']), start: z.number().int().min(1), end: z.number().int().min(1),
+      lines: z.array(z.string().max(MAX_REF_LINE)).max(MAX_REF_LINES),
+    }).refine((r) => r.start <= r.end, 'the lines run backwards').optional(),
+  }),
   'edit-park': z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }),
   unpark: z.strictObject({ draft: z.string() }),
   'ask-aside': z.strictObject({

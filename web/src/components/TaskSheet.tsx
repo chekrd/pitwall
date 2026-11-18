@@ -137,7 +137,7 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
       </header>
       <div className={styles.panel} role="tabpanel">
         {current === 'overview' && <Overview session={session} name={name} branch={worktree?.branch ?? undefined} repo={repo} />}
-        {current === 'diff' && <DiffView worktree={session.worktree} />}
+        {current === 'diff' && <DiffView session={session} />}
         {current === 'artifacts' && <Artifacts session={session} item={item} />}
         {current === 'conversation' && <Conversation session={session} />}
       </div>

@@ -1,10 +1,11 @@
 import { useState, type KeyboardEvent } from 'react';
 import { editDraft, useDraft } from './Composer.tsx';
+import { draftMessage, refLines } from '../../../server/codeRef.ts';
 import { sessionAction } from '../api.ts';
 import { active, type Request } from '../outbox.ts';
 import { hold, useSends } from '../sends.ts';
 import { useStore } from '../store.ts';
-import type { ActionBody, Parked, Session } from '../types.ts';
+import type { ActionBody, CodeRef, Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES, ownAsides } from './Asides.tsx';
 import { explain, TIPS, type Explanation } from './explain.ts';
 import { ModelPicker, useModelChoices, useStoredPick } from './ModelPicker.tsx';
@@ -13,7 +14,7 @@ import { toast } from './Toasts.tsx';
 
 const reportError = (err: unknown) => toast('error', err instanceof Error ? err.message : String(err));
 
-const park = <A extends 'park' | 'edit-park' | 'unpark'>(s: Session, action: A, body: ActionBody<A>) =>
+export const park = <A extends 'park' | 'edit-park' | 'unpark'>(s: Session, action: A, body: ActionBody<A>) =>
   sessionAction(s.id, action, body).then(() => true, (err: unknown) => {
     reportError(err);
     return false;
@@ -26,9 +27,10 @@ const ASIDE_TIPS = {
 
 const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text);
 
-// Every draft goes out as one message, held for 5 s with its Undo like any send, and leaves the task once it went out.
+// Every draft goes out as one message, each with the lines it was written about, held for 5 s with its Undo like any
+// send, and leaves the task once it went out.
 function sendNow(s: Session, drafts: readonly Parked[], name: string) {
-  const text = drafts.map((d) => d.text).join('\n\n');
+  const text = drafts.map(draftMessage).join('\n\n');
   const request: Request = { action: 'answer', body: { key: null, text, drafts: drafts.map((d) => d.id) }, label: text };
   void hold(s, request, name, { box: false });
 }
@@ -45,6 +47,25 @@ const onEnter = (run: () => void, cancel?: () => void) => (e: KeyboardEvent<HTML
   run();
 };
 
+function Lines({ at }: { at: CodeRef }) {
+  const count = at.end - at.start + 1;
+  return (
+    <figure className={styles.ref} data-ref data-explain="The lines of the diff this draft is about; Claude gets them with it">
+      <figcaption>
+        <code>{at.path}</code> {refLines(at)}{at.side === 'old' && ', as the base branch has them'}
+      </figcaption>
+      {at.lines.length > 0 && (
+        <pre>
+          {at.lines.map((l, i) => (
+            <span key={i}><span className={styles.num}>{at.start + i}</span>{l}{'\n'}</span>
+          ))}
+          {at.lines.length < count && <span className={styles.num}>… {count - at.lines.length} more</span>}
+        </pre>
+      )}
+    </figure>
+  );
+}
+
 function Item({ session, draft, name, canSend, sendTip }: { session: Session; draft: Parked; name: string; canSend: boolean; sendTip: Explanation }) {
   const [editing, setEditing] = useState<string | null>(null);
   const save = () => {
@@ -57,11 +78,12 @@ function Item({ session, draft, name, canSend, sendTip }: { session: Session; dr
     void park(session, 'unpark', { draft: draft.id });
     toast('info', `Deleted the draft “${short(draft.text)}”`, {
       session: session.id,
-      action: { label: 'Undo', run: () => void park(session, 'park', { text: draft.text, auto: draft.auto }) },
+      action: { label: 'Undo', run: () => void park(session, 'park', { text: draft.text, auto: draft.auto, ...(draft.ref && { ref: draft.ref }) }) },
     });
   };
   return (
     <li className={styles.item} data-parked={draft.id}>
+      {draft.ref && <Lines at={draft.ref} />}
       {editing === null ? (
         <p className={styles.text}>{draft.text}</p>
       ) : (

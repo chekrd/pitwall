@@ -254,7 +254,7 @@ export async function answer(id: string, reply: Parameters<typeof answers.answer
   }
 }
 
-export function park(id: string, body: { text: string; auto?: boolean | undefined }) {
+export function park(id: string, body: Parameters<typeof addParked>[1]) {
   sessions.update(id, { parked: addParked(must(id).parked, body) });
   notify();
 }
