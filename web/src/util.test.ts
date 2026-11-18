@@ -197,9 +197,10 @@ test('share keeps each part equal to the one before as that very object: a sessi
   assert.deepEqual(Object.keys(share({ a: 1 }, { a: 1, b: undefined })), ['a', 'b'], 'a key that came is kept');
 });
 
-test('the context reads as tokens of the window, a 1M one for a [1m] model or past 200k tokens', () => {
-  assert.equal(contextUse({ context: 84_200, model: 'claude-opus-5-5' }), '84k of 200k (42%)');
-  assert.equal(contextUse({ context: 84_200, model: 'opus[1m]' }), '84k of 1M (8%)');
-  assert.equal(contextUse({ context: 420_000, model: 'claude-opus-5-5' }), '420k of 1M (42%)');
+test('the context reads as a share of the window, a 1M one for a [1m] model or past 200k tokens, amber from 50 % and red from 80 %', () => {
+  assert.deepEqual(contextUse({ context: 84_200, model: 'claude-opus-5-5' }), { percent: 42, level: 'low', tokens: '84k of 200k tokens' });
+  assert.deepEqual(contextUse({ context: 84_200, model: 'opus[1m]' }), { percent: 8, level: 'low', tokens: '84k of 1M tokens' });
+  assert.deepEqual(contextUse({ context: 620_000, model: 'claude-opus-5-5' }), { percent: 62, level: 'mid', tokens: '620k of 1M tokens' });
+  assert.equal(contextUse({ context: 170_000, model: 'claude-opus-5-5' })?.level, 'high');
   assert.equal(contextUse({ context: null, model: 'claude-opus-5-5' }), null);
 });

@@ -320,6 +320,20 @@ function DecisionBelow({ scroller, what }: { scroller: RefObject<HTMLDivElement 
   );
 }
 
+// The fill shows the gradient up to the share used, so a fuller window reaches the hotter colours.
+function ContextGauge({ session }: { session: Session }) {
+  const use = contextUse(session);
+  if (!use) return '—';
+  return (
+    <span className={styles.gauge} data-level={use.level} data-explain={`${use.percent}% of the context window: ${use.tokens}`}>
+      <span className={styles.gaugeTrack} aria-hidden>
+        <span className={styles.gaugeFill} style={{ clipPath: `inset(0 ${100 - Math.min(use.percent, 100)}% 0 0)` }} />
+      </span>
+      <span className={styles.gaugePercent}>{use.percent}%</span>
+    </span>
+  );
+}
+
 export function Overview({ session, name, branch, repo }: { session: Session; name: string; branch?: string | undefined; repo?: RepoView | undefined }) {
   const { home, repos, sessions } = useStore();
   const task = folderTaskOf(repos, session);
@@ -517,7 +531,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <dt data-explain="The model Claude runs on now and its effort, as its last request named them; /model and /effort change them">Model</dt>
               <dd>{session.model ? modelName(session.model) : '—'}{session.effort && ` ${effortName(session.effort).toLowerCase()}`}</dd>
               <dt data-explain="How much of the model's context window the conversation fills, as Claude's latest request counted it; /compact or /clear frees it">Context</dt>
-              <dd data-task-context>{contextUse(session) ?? '—'}</dd>
+              <dd data-task-context><ContextGauge session={session} /></dd>
               <dt data-explain="The terminal device Claude runs on">Terminal</dt>
               <dd data-explain="The terminal device Claude runs on">{session.tty ? <code>{session.tty}</code> : '—'}</dd>
               <dt data-explain="Claude Code's session id; claude --resume takes it">Session</dt>

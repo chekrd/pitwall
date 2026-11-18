@@ -184,6 +184,27 @@
     code { font-size: 12.5px; }
   }
 
+  .gauge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-variant-numeric: tabular-nums;
+    --level: var(--ok);
+    &[data-level="mid"] { --level: var(--prompt); }
+    &[data-level="high"] { --level: var(--danger); }
+  }
+
+  .gaugeTrack { position: relative; width: 140px; height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+
+  .gaugeFill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(to right, var(--ok) 0%, var(--ok) 35%, var(--prompt) 60%, var(--danger) 85%);
+  }
+
+  .gaugePercent { font-weight: 650; color: var(--text-2); [data-level="high"] > & { color: var(--level); } }
+
   .worktrees {
     margin: 0;
     padding: 0;

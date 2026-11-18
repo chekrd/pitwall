@@ -50,7 +50,8 @@ export function contextUse(session: Pick<Session, 'context' | 'model'>) {
   if (session.context === null) return null;
   const window = session.model?.endsWith('[1m]') || session.context > 200_000 ? 1_000_000 : 200_000;
   const k = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`);
-  return `${k(session.context)} of ${k(window)} (${Math.round((session.context / window) * 100)}%)`;
+  const percent = Math.round((session.context / window) * 100);
+  return { percent, level: percent >= 80 ? 'high' : percent >= 50 ? 'mid' : 'low', tokens: `${k(session.context)} of ${k(window)} tokens` };
 }
 
 export const EFFORTS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };

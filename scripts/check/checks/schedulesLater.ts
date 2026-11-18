@@ -434,7 +434,10 @@ export const schedulesLater: Check[] = [
       const plain = await page.until('a plain title as a tooltip', tip);
       assert.equal(plain.text, "Claude Code's session id; claude --resume takes it");
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [aria-describedby="tooltip"]')?.getAttribute('data-explain') ?? null), "Claude Code's session id; claude --resume takes it", 'described by the tooltip while it shows');
-      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-task-context]')?.textContent ?? null), '84k of 200k (42%)', 'the facts show how much of the context window the conversation fills');
+      assert.deepEqual(await page.eval(() => {
+        const gauge = document.querySelector<HTMLElement>('#task-sheet [data-task-context] [data-level]');
+        return gauge && { text: gauge.textContent, level: gauge.dataset.level, tip: gauge.dataset.explain, clip: (gauge.querySelector('[aria-hidden] > span') as HTMLElement).style.clipPath };
+      }), { text: '42%', level: 'low', tip: '42% of the context window: 84k of 200k tokens', clip: 'inset(0px 58% 0px 0px)' }, 'the facts show how much of the context window the conversation fills, as a share and a gauge');
 
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-later] li[data-parked] button')!.focus());
