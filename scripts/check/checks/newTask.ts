@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { KEYS } from '../../../web/src/keys.ts';
 import { sleep, until } from '../cdp.ts';
-import { card, logged, matches, openFromWall, openNewTask, openQueue, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
+import { card, logged, matches, openFromWall, openNewTask, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
 
 export const newTask: Check[] = [
   {
@@ -291,30 +291,6 @@ export const newTask: Check[] = [
       assert.deepEqual(added.body, { path: `${await mock.home()}/git` });
       await page.until('the folder among the scanned ones', () => !!document.querySelector('#workspace button[aria-label="Stop scanning ~/git"]'));
       assert.equal((await mock.get('/api/state')).repos.length, before);
-    },
-  },
-  {
-    name: 'P4.priority the ⋯ menu sets the task\'s own priority: Auto at first, High and Low send it and show it pressed, Auto clears it; the card names it beside its kind, and a low task still waits in the queue',
-    async run({ page, mock, shot }) {
-      const pressed = () => document.querySelector(':popover-open [data-priority] [aria-pressed="true"]')?.textContent;
-      const pick = async (label: string, priority: string | null) => {
-        await page.click(':popover-open [data-priority] button', label);
-        await page.until(`${label} pressed`, (want: string) => document.querySelector(':popover-open [data-priority] [aria-pressed="true"]')?.textContent === want, label);
-        const sent = await logged(mock, `the priority ${label}`, (e) => e.action === 'priority' && e.body.priority === priority);
-        assert.deepEqual([sent.at(-1)!.sessionId, sent.at(-1)!.status], ['s-cart', 204]);
-      };
-      await page.goto(`${mock.url}/wall`);
-      await page.until('the tiles', tiles);
-      await page.click('[data-tile][data-session="s-cart"] button[aria-label="Session actions"]');
-      assert.equal(await page.until('the priority row', pressed), 'Auto');
-      await pick('High', 'high');
-      await shot('session-menu-priority');
-      await pick('Auto', null);
-      await pick('Low', 'low');
-      await page.key('Escape');
-      await page.until('the menu to close', () => !document.querySelector(':popover-open'));
-      await openQueue(page, mock);
-      await page.until('the Low priority chip on the card', () => document.querySelector('[data-card]')?.textContent?.includes('Low priority'));
     },
   },
   {

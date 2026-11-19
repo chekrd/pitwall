@@ -1,19 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { menu, options, question, session, turn } from './testing.ts';
+import { menu, options, question, session } from './testing.ts';
 import type { RepoView } from './types.ts';
-import { ancestorsOf, attentionChangesAt, attentionOf, clock, contextUse, decisionOf, descendantsOf, findingNumber, findingPath, isDelivered, locate, menuStuck, modelName, openSubtasks, openSubtasksOfAll, roundOf, settledAs, share, subtaskCounts, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
+import { attentionChangesAt, attentionOf, clock, contextUse, decisionOf, isDelivered, locate, menuStuck, modelName, share, shortUrl, tilde, tildeIn, untilde, worktreeName } from './util.ts';
 
-test('a decision is the open question or end-of-turn choice, and one the board answered is closed at once', () => {
+test('a decision is the open ask_human question, and one the board answered is closed at once', () => {
   const asked = session('s', { question: question('q1') });
-  assert.deepEqual(decisionOf(asked), { key: 'q:q1', problem: 'Which cart wins?', brief: '', context: 'd', options: options('Keep', 'Merge') });
+  assert.deepEqual(decisionOf(asked), { key: 'q:q1', problem: 'Which cart wins?', context: 'd', options: options('Keep', 'Merge') });
   assert.equal(decisionOf({ ...asked, answered: { key: 'q:q1', text: 'Keep', at: 5 } }), null);
-  const ended = session('s', { summary: turn('t1') });
-  assert.equal(decisionOf(ended)?.key, 's:t1');
-  assert.equal(decisionOf(ended)?.context, '', 'no last message, no context');
-  assert.equal(decisionOf({ ...ended, lastMessage: 'All green. Ship it?' })?.context, 'All green. Ship it?', "Claude's whole last message, not the summarizer's");
-  assert.equal(decisionOf({ ...ended, answered: { key: 's:t1', text: 'Ship', at: 5 } }), null);
-  assert.equal(decisionOf({ ...ended, lastTurn: 't2' }), null, 'read from an older turn');
+  assert.equal(decisionOf(session('s', { lastMessage: 'All green. Ship it?' })), null, 'a question in plain text is your turn');
+  assert.equal(attentionOf(session('s', { lastMessage: 'All green. Ship it?' })), 'idle');
   assert.equal(decisionOf(session('s', { status: 'waiting', menu: menu('m1') })), null, 'a menu has its own view');
 });
 
@@ -72,56 +68,6 @@ test('a worktree is named by its folder, without the repository folder git-wt pu
   assert.equal(worktreeName('/g/board', repo), 'None');
   assert.equal(worktreeName('/g/worktrees/gone/board', repo), 'None');
   assert.equal(worktreeName('/g/worktrees/x/board', undefined), 'board');
-});
-
-test("a subtask's review round counts the rounds that started subtasks in the order the first of each started, then the task's current findings; one round is no round", () => {
-  const sub = (id: string, basis: string, finding: number, createdAt: number, archived = false) =>
-    session(id, { createdAt, archived, parent: { id: 'review', basis, finding, title: 'f', kind: 'accept', text: '' } });
-  const late = sub('late', 'b2', 1, 30);
-  const early = sub('early', 'b1', 1, 10, true);
-  const alone = [session('review'), sub('x', 'b1', 0, 5)];
-  assert.equal(roundOf(alone, alone[1]), null);
-  assert.equal(findingNumber(alone, alone[1]), '#1');
-  const two = [session('review'), late, early, sub('more', 'b1', 2, 40)];
-  assert.equal(roundOf(two, early), 1);
-  assert.equal(findingNumber(two, late), '#2, round 2');
-  const reviewedAgain = [session('review', { findings: { basis: 'b3', items: [] } }), sub('x', 'b1', 0, 5)];
-  assert.equal(findingNumber(reviewedAgain, reviewedAgain[1]), '#1, round 1');
-  assert.deepEqual(subtaskCounts(two, 'review'), { open: 2, archived: 1 });
-  assert.deepEqual(subtaskCounts(two, 'late'), { open: 0, archived: 0 });
-});
-
-test('subtasks nest: the chain up to the root task, the tree under a task, and the finding numbers down to a subtask', () => {
-  const sub = (id: string, of: string, finding: number) => session(id, { parent: { id: of, basis: 't1', finding, title: 'f', kind: 'accept', text: '' } });
-  const all = [session('review'), sub('a', 'review', 0), sub('a2', 'a', 1), sub('b', 'review', 2), sub('lost', 'gone', 0)];
-  assert.deepEqual(ancestorsOf(all, all[2]).map((s) => s.id), ['review', 'a']);
-  assert.deepEqual(ancestorsOf(all, all[4]), []);
-  assert.deepEqual(descendantsOf(all, 'review').map((d) => `${d.session.id}:${d.depth}`), ['a:1', 'a2:2', 'b:1']);
-  assert.equal(findingPath(all, all[2]), '1.2');
-  assert.equal(findingPath(all, all[3]), '3');
-});
-
-test('a task counts its subtasks still open: a solved or dropped one and everything under it are settled', () => {
-  const sub = (id: string, of: string, resolution: 'solved' | 'dropped' | null = null) =>
-    session(id, { parent: { id: of, basis: 't1', finding: 0, title: 'f', kind: 'accept', text: '' }, resolution: resolution && { state: resolution, at: 1 } });
-  const all = [session('review'), sub('a', 'review', 'solved'), sub('a1', 'a'), sub('b', 'review'), sub('b1', 'b', 'dropped'), sub('b2', 'b')];
-  const { open, total } = openSubtasks(all, 'review');
-  assert.deepEqual([open.map((s) => s.id), total], [['b', 'b2'], 5]);
-  assert.deepEqual(openSubtasks(all, 'b').open.map((s) => s.id), ['b2']);
-  const ofAll = openSubtasksOfAll(all);
-  for (const s of all) assert.deepEqual(ofAll(s.id), openSubtasks(all, s.id).open, `the open subtasks of ${s.id} in one pass`);
-  assert.equal(ofAll('a1'), ofAll('b2'), 'one empty list for every task without any');
-});
-
-test('a finding settles once rejected or marked solved, or once all its subtasks are solved or dropped, solved if any one was', () => {
-  const sub = (resolution: 'solved' | 'dropped' | null) => session('x', { resolution: resolution && { state: resolution, at: 1 } });
-  const finding = { title: 'f', detail: '', location: '' };
-  assert.equal(settledAs(finding, []), null, 'nothing started on it');
-  assert.equal(settledAs(finding, [sub('solved'), sub(null)]), null, 'one still open');
-  assert.equal(settledAs(finding, [sub('dropped'), sub('solved')]), 'solved');
-  assert.equal(settledAs(finding, [sub('dropped')]), 'dropped');
-  assert.equal(settledAs({ ...finding, rejected: { reason: '', at: 1 } }, [sub(null)]), 'rejected');
-  assert.equal(settledAs({ ...finding, solved: { at: 1 } }, []), 'solved', 'fixed without a subtask');
 });
 
 test('a link reads as its host and path', () => {

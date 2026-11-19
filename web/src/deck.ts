@@ -2,30 +2,20 @@ import { decisionKey, menuAnswerText, openDecision } from '../../server/decision
 import { answeredCount, isAnswered, roundAnswerLabel, roundTitle } from '../../server/rounds.ts';
 import { compare } from './order.ts';
 import type { Body, Request } from './outbox.ts';
-import type { Advice, Command, MenuAnswer, RoundAnswers, Session } from './types.ts';
-import { adviceFor, attentionOf, decisionOf, menuStuck, underTask, type Attention } from './util.ts';
+import type { Command, Menu, MenuAnswer, RoundAnswers, Session } from './types.ts';
+import { attentionOf, decisionOf, menuStuck, type Attention } from './util.ts';
 
-// The queue's cards: the tasks that wait on the developer, in board order, and what each press on the card sends. A
-// subtask waits on its task's page and Wall tile.
+// The queue's cards: the tasks that wait on the developer, in board order, and what each press on the card sends.
 
-export type Kind = 'menu' | 'ask' | 'round' | 'turn' | 'prompt' | 'idle';
+export type Kind = 'menu' | 'ask' | 'round' | 'prompt' | 'idle';
 
 const IN_DECK: readonly Attention[] = ['decide', 'focus', 'idle'];
 
 // `busy` are the sessions whose send is held or not yet confirmed: they have been answered on this page.
 export function deckOf(sessions: readonly Session[], busy: ReadonlySet<string>, now = Date.now()) {
   return sessions
-    .filter((s) => !s.archived && !s.resolution && s.status !== 'exited' && !busy.has(s.id) && IN_DECK.includes(attentionOf(s, now)) && !underTask(sessions, s) && !findingsTaken(s, sessions))
+    .filter((s) => !s.archived && s.status !== 'exited' && !busy.has(s.id) && IN_DECK.includes(attentionOf(s, now)))
     .sort(compare);
-}
-
-// A review whose last turn listed findings waits on nothing once each is rejected, solved or has a subtask on it, until
-// Claude asks something or another turn ends.
-function findingsTaken(s: Session, sessions: readonly Session[]) {
-  const f = s.findings;
-  if (!f?.items.length || f.basis !== s.summary?.basis || s.menu || s.question) return false;
-  const taken = new Set(sessions.flatMap((o) => (o.parent?.id === s.id && o.parent.basis === f.basis && (!o.archived || o.resolution) ? [o.parent.finding] : [])));
-  return f.items.every((x, i) => x.rejected || x.solved || taken.has(i));
 }
 
 export function kindOf(s: Session, now = Date.now()): Kind | null {
@@ -34,7 +24,7 @@ export function kindOf(s: Session, now = Date.now()): Kind | null {
   if (attention === 'idle') return 'idle';
   if (attention !== 'decide') return null;
   const key = decisionKey(s)!;
-  return key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : key.startsWith('r:') ? 'round' : 'turn';
+  return key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : 'round';
 }
 
 // The deck as it is read: the front card, then a send that failed until it has been at the front, then the rest in
@@ -112,43 +102,6 @@ export function meter(deck: readonly Session[], frontId: string | null, arrived:
   return { label, position, total: deck.length, segments: null, bars };
 }
 
-// What ⏎ and the primary button send, fixed when the card is first shown so that advice finishing or changing
-// while it is read never changes what ⏎ sends. `late` marks a suggestion that filled a frozen nothing.
-export type Frozen =
-  | { via: 'advice'; label: string | null; adviceAt: number; late?: true }
-  | { via: 'recommended'; label: string }
-  | { via: 'none'; label: null }
-  | { via: 'menu'; picks: MenuAnswer[]; adviceAt: number | null };
-
-const noPicks = (s: Session) => s.menu!.questions.map(() => ({ labels: [], other: '' }));
-
-export function freeze(s: Session): Frozen | null {
-  const key = decisionKey(s);
-  const a = adviceFor(s);
-  const done = a?.state === 'done' ? a : null;
-  if (key?.startsWith('m:')) {
-    const answers = done?.answers?.length === s.menu!.questions.length ? done.answers : null;
-    return { via: 'menu', picks: answers?.map((x) => ({ labels: [...x.labels], other: x.other ?? '' })) ?? noPicks(s), adviceAt: answers ? done!.at : null };
-  }
-  const d = decisionOf(s);
-  if (!d) return null;
-  if (done) return { via: 'advice', label: d.options.some((o) => o.label === done.choice) ? done.choice : null, adviceAt: done.at };
-  const recommended = d.options.find((o) => o.recommended);
-  return recommended ? { via: 'recommended', label: recommended.label } : { via: 'none', label: null };
-}
-
-// A later snapshot changes a frozen choice in two cases only: a second opinion that finishes fills a frozen
-// nothing, and a rewrite of the decision that drops the frozen option starts it over, as an update.
-export function refreeze(frozen: Frozen, s: Session): { frozen: Frozen; why: 'suggestion' | 'rewritten' } | null {
-  if (frozen.via === 'menu') return null;
-  const fresh = freeze(s);
-  const d = decisionOf(s);
-  if (!fresh || !d || fresh.via === 'menu') return null;
-  if (frozen.label !== null && !d.options.some((o) => o.label === frozen.label)) return { frozen: fresh, why: 'rewritten' };
-  if (frozen.via === 'none' && fresh.via === 'advice') return { frozen: { ...fresh, late: true }, why: 'suggestion' };
-  return null;
-}
-
 export interface Composer {
   open: boolean;
   text: string;
@@ -182,13 +135,11 @@ function noteOf(composer: Composer | undefined): Body | null {
   return note;
 }
 
-const samePicks = (a: readonly MenuAnswer[], b: readonly MenuAnswer[] | undefined) =>
-  !!b && a.length === b.length && a.every((p, i) =>
-    p.other.trim() === (b[i].other ?? '').trim() && p.labels.length === b[i].labels.length && p.labels.every((l) => b[i].labels.includes(l)));
+const noPicks = (menu: Menu) => menu.questions.map(() => ({ labels: [], other: '' }));
 
-// A menu's picks as they start: those made on it before, kept across views and reloads, or else the frozen ones.
-export function startPicks(kept: readonly MenuAnswer[] | null, frozen: Frozen | null): MenuAnswer[] {
-  const from = kept ?? (frozen?.via === 'menu' ? frozen.picks : []);
+// A menu's picks as they start: those made on it before, kept across views and reloads, or none.
+export function startPicks(kept: readonly MenuAnswer[] | null, menu: Menu | null): MenuAnswer[] {
+  const from = kept ?? (menu ? noPicks(menu) : []);
   return from.map((p) => ({ ...p, labels: [...p.labels] }));
 }
 
@@ -202,9 +153,6 @@ export function togglePick(picks: readonly MenuAnswer[], question: number, label
   });
 }
 
-// The second opinion as a reply to edit: its choice, then its answer.
-export const suggestionText = (a: Advice) => (a.choice && !a.answer.startsWith(a.choice) ? `${a.choice}. ${a.answer}` : a.answer);
-
 export function menuAnswer(s: Session, picks: readonly MenuAnswer[]): Request {
   const answers = picks.map((p) => ({ labels: [...p.labels], other: p.other }));
   return { action: 'answer-menu', body: { toolUseId: s.menu!.toolUseId, answers }, label: menuAnswerText(s.menu!, answers) };
@@ -216,8 +164,7 @@ function menuPrimary(s: Session, picks: readonly MenuAnswer[]): Primary {
     const label = questions.length === 1 ? 'Pick an option' : questions.length === 2 ? 'Answer both questions' : 'Answer every question';
     return { label, disabled: true, press: null };
   }
-  const a = adviceFor(s);
-  return { label: a?.state === 'done' && samePicks(picks, a.answers) ? 'Accept suggestion' : 'Send answer', disabled: false, press: menuAnswer(s, picks) };
+  return { label: 'Send answer', disabled: false, press: menuAnswer(s, picks) };
 }
 
 // The answers given so far to a round's questions, as one send; the questions left out stay open.
@@ -235,62 +182,40 @@ function roundPrimary(s: Session, replies: RoundAnswers): Primary {
   return { label, disabled: false, press: roundAnswer(s, replies) };
 }
 
-// The footer's primary button, which ⏎ presses: the frozen choice (with the open composer's note), the picks of a
-// menu, the answers to a round, Terminal, or Reply. It never sends the composer's text by itself; Enter in the
-// composer does that.
+// The footer's primary button, which ⏎ presses: the option Claude recommends (with the open composer's note), the
+// picks of a menu, the answers to a round, Terminal, or Reply. It never sends the composer's text by itself; Enter in
+// the composer does that.
 export function primary(
-  s: Session, frozen: Frozen | null, input: { composer?: Composer; picks?: readonly MenuAnswer[] | undefined; replies?: RoundAnswers | undefined } = {}, now = Date.now(),
+  s: Session, input: { composer?: Composer; picks?: readonly MenuAnswer[] | undefined; replies?: RoundAnswers | undefined } = {}, now = Date.now(),
 ): Primary {
   const kind = kindOf(s, now);
   if (kind === 'prompt') return { label: 'Terminal', disabled: false, press: { intent: 'terminal' } };
   if (kind === 'round') return roundPrimary(s, input.replies ?? {});
-  if (kind !== 'menu' && kind !== 'ask' && kind !== 'turn') return { ...reply, disabled: kind !== 'idle' };
-  const f = frozen ?? freeze(s)!;
-  if (kind === 'menu') return menuPrimary(s, input.picks ?? (f.via === 'menu' ? f.picks : noPicks(s)));
-  if (f.via === 'menu') return reply;
-  const key = decisionKey(s)!;
-  const a = adviceFor(s);
-  const unchanged = f.via === 'advice' && a?.state === 'done' && a.at === f.adviceAt;
+  if (kind === 'menu') return menuPrimary(s, input.picks ?? noPicks(s.menu!));
+  if (kind !== 'ask') return { ...reply, disabled: kind !== 'idle' };
+  const d = decisionOf(s)!;
+  const recommended = d.options.find((o) => o.recommended);
+  if (!recommended) return d.options.length ? { label: 'Pick an option', disabled: true, press: null } : reply;
   const note = noteOf(input.composer);
-  // A suggestion that came in while ⏎ had nothing to send says so, since the button the reader saw was disabled.
-  const accept = f.via === 'advice' && f.late ? 'Suggestion ready · Accept' : 'Accept suggestion';
-  if (f.via === 'advice' && f.label === null) {
-    return unchanged ? { label: accept, disabled: false, press: { action: 'accept-advice', body: { key, adviceAt: f.adviceAt }, label: a.answer } } : reply;
-  }
-  if (f.label === null) return decisionOf(s)!.options.length ? { label: 'Pick an option', disabled: true, press: null } : reply;
-  const waits = uploadingIn(input.composer);
-  if (unchanged && !note) return { label: accept, disabled: waits, press: { action: 'accept-advice', body: { key, adviceAt: f.adviceAt }, label: f.label } };
   return {
-    label: note ? `Send “${f.label}” + your note` : `Send “${f.label}”`,
-    disabled: waits,
-    press: { action: 'answer', body: { key, choice: f.label, ...note }, label: f.label },
+    label: note ? `Send “${recommended.label}” + your note` : `Send “${recommended.label}”`,
+    disabled: uploadingIn(input.composer),
+    press: { action: 'answer', body: { key: d.key, choice: recommended.label, ...note }, label: recommended.label },
   };
 }
 
 // What ⏎ would send without the note. The key guard restarts when this changes under the reader.
-export function targetOf(s: Session, frozen: Frozen | null, now = Date.now()) {
-  const { press } = primary(s, frozen, {}, now);
+export function targetOf(s: Session, now = Date.now()) {
+  const { press } = primary(s, {}, now);
   if (!press) return 'none';
   if ('intent' in press) return press.intent;
-  return press.action === 'accept-advice' ? `accept:${press.body.adviceAt}` : press.action === 'answer' ? `choice:${press.body.choice}` : press.action;
+  return press.action === 'answer' ? `choice:${press.body.choice}` : press.action;
 }
 
-// An option pressed on an ask or end-of-turn card: the second opinion's own option accepts it, as long as no note
-// goes with it. Null while an attachment is still uploading.
+// An option pressed on an ask card, with the open composer's note. Null while an attachment is still uploading.
 export function choose(s: Session, label: string, composer?: Composer): Request | null {
   if (uploadingIn(composer)) return null;
-  const key = decisionKey(s)!;
-  const a = adviceFor(s);
-  const note = noteOf(composer);
-  if (a?.state === 'done' && a.choice === label && !note) return { action: 'accept-advice', body: { key, adviceAt: a.at }, label };
-  return { action: 'answer', body: { key, choice: label, ...note }, label };
-}
-
-// The Accept on a suggestion shown apart from the options: what the second opinion would answer, as it was shown.
-export function acceptance(s: Session): Request | null {
-  const a = adviceFor(s);
-  if (a?.state !== 'done') return null;
-  return { action: 'accept-advice', body: { key: decisionKey(s)!, adviceAt: a.at }, label: a.choice ?? a.answer };
+  return { action: 'answer', body: { key: decisionKey(s)!, choice: label, ...noteOf(composer) }, label };
 }
 
 // As the server tells a command from an answer: a `!` line, or a `/name` from its command list. Until that list has

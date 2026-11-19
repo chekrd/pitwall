@@ -8,13 +8,12 @@ WITH opened AS (
 ), shown AS (
   SELECT task_id, decision_id, MIN(at) AS shown_at FROM ev WHERE name = 'card-shown' AND decision_id IS NOT NULL GROUP BY task_id, decision_id
 ), answered AS (
-  SELECT task_id, decision_id, MIN(at) AS answered_at, json_extract(data, '$.how') AS how, json_extract(data, '$.option') AS option,
-    json_extract(data, '$.followed') AS followed, json_extract(data, '$.confidence') AS confidence
+  SELECT task_id, decision_id, MIN(at) AS answered_at, json_extract(data, '$.how') AS how, json_extract(data, '$.option') AS option
   FROM ev WHERE name = 'decision-answer' GROUP BY task_id, decision_id
 ), closed AS (
   SELECT task_id, decision_id, MIN(at) AS closed_at, json_extract(data, '$.via') AS via FROM ev WHERE name = 'decision-close' GROUP BY task_id, decision_id
 )
-SELECT o.task_id, o.decision_id, o.kind, o.asked_at, o.open_then, s.shown_at, a.answered_at, a.how, a.option, a.followed, a.confidence,
+SELECT o.task_id, o.decision_id, o.kind, o.asked_at, o.open_then, s.shown_at, a.answered_at, a.how, a.option,
   c.closed_at, COALESCE(c.via, CASE WHEN a.answered_at IS NOT NULL THEN 'board' END) AS via,
   COALESCE(c.closed_at, a.answered_at) - o.asked_at AS wait_ms,
   COALESCE(c.closed_at, a.answered_at) - s.shown_at AS decide_ms

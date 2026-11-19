@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
+import { DATA_DIR } from './config.ts';
 import { migrate, migrations } from './migrations.ts';
 
 const version = (db: DatabaseSync) => Number(db.prepare('PRAGMA user_version').get()!.user_version);
@@ -11,7 +14,8 @@ test('a new database gets every step and the full schema', () => {
   migrate(db);
   assert.equal(version(db), migrations.length);
   const sessions = columns(db, 'sessions');
-  for (const name of ['conversation', 'turn_error', 'last_prompt', 'priority']) assert.ok(sessions.some((c) => c.name === name), name);
+  for (const name of ['conversation', 'turn_error', 'last_prompt', 'context']) assert.ok(sessions.some((c) => c.name === name), name);
+  for (const name of ['advice', 'summary', 'parent', 'rank', 'priority']) assert.ok(!sessions.some((c) => c.name === name), name);
   assert.equal(sessions.find((c) => c.name === 'repo_id')!.notnull, false);
   assert.ok(columns(db, 'repos').some((c) => c.name === 'hidden'));
   assert.ok(sessions.some((c) => c.name === 'scheduled'));
@@ -28,7 +32,7 @@ test('a database from before numbered steps keeps its rows and reaches the same 
       rank_reason TEXT, diffstat TEXT, last_message TEXT, waiting_for TEXT, dismissed_ask TEXT, archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, advice TEXT);
     INSERT INTO repos (id, path) VALUES (1, '/r');
-    INSERT INTO sessions (id, repo_id, worktree, cwd, status, created_at, updated_at, advice) VALUES ('s1', 1, '/r', '/r', 'idle', 1, 2, '{}');
+    INSERT INTO sessions (id, repo_id, worktree, cwd, status, title, created_at, updated_at, advice) VALUES ('s1', 1, '/r', '/r', 'idle', 'old', 1, 2, '{}');
   `);
   migrate(db);
   const fresh = new DatabaseSync(':memory:');
@@ -39,7 +43,7 @@ test('a database from before numbered steps keeps its rows and reaches the same 
   assert.equal(columns(db, 'sessions').find((c) => c.name === 'repo_id')!.notnull, false);
   const row = db.prepare('SELECT * FROM sessions').get()!;
   assert.equal(row.conversation, 's1');
-  assert.equal(row.advice, '{}');
+  assert.equal(row.title, 'old');
   assert.equal(version(db), migrations.length);
 });
 
@@ -75,4 +79,24 @@ test('step 7 forgets the restart on tasks archived before archiving did, and kee
   migrate(db);
   const rows = Object.fromEntries(db.prepare('SELECT id, interrupted FROM sessions').all().map((r) => [r.id, r.interrupted]));
   assert.deepEqual(rows, { gone: null, paused: pause, shown: restart, plain: null });
+});
+
+test('step 11 drops the columns of the model runs and keeps each task, a subtask as a task of its own', () => {
+  const db = new DatabaseSync(':memory:');
+  migrate(db, migrations.slice(0, 10));
+  const add = db.prepare(`INSERT INTO sessions (id, worktree, cwd, status, title, archived, parent, resolution, summary, advice, rank, priority, created_at, updated_at, conversation)
+    VALUES (?, '/r', '/r', 'idle', ?, ?, ?, ?, '{}', '{}', 1, 'high', 1, 1, ?)`);
+  add.run('task', 'review', 0, null, null, 'task');
+  mkdirSync(join(DATA_DIR, 'advisor', 'left-over'), { recursive: true });
+  add.run('fix', '#1 Fix · a bug', 1, JSON.stringify({ id: 'task', basis: 't1', finding: 0, title: 'a bug', kind: 'accept', text: '' }), JSON.stringify({ state: 'solved', at: 1 }), 'fix');
+  migrate(db);
+  assert.equal(version(db), 11);
+  assert.ok(!existsSync(join(DATA_DIR, 'advisor')));
+  const names = columns(db, 'sessions').map((c) => c.name);
+  for (const gone of ['advice', 'summary', 'explanation', 'findings', 'parent', 'resolution', 'rank', 'rank_reason', 'priority']) assert.ok(!names.includes(gone), gone);
+  for (const kept of ['question', 'round', 'menu', 'answered', 'unanswered', 'parked']) assert.ok(names.includes(kept), kept);
+  assert.deepEqual(db.prepare('SELECT id, title, archived FROM sessions ORDER BY id').all().map((r) => ({ ...r })), [
+    { id: 'fix', title: '#1 Fix · a bug', archived: 1 },
+    { id: 'task', title: 'review', archived: 0 },
+  ]);
 });

@@ -71,8 +71,6 @@
 
   .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 650; }
 
-  .know { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--know); }
-
   .line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
 
   .clock { flex: none; font: 600 17px/1 var(--font-display); font-variant-numeric: tabular-nums; color: var(--text); }
@@ -144,13 +142,11 @@
 
   .step { flex: 1; min-width: 0; }
 
-  .worth, .answered, .summary { font-size: 13px; line-height: 1.45; }
-
-  .worth { font-size: 13.5px; color: var(--know); }
+  .answered, .prompt { font-size: 13px; line-height: 1.45; }
 
   .answered { color: var(--accent-ink); }
 
-  .summary { color: var(--muted); }
+  .prompt { color: var(--muted); }
 
   @media (max-width: 760px) {
     .dock { overflow-x: auto; padding: 10px 16px 18px; }

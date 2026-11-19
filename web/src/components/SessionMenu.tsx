@@ -1,10 +1,10 @@
 import { useId } from 'react';
 import { api, sessionAction } from '../api.ts';
 import { queue } from '../queue.ts';
-import { closeSheetOf, moveSheetOf } from '../router.ts';
+import { closeSheetOf } from '../router.ts';
 import { sends } from '../sends.ts';
 import { patchSession, unpatch, useStore } from '../store.ts';
-import type { ActionBody, ActionName, Priority, Resolution, Session, WorktreeView } from '../types.ts';
+import type { ActionBody, ActionName, Session, WorktreeView } from '../types.ts';
 import { tilde } from '../util.ts';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { Icon } from './Icon.tsx';
@@ -49,24 +49,7 @@ export function archive(session: Session, name: string) {
 const resumed = (session: Session): Partial<Session> => (session.status === 'idle' || session.status === 'waiting' ? { status: 'idle' } : {});
 
 const quitNote = (session: Session) =>
-  session.status === 'exited' ? '' : session.status === 'working' ? 'its Claude quits once this turn ends, ' : 'its Claude quits, ';
-
-// Solved and Dropped archive the subtask, and its page gives way to its task's; Undo opens it again.
-export function settleNote(session: Session, state: Resolution['state']) {
-  const what = state === 'solved' ? 'Done with it' : 'Not going on with it';
-  return `${what}: it stops counting as open on its task; ${quitNote(session)}its changes stay in the worktree, and Reopen resumes the conversation`;
-}
-
-export function resolveSubtask(session: Session, state: Resolution['state'] | null, name: string) {
-  const { id } = session;
-  if (state && session.parent) moveSheetOf(id, session.parent.id);
-  const change = () => patchSession(id, { resolution: state ? { state, at: Date.now() } : null, archived: !!state, ...(!state && resumed(session)) });
-  if (state) queue.leave(id, change);
-  else change();
-  sessionAction(id, 'resolve', { state }).then(() => {
-    if (state) toast('undo', `${state === 'solved' ? 'Solved' : 'Dropped'} ${name}`, { session: id, action: { label: 'Undo', kbd: UNDO_KBD, run: () => resolveSubtask(session, null, name) } });
-  }, failed(id));
-}
+  session.status === 'exited' ? '' : session.status === 'working' ? 'its Claude quits once this turn ends, and ' : 'its Claude quits, and ';
 
 // Claude quits: the session leaves the queue as ended, its card sideways when it is the one being read.
 function quit(session: Session) {
@@ -108,18 +91,10 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
             onClick={pick(() => quit(session))}
           />
         )}
-        <PriorityPicker session={session} />
-        {clearing ? null : session.parent ? (session.resolution ? (
-          <Item label="Reopen" note={`Marked ${session.resolution.state}; back into its task's open count, its conversation resumed`} onClick={pick(() => resolveSubtask(session, null, name))} />
-        ) : (
-          <>
-            <Item label="Mark solved" note={settleNote(session, 'solved')} onClick={pick(() => resolveSubtask(session, 'solved', name))} />
-            <Item label="Drop" note={settleNote(session, 'dropped')} onClick={pick(() => resolveSubtask(session, 'dropped', name))} />
-          </>
-        )) : session.archived ? (
+        {clearing ? null : session.archived ? (
           <Item label="Unarchive" note={exited ? 'Resume the conversation, back into the queue and the strip' : 'Back into the queue and the strip'} onClick={act('archive', { archived: false })} />
         ) : (
-          <Item label="Archive" note={`Done with it: ${quitNote(session)}ranking, advice and summaries stop; Unarchive resumes the conversation`} onClick={pick(() => archive(session, name))} />
+          <Item label="Archive" note={`Done with it: ${quitNote(session)}Unarchive resumes the conversation`} onClick={pick(() => archive(session, name))} />
         )}
         {exited && !clearing && (
           <Item
@@ -132,7 +107,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
             })}
           />
         )}
-        {!session.parent && !clearing && (
+        {!clearing && (
           <Item
             label="Clear task…"
             note={!worktree ? 'Quits Claude and removes the task; its worktree is already gone' : worktree.isMain ? 'Quits Claude and removes the task; the checkout stays' : 'Quits Claude, deletes the worktree and its branch, removes the task'}
@@ -142,27 +117,6 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         )}
       </div>
     </>
-  );
-}
-
-const PRIORITIES = [[null, 'Auto'], ['high', 'High'], ['low', 'Low']] as const;
-
-// Not a filter: a low task still comes up in the queue, the ranking just weighs it with everything else.
-function PriorityPicker({ session }: { session: Session }) {
-  const set = (priority: Priority | null) => {
-    patchSession(session.id, { priority });
-    sessionAction(session.id, 'priority', { priority }).catch(failed(session.id));
-  };
-  return (
-    <div className={styles.priority} role="group" aria-label="Priority" data-priority>
-      <span className={styles.label}>Priority</span>
-      <span className={styles.note}>Yours for this task; the ranking weighs it with the session and the other decisions</span>
-      <span className={styles.levels}>
-        {PRIORITIES.map(([value, label]) => (
-          <button key={label} type="button" aria-pressed={session.priority === value} onClick={() => set(value)}>{label}</button>
-        ))}
-      </span>
-    </div>
   );
 }
 
@@ -177,7 +131,7 @@ function Item({ label, note, danger = false, onClick }: { label: string; note: s
 
 // The same ask as the menu's Clear task…, a click closer; the dialog still says what would be lost.
 export function ClearButton({ session }: { session: Session }) {
-  if (session.parent || session.clearing || session.starting) return null;
+  if (session.clearing || session.starting) return null;
   return (
     <button type="button" className={styles.more} aria-label="Clear task" data-tip="Clear task…" data-clear onClick={() => askDeleteWorktree(session)}>
       <Icon name="trash" size={17} />

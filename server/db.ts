@@ -4,7 +4,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, SESSIONS_DIR } from './config.ts';
 import type { Activity, Menu, TurnError, Unanswered } from './conversations.ts';
 import type { DiffStat } from './git.ts';
-import type { MenuAnswer } from './menu.ts';
 import { migrate } from './migrations.ts';
 import type { Round } from './rounds.ts';
 import type { Schedule, Scheduled } from './schedule.ts';
@@ -38,8 +37,6 @@ export interface QuestionOption {
   label: string;
   description?: string | undefined;
   recommended?: boolean | undefined;
-  // Indices of the findings read from the same message that this option acts on.
-  covers?: number[];
 }
 
 export interface Question {
@@ -51,20 +48,6 @@ export interface Question {
   askedAt: number;
 }
 
-export interface Advice {
-  key: string;
-  state: 'thinking' | 'done' | 'failed';
-  startedAt: number;
-  activity: string | null;
-  choice: string | null;
-  answer: string;
-  confidence: number;
-  reasoning: string;
-  answers?: MenuAnswer[];
-  error?: string;
-  at: number;
-}
-
 export interface PrFlow {
   id: number | null;
   url: string | null;
@@ -72,33 +55,6 @@ export interface PrFlow {
   repo: string | null;
   result: string | null;
   watching: boolean;
-  at: number;
-}
-
-export interface Decision {
-  problem: string;
-  brief: string;
-  context?: string;
-  options: QuestionOption[];
-}
-
-export interface Summary {
-  text: string;
-  progress?: string[];
-  learnings?: string[];
-  decision?: Decision | null;
-  // How many findings the summary read from its message; absent in summaries written before findings were read.
-  findings?: number;
-  question?: string | null;
-  basis: string;
-  at: number;
-}
-
-export interface Explanation {
-  key: string;
-  state: 'thinking' | 'done' | 'failed';
-  text: string;
-  error?: string;
   at: number;
 }
 
@@ -124,20 +80,6 @@ export interface Answered {
   key: string | null;
   text: string;
   at: number;
-}
-
-export interface Finding {
-  title: string;
-  detail: string;
-  location: string;
-  rejected?: { reason: string; at: number } | null;
-  solved?: { at: number } | null;
-}
-
-// The findings Claude listed in one message, its turn id in `basis`, kept until a later message lists others.
-export interface Findings {
-  basis: string;
-  items: Finding[];
 }
 
 // Lines of the task's diff a draft was written about. `side` is the version they are in: `new` is the worktree's,
@@ -183,25 +125,6 @@ export interface Aside {
   at: number;
 }
 
-export type SubtaskKind = 'accept' | 'elaborate' | 'second-look' | 'reply';
-
-// A subtask's task and the finding it was started from.
-// What became of a subtask: solved, or dropped (ignored, rejected, not worth going on with). A resolved subtask leaves
-// the queue and stops counting as open on its task.
-export interface Resolution {
-  state: 'solved' | 'dropped';
-  at: number;
-}
-
-export interface Parent {
-  id: string;
-  basis: string;
-  finding: number;
-  title: string;
-  kind: SubtaskKind;
-  text: string;
-}
-
 // A conversation the task had before a /clear started the one it has now.
 export interface EarlierConversation {
   id: string;
@@ -227,8 +150,6 @@ export interface Starting {
 }
 
 // A task keeps its id for good; `conversation` is the Claude Code conversation it runs now, which /clear replaces.
-export type Priority = 'high' | 'low';
-
 export interface Session {
   id: string;
   conversation: string;
@@ -243,10 +164,6 @@ export interface Session {
   firstPrompt: string | null;
   status: SessionStatus;
   question: Question | null;
-  rank: number | null;
-  rankReason: string | null;
-  // The developer's own priority for the task, which the ranking weighs with everything else.
-  priority: Priority | null;
   diffstat: DiffStat | null;
   lastMessage: string | null;
   lastPrompt: string | null;
@@ -256,19 +173,13 @@ export interface Session {
   dismissedAsk: string | null;
   round: Round | null;
   dismissedRound: string | null;
-  advice: Advice | null;
   // Every PR the latest turns opened or watched, oldest first.
   prs: PrFlow[];
-  summary: Summary | null;
-  explanation: Explanation | null;
   activity: Activity | null;
   menu: Menu | null;
   answered: Answered | null;
   artifacts: Artifact[];
   links: Link[];
-  findings: Findings | null;
-  parent: Parent | null;
-  resolution: Resolution | null;
   model: string | null;
   effort: string | null;
   // Tokens of the context window the conversation fills, as Claude's latest request counted them.
@@ -297,9 +208,6 @@ const toRepo = (r: Row): Repo => ({
   worktreeRoot: r.worktree_root,
 });
 
-// Advice stored before menus and end-of-turn decisions got one was keyed by the ask_human call.
-const toAdvice = (a: Row): Advice => (a.key ? a : { ...a, key: `q:${a.toolUseId}` }) as Advice;
-
 const toSession = (r: Row): Session => ({
   id: r.id,
   conversation: r.conversation ?? r.id,
@@ -313,9 +221,6 @@ const toSession = (r: Row): Session => ({
   firstPrompt: r.first_prompt,
   status: r.status,
   question: r.question ? JSON.parse(r.question) : null,
-  rank: r.rank,
-  rankReason: r.rank_reason,
-  priority: r.priority === 'high' || r.priority === 'low' ? r.priority : null,
   diffstat: r.diffstat ? JSON.parse(r.diffstat) : null,
   lastMessage: r.last_message,
   lastPrompt: r.last_prompt ?? null,
@@ -325,19 +230,13 @@ const toSession = (r: Row): Session => ({
   dismissedAsk: r.dismissed_ask,
   round: r.round ? JSON.parse(r.round) : null,
   dismissedRound: r.dismissed_round ?? null,
-  advice: r.advice ? toAdvice(JSON.parse(r.advice)) : null,
   // Stored as one PR before a task could have several.
   prs: r.pr ? [JSON.parse(r.pr)].flat().map((p: PrFlow) => ({ ...p, repo: p.repo ?? null })) : [],
-  summary: r.summary ? JSON.parse(r.summary) : null,
-  explanation: r.explanation ? JSON.parse(r.explanation) : null,
   activity: r.activity ? JSON.parse(r.activity) : null,
   menu: r.menu ? JSON.parse(r.menu) : null,
   answered: r.answered ? JSON.parse(r.answered) : null,
   artifacts: r.artifacts ? JSON.parse(r.artifacts) : [],
   links: r.links ? JSON.parse(r.links) : [],
-  findings: r.findings ? JSON.parse(r.findings) : null,
-  parent: r.parent ? JSON.parse(r.parent) : null,
-  resolution: r.resolution ? JSON.parse(r.resolution) : null,
   model: r.model,
   effort: r.effort,
   context: r.context ?? null,
@@ -401,9 +300,6 @@ const columns: Record<string, string> = {
   firstPrompt: 'first_prompt',
   status: 'status',
   question: 'question',
-  rank: 'rank',
-  rankReason: 'rank_reason',
-  priority: 'priority',
   diffstat: 'diffstat',
   lastMessage: 'last_message',
   lastPrompt: 'last_prompt',
@@ -413,18 +309,12 @@ const columns: Record<string, string> = {
   dismissedAsk: 'dismissed_ask',
   round: 'round',
   dismissedRound: 'dismissed_round',
-  advice: 'advice',
   prs: 'pr',
-  summary: 'summary',
-  explanation: 'explanation',
   activity: 'activity',
   menu: 'menu',
   answered: 'answered',
   artifacts: 'artifacts',
   links: 'links',
-  findings: 'findings',
-  parent: 'parent',
-  resolution: 'resolution',
   model: 'model',
   effort: 'effort',
   context: 'context',
@@ -459,7 +349,7 @@ export const sessions = {
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
     parsed.delete(s.id);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'rank' | 'rankReason' | 'priority' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'advice' | 'prs' | 'summary' | 'explanation' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'findings' | 'parent' | 'resolution' | 'model' | 'effort' | 'context' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'prs' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'model' | 'effort' | 'context' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');

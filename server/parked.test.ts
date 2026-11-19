@@ -2,27 +2,24 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { draftMessage } from './codeRef.ts';
 import type { Parked, Session } from './db.ts';
-import { addParked, editParked, removeParked, SUMMARY_WAIT_MS, turnEnds } from './parked.ts';
+import { addParked, editParked, endsOnQuestion, removeParked, turnEnds } from './parked.ts';
 
 const session = (patch: Partial<Session>): Session => ({
   id: 's', conversation: 's', history: [], repoId: 1, worktree: '/w', cwd: '/w', pid: 1, tty: '/dev/ttys1', title: null, firstPrompt: null, status: 'working',
-  question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
-  dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, context: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
+  question: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
+  dismissedAsk: null, round: null, dismissedRound: null, prs: [], activity: null, menu: null, answered: null, artifacts: [], links: [], model: null, effort: null, context: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
   archived: false, createdAt: 0, updatedAt: 0, ...patch,
 });
 
 const draft = (id: string, armedAt: number | null, text = id): Parked => ({ id, text, auto: armedAt !== null, armedAt, at: 0 });
 
-const summary = (basis: string, decision = false) => ({
-  text: 'h', basis, at: 5, question: null,
-  decision: decision ? { problem: 'Ship it?', brief: 'b', options: [{ label: 'Ship' }] } : null,
-});
+const done = 'Done: the cart merges both carts now.';
 
-// A turn that ran from 100 and ended at 200 with its summary written, the drafts armed at 150.
+// A turn that ran from 100 and ended at 200 on a reply that asks nothing, the drafts armed at 150.
 function ended(patch: Partial<Session> = {}, parked = [draft('a', 150, 'First'), draft('b', 160, 'Second')]) {
   const w = turnEnds();
   assert.deepEqual(w.observe([session({ parked })], [], 100), []);
-  return { w, idle: session({ status: 'idle', parked, summary: summary('t2'), ...patch }) };
+  return { w, idle: session({ status: 'idle', parked, lastMessage: done, ...patch }) };
 }
 
 test('drafts armed during a turn go out one per turn: the first when it ends, the next when the turn it started ends', () => {
@@ -32,7 +29,7 @@ test('drafts armed during a turn go out one per turn: the first when it ends, th
   assert.deepEqual(w.observe([{ ...idle, parked: left }], [], 300), [], 'the end was used up');
   const answered = { key: null, text: 'First', at: 200 };
   assert.deepEqual(w.observe([session({ parked: left, answered })], [], 400), []);
-  assert.deepEqual(w.observe([session({ status: 'idle', parked: left, answered, lastTurn: 't3', summary: summary('t3') })], [], 500), [{ id: 's', ids: ['b'], text: 'Second' }]);
+  assert.deepEqual(w.observe([session({ status: 'idle', parked: left, answered, lastTurn: 't3', lastMessage: done })], [], 500), [{ id: 's', ids: ['b'], text: 'Second' }]);
 });
 
 test('only drafts armed to send are sent, not the ones kept for a press', () => {
@@ -48,11 +45,11 @@ test('a draft armed while it is already your turn goes out at once, with the sam
   w.armed(late, 250);
   assert.deepEqual(w.observe([late], [], 260), [{ id: 's', ids: ['late'], text: 'Late' }]);
   const fresh = turnEnds();
-  const board = session({ status: 'idle', parked: [draft('a', 300)], summary: summary('t2') });
+  const board = session({ status: 'idle', parked: [draft('a', 300)], lastMessage: done });
   fresh.armed(board, 300);
   assert.deepEqual(fresh.observe([board], [], 300).length, 1, 'also on a task the board never saw work');
   const decided = turnEnds();
-  const asked = { ...board, summary: summary('t2', true) };
+  const asked = { ...board, lastMessage: 'Should I ship it?' };
   decided.armed(asked, 300);
   assert.deepEqual(decided.observe([asked], [], 300), [], 'not onto a question the turn ended on');
   const working = turnEnds();
@@ -62,7 +59,7 @@ test('a draft armed while it is already your turn goes out at once, with the sam
 
 test('no end of turn without having seen Claude work: a board that starts on an idle task sends nothing', () => {
   const w = turnEnds();
-  assert.deepEqual(w.observe([session({ status: 'idle', parked: [draft('a', 1)], summary: summary('t2') })], [], 200), []);
+  assert.deepEqual(w.observe([session({ status: 'idle', parked: [draft('a', 1)], lastMessage: done })], [], 200), []);
 });
 
 test('a permission prompt or a menu is not the end of a turn', () => {
@@ -70,7 +67,7 @@ test('a permission prompt or a menu is not the end of a turn', () => {
   const parked = [draft('a', 50)];
   w.observe([session({ parked })], [], 100);
   assert.deepEqual(w.observe([session({ status: 'waiting', parked })], [], 150), []);
-  assert.deepEqual(w.observe([session({ status: 'idle', parked, summary: summary('t2') })], [], 160), []);
+  assert.deepEqual(w.observe([session({ status: 'idle', parked, lastMessage: done })], [], 160), []);
 });
 
 test('nothing goes out when you replied after the turn ended', () => {
@@ -96,26 +93,41 @@ test('nothing goes out for a paused, pausing, archived, interrupted or failed ta
   }
 });
 
-test('a turn that ended on a question keeps its drafts', () => {
-  const { w, idle } = ended({ summary: summary('t2', true) });
+test('a turn that ended on a question, in its reply or as a question, menu or round, keeps its drafts for the next end', () => {
+  const { w, idle } = ended({ lastMessage: 'I found two ways.\n\nShould I merge the carts or keep them apart?' });
   assert.deepEqual(w.observe([idle], [], 200), []);
-  const asked = ended({ question: { toolUseId: 'q', title: 'Which?', details: '', options: [], category: 'c', askedAt: 1 } });
-  assert.deepEqual(asked.w.observe([asked.idle], [], 200), []);
+  assert.deepEqual(w.observe([idle], [], 210), [], 'the end was used up');
+  w.observe([{ ...idle, status: 'working' }], [], 300);
+  assert.deepEqual(w.observe([{ ...idle, lastMessage: done }], [], 400).map((d) => d.ids), [['a']], 'the next end sends it');
+  for (const patch of [
+    { question: { toolUseId: 'q', title: 'Which?', details: '', options: [], category: 'c', askedAt: 1 } },
+    { round: { key: 'r1', source: 'tool' as const, title: 'Round', intro: '', at: 1, questions: [] } },
+    { menu: { toolUseId: 'm1', at: 1, questions: [] } },
+  ]) {
+    const asked = ended(patch);
+    assert.deepEqual(asked.w.observe([asked.idle], [], 200), [], Object.keys(patch)[0]);
+  }
 });
 
-test("it waits for the turn's summary, and past the wait sends without it", () => {
-  const { w, idle } = ended({ summary: summary('t1') });
-  assert.deepEqual(w.observe([idle], [], 200), []);
-  assert.deepEqual(w.observe([idle], [], 200 + SUMMARY_WAIT_MS - 1), []);
-  assert.equal(w.observe([idle], [], 200 + SUMMARY_WAIT_MS).length, 1);
-});
-
-test('Claude working again before the summary came cancels the end', () => {
-  const { w, idle } = ended({ summary: summary('t1') });
-  w.observe([idle], [], 200);
-  w.observe([{ ...idle, status: 'working' }], [], 210);
-  assert.deepEqual(w.observe([{ ...idle, summary: summary('t2') }], [], 220).length, 1, 'that is a new end');
-  assert.deepEqual(w.observe([{ ...idle, summary: summary('t2') }], [], 230), []);
+test('a reply ends on a question when its last paragraph ends on a question mark, past closing marks and space', () => {
+  for (const text of [
+    'Shall I go on?',
+    'Here is the plan.\n\nShould I start with the cart?  \n',
+    '**Merge them or keep them apart?**',
+    'Which one: _the first?_',
+    'Ready to run `pnpm build`?`',
+    'He asked: "is it done?"',
+    'Next step (want me to commit?)',
+    'Shall I push?\n\n',
+  ]) assert.equal(endsOnQuestion(text), true, text);
+  for (const text of [
+    'Done.',
+    'Is the cart right? I checked it: yes.',
+    'Should I start?\n\nNo need: I started.',
+    'See https://example.com/a?b',
+    '',
+  ]) assert.equal(endsOnQuestion(text), false, text);
+  assert.equal(endsOnQuestion(null), false);
 });
 
 test('drafts are added, edited, armed from the moment they are switched on, and removed', () => {

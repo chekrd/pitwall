@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { uploadsDir } from '../../../server/uploadPaths.ts';
 import { until } from '../cdp.ts';
-import { approveLoss, clearDisabled, logged, menuItems, openFromWall, openQueue, openSheetOf, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
+import { approveLoss, clearDisabled, logged, menuItems, openFromWall, openSheetOf, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
 
 export const taskPage: Check[] = [
   {
@@ -31,10 +31,10 @@ export const taskPage: Check[] = [
     },
   },
   {
-    name: 'P4.6.reply-first with a decision open, Overview shows Claude\'s latest reply first, then the decision, then Findings; a reply too long to see the decision under shows Decision waiting below at the top, which scrolls to the decision and leaves once it is in view',
+    name: 'P4.6.reply-first with a decision open, Overview shows Claude\'s latest reply first, then the decision; a reply too long to see the decision under shows Decision waiting below at the top, which scrolls to the decision and leaves once it is in view',
     async run({ page, mock, shot }) {
       const order = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-ux-section]')].map((s) => s.dataset.uxSection)
-        .filter((s) => s === 'latest reply' || s === 'decision' || s === 'findings');
+        .filter((s) => s === 'latest reply' || s === 'decision');
       const below = () => !!document.querySelector('#task-sheet [data-decision-below]');
       await openSheetOf(page, mock, 's-cart');
       await page.until('the decision', () => !!document.querySelector('#task-sheet [data-queued]'));
@@ -42,15 +42,9 @@ export const taskPage: Check[] = [
       assert.equal(await page.eval(below), false, 'a short reply leaves the decision in view, without the pill');
 
       const long = Array.from({ length: 40 }, (_, i) => `Paragraph ${i + 1} of the reasoning behind the merge rule, long enough to take a line of its own.`).join('\n\n');
-      await mock.post('/mock/patch', {
-        id: 's-cart',
-        patch: {
-          lastMessage: long,
-          findings: { basis: 't-cart-review', items: [{ title: 'Guest cart is read twice', location: 'src/cart/mergeCarts.ts:12', detail: 'The guest cart is fetched in both `onLogin` and `mergeCarts()`.' }] },
-        },
-      });
+      await mock.post('/mock/patch', { id: 's-cart', patch: { lastMessage: long } });
       await page.until('the long reply', () => !!document.querySelector('#task-sheet [data-ux-section="latest reply"]')?.textContent?.includes('Paragraph 40'));
-      assert.deepEqual(await page.eval(order), ['latest reply', 'decision', 'findings']);
+      assert.deepEqual(await page.eval(order), ['latest reply', 'decision']);
       await page.until('Decision waiting below', () => document.querySelector<HTMLElement>('#task-sheet [data-decision-below]')?.innerText.trim() === 'Decision waiting below');
       await shot('decision-below');
       await page.click('#task-sheet [data-decision-below]');
@@ -165,9 +159,8 @@ export const taskPage: Check[] = [
       await page.key('Escape');
       await page.until('the dialog to close', () => !document.querySelector('dialog#delete-worktree[open]'));
 
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => !t.querySelector('[data-clear]')).map((t) => t.dataset.session)),
-        await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => t.querySelector('[data-parent]')).map((t) => t.dataset.session)),
-        'a tile without the Clear task button is not a subtask');
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => !t.querySelector('[data-clear]')).map((t) => t.dataset.session)), [],
+        'every tile has the Clear task button');
       await page.click('[data-tile][data-session="s-invoice"] button[aria-label="Clear task"]');
       assert.equal((await page.until('the delete dialog', asked)).focus, 'Cancel', 'the trash starts on Cancel when something would be lost');
       assert.equal(await page.eval(clearDisabled), true, 'Clear task works before the loss is approved');
@@ -304,60 +297,10 @@ export const taskPage: Check[] = [
     },
   },
   {
-    name: "P4.6.subtask-of a subtask's Facts and its card's rail name the task it sits under as a link, and its finding with the review round once the task had more than one; the task's Facts count its subtasks open and archived",
-    async run({ page, mock, shot }) {
-      const worktree = `${await mock.home()}/code/worktrees/search-typos/storefront`;
-      const now = Date.now();
-      const sub = (id: string, basis: string, finding: number, title: string, at: number, more: object = {}) => mock.post('/mock/add', {
-        template: 'idle', id, worktree, title, createdAt: at, ...more,
-        parent: { id: 's-search', basis, finding, title, kind: 'accept', text: '' },
-      });
-      await sub('s-r1a', 'r1', 1, 'Plural forms', now - 60_000, { archived: true, status: 'exited' });
-      await sub('s-r1b', 'r1', 0, 'Diacritics', now - 50_000);
-      await sub('s-r2', 'r2', 1, 'Stemming of short words', now - 10_000, { template: 'turn', rank: 0 });
-
-      // A subtask has a card of its own only once its task is archived.
-      await mock.post('/mock/patch', { id: 's-search', patch: { archived: true } });
-      await openQueue(page, mock, 's-r2');
-      const rail = await page.until('the rail', () => document.querySelector<HTMLElement>('[data-card] [data-rail]')?.innerText ?? null);
-      assert.match(rail, /Subtask of Typo-tolerant search/);
-      assert.match(rail, /Finding #2, round 2: Stemming of short words/);
-      await shot('subtask-rail');
-      await page.click('[data-card] [data-rail] [data-parent-path] button', 'Typo-tolerant search');
-      await page.until('the task page from the rail', () => location.pathname.startsWith('/s/s-search'));
-      const counts = await page.until('the counts', () => document.querySelector<HTMLElement>('#task-sheet [data-subtask-counts]')?.innerText ?? null);
-      assert.equal(counts, '2 open · 1 archived');
-
-      await page.goto(`${mock.url}/s/s-r2/overview`);
-      await page.until('the task page', sheetOpen);
-      const facts = () => {
-        const dl = document.querySelector('#task-sheet [aria-label="Facts"] dl')!;
-        const rows: Record<string, string> = {};
-        for (const dt of dl.querySelectorAll('dt')) rows[dt.textContent] = dt.nextElementSibling!.textContent;
-        return rows;
-      };
-      await page.until('the facts', () => !!document.querySelector('#task-sheet [aria-label="Facts"] [data-parent-path]'));
-      const rows = await page.eval(facts);
-      assert.equal(rows['Subtask of'], 'Typo-tolerant search');
-      assert.equal(rows['Finding'], '#2, round 2 Stemming of short words');
-      assert.equal(rows['Subtasks'], undefined, 'a subtask without subtasks has no count');
-      await shot('subtask-facts');
-
-      await page.click('#task-sheet [aria-label="Facts"] [data-parent-path] button', 'Typo-tolerant search');
-      await page.until('the task page of the task', () => location.pathname.startsWith('/s/s-search') && !!document.querySelector('#task-sheet [data-subtask-counts]'));
-
-      await page.goto(`${mock.url}/s/s-r1b/overview`);
-      await page.until('the earlier round', () => document.querySelector<HTMLElement>('#task-sheet [data-finding]')?.innerText ?? null);
-      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-finding]')!.innerText), '#1, round 1 Diacritics');
-    },
-  },
-  {
-    name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task and its subtask show Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
+    name: 'P4.9.clearing a Clear task whose removal takes minutes: from the click until it is done the task shows Clearing…, without a message box, Claude actions or another trash; a second Clear task joins the running removal instead of starting one; a failed removal drops the mark and shows its error on the task until Dismiss',
     expectedErrors: [/status of 400/, /Claude did not quit/],
     async run({ holds, page, mock, shot }) {
-      const worktree = `${await mock.home()}/code/worktrees/search-typos/storefront`;
-      const ids = ['s-search', 's-sub'];
-      await mock.post('/mock/add', { template: 'idle', id: 's-sub', worktree, title: 'Fix: typo ranking', parent: { id: 's-search', basis: 'b', finding: 0, title: 'Typo ranking', kind: 'accept', text: '' } });
+      const ids = ['s-search'];
       const clear = async () => {
         await page.until('the delete dialog', () => {
           const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
@@ -402,12 +345,12 @@ export const taskPage: Check[] = [
       await shot('clearing-page');
 
       const second = mock.post('/api/sessions/s-search/delete-worktree', { discard: true });
-      await holds('the held removal to keep running', 300, async () => (await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length === 2);
+      await holds('the held removal to keep running', 300, async () => (await mock.get('/api/state')).sessions.filter((s: { id: string }) => ids.includes(s.id)).length === 1);
       await mock.post('/mock/clear-release', {});
       await second;
       const removals = await logged(mock, 'both clears', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual(removals.map((e) => [e.sessionId, e.status]), [['s-search', 204], ['s-search', 204]], 'the second joined the first, which a second removal of the gone worktree would fail');
-      await until('both gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => ids.includes(s.id)));
+      await until('the task gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => ids.includes(s.id)));
 
       await mock.post('/mock/clear-hold', {});
       await page.goto(`${mock.url}/wall`);

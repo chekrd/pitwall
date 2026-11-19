@@ -63,12 +63,3 @@ test('Undo right after archiving waits for the quitting Claude to go and only th
   // No transcript, so resuming fails as Continue would; the task is back on the board, ended.
   assert.deepEqual([sessions.get(id)!.status, sessions.get(id)!.archived], ['exited', false]);
 });
-
-test('Mark solved quits the subtask\'s Claude as archiving does', async () => {
-  const { id, child } = await claude('idle');
-  sessions.update(id, { parent: { id: 'some-task', basis: 'b', finding: 1, title: 'A finding', kind: 'accept', text: 'Fix it' } });
-  await S.resolve(id, 'solved');
-  await ended(child);
-  assert.equal(child.signalCode, 'SIGTERM');
-  assert.equal(sessions.get(id)!.resolution?.state, 'solved');
-});

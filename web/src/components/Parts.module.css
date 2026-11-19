@@ -1,5 +1,5 @@
 @layer components {
-  /* Small pieces the card's parts share: the tiny button, the section label, the tags and the spinner. */
+  /* Small pieces the card's parts share: the tiny button, the section label and the tags. */
 
   .branch {
     flex: 0 1 auto;
@@ -56,16 +56,6 @@
     font-weight: 700;
     white-space: nowrap;
     &[data-quiet] { border-color: var(--line-2); color: var(--muted); }
-  }
-
-  .spinner {
-    flex: none;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--line-2);
-    border-top-color: var(--text);
-    border-radius: 50%;
-    animation: spin 0.9s linear infinite;
   }
 
   .headline {

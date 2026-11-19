@@ -58,16 +58,16 @@ export const dock: Check[] = [
     },
   },
   {
-    name: 'P6.1 the dock under the queue: "3 working", then the three working agents in board order, each with its name, a mono step and a clock that ticks; Fix invoice PDF rounding has a breathing PR dot and a Worth-knowing dot, Typo-tolerant search a Worth-knowing dot; "2 ended" names them and opens the Wall',
+    name: 'P6.1 the dock under the queue: "3 working", then the three working agents in board order, each with its name, a mono step and a clock that ticks; Fix invoice PDF rounding has a breathing PR dot; "2 ended" names them and opens the Wall',
     clock: 'fast',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the dock', docked, 3);
       const dock = (await page.eval(dockState))!;
-      assert.deepEqual(dock.capsules.map((c) => [c.session, c.state, c.name, c.line, c.mono, c.pr, c.know]), [
-        ['s-invoice', 'working', 'Fix invoice PDF rounding', 'Bash: pnpm test invoices --run', true, 'breathe', true],
-        ['s-search', 'working', 'Typo-tolerant search', 'Bash: pnpm search:reindex', true, null, true],
-        ['s-thumbs', 'working', 'Artifact thumbnails in Overview', 'Edit web/src/components/Artifacts.tsx', true, null, false],
+      assert.deepEqual(dock.capsules.map((c) => [c.session, c.state, c.name, c.line, c.mono, c.pr]), [
+        ['s-invoice', 'working', 'Fix invoice PDF rounding', 'Bash: pnpm test invoices --run', true, 'breathe'],
+        ['s-search', 'working', 'Typo-tolerant search', 'Bash: pnpm search:reindex', true, null],
+        ['s-thumbs', 'working', 'Artifact thumbnails in Overview', 'Edit web/src/components/Artifacts.tsx', true, null],
       ]);
       assert.deepEqual([dock.label, dock.count, dock.ended], [
         'Agents not waiting on you', '3 working', { text: '2 ended', title: 'Ended: Split-only diff view, Upgrade Stripe SDK to v18. Open the Wall to see them.' },
@@ -83,7 +83,7 @@ export const dock: Check[] = [
     },
   },
   {
-    name: 'P6.2 hovering "Fix invoice PDF rounding" opens its card 150 ms later, a hint popover above the capsule with repo · branch, the step and the clock, the PR chip, Worth knowing and the summary; it closes when the pointer leaves, and keyboard focus opens a card at once while Tab passes the cards by',
+    name: 'P6.2 hovering "Fix invoice PDF rounding" opens its card 150 ms later, a hint popover above the capsule with repo · branch, the step and the clock, the PR chip and the prompt the task started with; it closes when the pointer leaves, and keyboard focus opens a card at once while Tab passes the cards by',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the dock', docked, 3);
@@ -108,8 +108,7 @@ export const dock: Check[] = [
       assert.ok(Math.abs(card.box.left - card.capsule.left) < 1, 'the card does not start where its capsule does');
       for (const part of [
         'Fix invoice PDF rounding', 'billing-api · invoice-rounding', 'Bash: pnpm test invoices --run', 'PR 1842 · checks running',
-        'Worth knowing: Two customers were billed one cent too much on three September invoices; support may want to know.',
-        'Totals now use integer cents end to end; re-running the invoice tests before pushing the fix.',
+        'Invoice PDFs are sometimes off by a cent (BILL-91).',
       ]) {
         assert.ok(card.text.includes(part), `the card lacks "${part}":\n${card.text}`);
       }
@@ -271,7 +270,7 @@ export const dock: Check[] = [
       await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await page.until('the dock', docked, 3);
       await holds('the dock to stay', 2000, () => page.eval(docked, 3));
-      await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 1 });
+      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
       await page.until('the new card at the front', frontIs, 's-new');
       assert.equal(await page.eval(docked, 3), true);
     },

@@ -1,5 +1,5 @@
 import type { Session } from './db.ts';
-import { adviceToSend, answerText, checkDecision, claim, DECLINED, menuAnswerText, type AnswerStore } from './decision.ts';
+import { answerText, checkDecision, claim, DECLINED, menuAnswerText, type AnswerStore } from './decision.ts';
 import { Unsent, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
 import { menuKeystrokes, type MenuAnswer } from './menu.ts';
@@ -11,7 +11,6 @@ export interface AnsweringDeps {
   send: (to: Target, text: string, files?: string[]) => Promise<void>;
   keys: (to: Target, strokes: Keystroke[]) => Promise<void>;
   notify: () => void;
-  // A decision closed on the board: its rank and second opinion go.
   decided: (id: string) => void;
   isCommand: (s: Session, text: string) => Promise<boolean>;
   checkUploads: (files: unknown) => Promise<string[]>;
@@ -28,7 +27,7 @@ export interface Reply {
 }
 
 interface Typing {
-  claim?: { seen: string | null | undefined; typed: boolean; text: string };
+  claim?: { seen: string | null | undefined; text: string };
   type: () => Promise<void>;
 }
 
@@ -71,7 +70,7 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
   // menu still open in the terminal makes its card need focus.
   async function deliver(id: string, t: Typing) {
     if (!t.claim) return t.type();
-    const { key, reopen } = claim(store, id, t.claim.seen, t.claim.typed, t.claim.text);
+    const { key, reopen } = claim(store, id, t.claim.seen, t.claim.text);
     notify();
     const closed = () => {
       closeQuestion(store, id, key);
@@ -119,12 +118,12 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
       const s = must(id);
       const to = promptTarget(s);
       if (command) return { type: () => send(to, text) };
-      checkDecision(s, reply.key, !reply.choice);
+      checkDecision(s, reply.key);
       const about = s.question && reply.key === `q:${s.question.toolUseId}` ? `Re: "${s.question.title}"` : '';
       const said = [about, reply.choice ? `My decision: ${reply.choice}.` : '', text].filter(Boolean).join(' — ');
       // Claude Code would run an answer that starts with `!` in its shell, and one that starts with `/` as a command.
       const prompt = /^[!/]/.test(said) ? `My reply: ${said}` : said;
-      return { claim: { seen: reply.key, typed: !reply.choice, text: answerText(reply.choice, text, files.length) }, type: () => send(to, prompt, files) };
+      return { claim: { seen: reply.key, text: answerText(reply.choice, text, files.length) }, type: () => send(to, prompt, files) };
     });
   }
 
@@ -135,7 +134,7 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
       const key = `m:${body.toolUseId}`;
       checkDecision(s, key);
       const strokes = menuKeystrokes(s.menu!, body.answers);
-      return { claim: { seen: key, typed: false, text: menuAnswerText(s.menu!, body.answers) }, type: () => keys(to, strokes) };
+      return { claim: { seen: key, text: menuAnswerText(s.menu!, body.answers) }, type: () => keys(to, strokes) };
     });
   }
 
@@ -147,7 +146,7 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
       const key = `r:${body.round}`;
       checkDecision(s, key);
       const prompt = roundReply(s.round!, body.replies);
-      return { claim: { seen: key, typed: false, text: roundAnswerLabel(s.round!, body.replies) }, type: () => send(to, prompt) };
+      return { claim: { seen: key, text: roundAnswerLabel(s.round!, body.replies) }, type: () => send(to, prompt) };
     });
   }
 
@@ -158,19 +157,13 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
       const to = liveTarget(s, true);
       const key = `m:${body.toolUseId}`;
       checkDecision(s, key);
-      return { claim: { seen: key, typed: false, text: DECLINED }, type: () => keys(to, [{ key: 'escape' }]) };
+      return { claim: { seen: key, text: DECLINED }, type: () => keys(to, [{ key: 'escape' }]) };
     });
   }
 
-  async function acceptAdvice(id: string, seenAt?: number) {
-    const { advice: a, decision } = adviceToSend(must(id), seenAt);
-    if (decision.menu) await answerMenu(id, { toolUseId: decision.menu.toolUseId, answers: a.answers ?? [] });
-    else await answer(id, { key: a.key, choice: a.choice ?? undefined, text: a.answer }, false);
-  }
-
-  function dismiss(id: string, key: string | null) {
-    must(id);
-    closeQuestion(store, id, key);
+  function dismiss(id: string, key: string | null | undefined) {
+    checkDecision(must(id), key);
+    closeQuestion(store, id, key ?? null);
     decided(id);
   }
 
@@ -206,5 +199,5 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     }
   }
 
-  return { answer, answerMenu, answerRound, declineMenu, acceptAdvice, dismiss, type, press, settled };
+  return { answer, answerMenu, answerRound, declineMenu, dismiss, type, press, settled };
 }

@@ -46,21 +46,14 @@ export const actionBodies = {
   'answer-round': z.strictObject({
     round: z.string(), replies: z.record(z.string(), z.strictObject({ option: z.string().nullable(), recommended: z.boolean(), text: z.string() })),
   }),
-  'accept-advice': z.strictObject({ key, adviceAt: z.number().optional() }),
-  'retry-advice': z.strictObject({ key }),
-  'stop-advice': z.strictObject({ key }),
-  elaborate: z.strictObject({ key }),
   focus: none,
   finder: none,
   vscode: none,
   quit: none,
   forget: none,
   archive: z.strictObject({ archived: z.boolean().optional() }),
-  priority: z.strictObject({ priority: z.enum(['high', 'low']).nullable() }),
-  resolve: z.strictObject({ state: z.enum(['solved', 'dropped']).nullable() }),
   'delete-worktree': z.strictObject({ discard: z.boolean().optional() }),
   'dismiss-clear-error': none,
-  finding: z.strictObject({ basis: z.string(), finding: z.number().int(), kind: z.string(), text: z.string().optional() }),
   park: z.strictObject({
     text: z.string(), auto: z.boolean().optional(),
     ref: z.strictObject({
@@ -82,16 +75,11 @@ export const actionBodies = {
 export type ActionName = keyof typeof actionBodies;
 export const isAction = (name: string): name is ActionName => Object.hasOwn(actionBodies, name);
 
-// These act on the decision the page showed and name it in `key`; answer, answer-menu, answer-round and decline-menu
-// check their own.
-export const onDecision: ReadonlySet<ActionName> = new Set(['dismiss', 'accept-advice', 'retry-advice', 'stop-advice', 'elaborate']);
-
 // What the page sends, and what the server reads from it.
 export type ActionBody<A extends ActionName> = z.input<(typeof actionBodies)[A]>;
 export type ActionInput<A extends ActionName> = z.output<(typeof actionBodies)[A]>;
 
 interface ActionAnswers {
-  finding: { id: string | null };
   'ask-aside': { id: string };
 }
 

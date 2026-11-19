@@ -29,8 +29,7 @@ export const pickedUp = (i: Interrupted, status: Session['status']) => status ==
 
 // Archived, a task is done with, and the restart's claim on it goes: brought back later, it is ended as any other.
 // A pause's mark stays, since the pause still has the task to carry on.
-export const archivePatch = (s: Pick<Session, 'interrupted' | 'resolution'>, archived: boolean): Pick<Session, 'archived'> & Partial<Pick<Session, 'interrupted' | 'resolution'>> => ({
+export const archivePatch = (s: Pick<Session, 'interrupted'>, archived: boolean): Pick<Session, 'archived'> & Partial<Pick<Session, 'interrupted'>> => ({
   archived,
   ...(archived && s.interrupted && s.interrupted.cause !== 'pause' && { interrupted: null }),
-  ...(!archived && s.resolution && { resolution: null }),
 });

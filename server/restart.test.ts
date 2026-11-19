@@ -18,7 +18,7 @@ test('a task last seen alive before the boot was cut short by the restart, with 
 
 test('when its Claude was last seen alive decides, whatever wrote to the row after the boot', () => {
   const row = { status: 'working' as const, waitingFor: null, menu: null };
-  assert.equal(interruption({ ...row, aliveAt: 100, updatedAt: 300 }, 200)?.at, 200, 'a summary written after the boot');
+  assert.equal(interruption({ ...row, aliveAt: 100, updatedAt: 300 }, 200)?.at, 200, 'a row written after the boot');
   assert.equal(interruption({ ...row, aliveAt: 250, updatedAt: 300 }, 200), null, 'seen alive after the boot, so it ended on its own');
 });
 
@@ -30,11 +30,10 @@ test('a resumed task is picked up at once when it only waited for you, and once 
   assert.equal(pickedUp(at('working'), 'working'), true);
 });
 
-test('archiving forgets the restart that ended a task but keeps a pause, and unarchiving reopens a resolved subtask', () => {
+test('archiving forgets the restart that ended a task but keeps a pause', () => {
   const restart = { at: 1, status: 'idle' as const, waitingFor: null, menu: null };
   const pause = { ...restart, cause: 'pause' as const };
-  assert.deepEqual(archivePatch({ interrupted: restart, resolution: null }, true), { archived: true, interrupted: null });
-  assert.deepEqual(archivePatch({ interrupted: pause, resolution: null }, true), { archived: true });
-  assert.deepEqual(archivePatch({ interrupted: restart, resolution: null }, false), { archived: false });
-  assert.deepEqual(archivePatch({ interrupted: null, resolution: { state: 'solved', at: 1 } }, false), { archived: false, resolution: null });
+  assert.deepEqual(archivePatch({ interrupted: restart }, true), { archived: true, interrupted: null });
+  assert.deepEqual(archivePatch({ interrupted: pause }, true), { archived: true });
+  assert.deepEqual(archivePatch({ interrupted: restart }, false), { archived: false });
 });

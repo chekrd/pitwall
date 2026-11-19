@@ -103,16 +103,6 @@
 
   .clock { flex: none; font: 600 30px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 
-  .know {
-    padding: 16px 18px;
-    border: 1.5px solid var(--know-line);
-    border-radius: 16px;
-    background: var(--know-tint);
-    .label { color: var(--know); }
-    p { max-width: 90ch; font-size: 16px; line-height: 1.5; }
-    p + p { margin-top: 6px; }
-  }
-
   .queued {
     display: flex;
     flex-direction: column;
@@ -163,14 +153,6 @@
       color: var(--text-2);
       overflow-wrap: anywhere;
     }
-  }
-
-  .status {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    p { max-width: 90ch; font-size: 15px; line-height: 1.55; color: var(--text-2); }
-    ul { margin: 2px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 1.5; color: var(--muted); }
   }
 
   .facts {

@@ -1,6 +1,6 @@
-import { decisionKey, turnDecision } from '../../server/decision.ts';
+import { decisionKey } from '../../server/decision.ts';
 export { tildeIn } from '../../server/home.ts';
-import type { Finding, QuestionOption, RepoView, Session } from './types.ts';
+import type { QuestionOption, RepoView, Session } from './types.ts';
 
 // `place` names the repository, or for a task across a folder of repos, the folder.
 // Where a task works, as its tile and card name it: the repositories, and the branch, or the branches of a folder task's
@@ -66,90 +66,6 @@ export function worktreeName(path: string, repo: RepoView | undefined) {
   return parts.at(-1) || path;
 }
 
-// A subtask's tasks, its root task first; a link to a task that is gone ends the chain.
-export function ancestorsOf(sessions: readonly Session[], s: Session) {
-  const chain: Session[] = [];
-  for (let p = s.parent; p; ) {
-    const task = sessions.find((o) => o.id === p!.id);
-    if (!task || chain.includes(task)) break;
-    chain.unshift(task);
-    p = task.parent;
-  }
-  return chain;
-}
-
-// Every subtask under a task, depth first, each with how deep it sits (1 for the task's own).
-export function descendantsOf(sessions: readonly Session[], id: string, depth = 1): { session: Session; depth: number }[] {
-  return sessions.filter((o) => o.parent?.id === id).flatMap((o) => [{ session: o, depth }, ...descendantsOf(sessions, o.id, depth + 1)]);
-}
-
-// The subtasks still to settle under a task: neither solved nor dropped, nor under one that is.
-export function openSubtasks(sessions: readonly Session[], id: string) {
-  const open: Session[] = [];
-  const walk = (of: string) => {
-    for (const o of sessions) {
-      if (o.parent?.id !== of || o.resolution) continue;
-      open.push(o);
-      walk(o.id);
-    }
-  };
-  walk(id);
-  return { open, total: descendantsOf(sessions, id).length };
-}
-
-// A subtask shows under its task, on the task's tile and page, not on its own on the Wall or in the queue; one whose
-// task is gone or archived shows on its own.
-export const underTask = (sessions: readonly Session[], s: Session) => !!s.parent && sessions.some((o) => o.id === s.parent!.id && !o.archived);
-
-const NO_SUBTASKS: readonly Session[] = [];
-
-// The open subtasks of every task at once, in openSubtasks' order, from one pass over the sessions; a task without
-// any has the same empty list each time.
-export function openSubtasksOfAll(sessions: readonly Session[]) {
-  const children = new Map<string, Session[]>();
-  for (const o of sessions) {
-    if (!o.parent || o.resolution) continue;
-    const list = children.get(o.parent.id);
-    if (list) list.push(o);
-    else children.set(o.parent.id, [o]);
-  }
-  const open = new Map<string, readonly Session[]>();
-  const of = (id: string): readonly Session[] => {
-    const known = open.get(id);
-    if (known) return known;
-    const direct = children.get(id);
-    if (!direct) return NO_SUBTASKS;
-    const list: Session[] = [];
-    open.set(id, list);
-    for (const c of direct) list.push(c, ...of(c.id));
-    return list;
-  };
-  return (id: string) => of(id);
-}
-
-// A finding is done with once rejected or marked solved, or once every subtask started from it is solved or dropped:
-// solved if any one was. One without subtasks, or with one still open, is not.
-export function settledAs(finding: Finding, subtasks: readonly Session[]) {
-  if (finding.rejected) return 'rejected' as const;
-  if (finding.solved) return 'solved' as const;
-  if (!subtasks.length || subtasks.some((o) => !o.resolution)) return null;
-  return subtasks.some((o) => o.resolution!.state === 'solved') ? ('solved' as const) : ('dropped' as const);
-}
-
-export interface Covered {
-  n: number;
-  handled: boolean;
-}
-
-// Which findings each option of an end-of-turn decision acts on, and whether each was already answered on its own.
-export function coverageOf(s: Session, sessions: readonly Session[], key: string): ((o: QuestionOption) => Covered[]) | null {
-  const f = s.findings;
-  if (!f || key !== `s:${f.basis}`) return null;
-  const handled = (i: number) =>
-    !!(f.items[i].rejected || f.items[i].solved || sessions.some((o) => o.parent?.id === s.id && o.parent.basis === f.basis && o.parent.finding === i));
-  return (o) => (o.covers ?? []).filter((i) => i < f.items.length).map((i) => ({ n: i + 1, handled: handled(i) }));
-}
-
 // A link as it reads in a list: its host without www and its path, without the scheme or a trailing slash.
 export function shortUrl(url: string) {
   const u = URL.parse(url);
@@ -164,41 +80,6 @@ const DELIVERED = [
 // A pull or merge request, or a claude.ai page, as opposed to a link Claude only cited.
 export const isDelivered = (url: string) => DELIVERED.some((r) => r.test(url));
 
-// Which review round of its task a subtask's finding came from, counting the rounds that started a subtask in the
-// order their first one started, then the task's current findings; null while the task had only one round, where
-// the round adds nothing to the finding's number.
-export function roundOf(sessions: readonly Session[], s: Session) {
-  const p = s.parent;
-  if (!p) return null;
-  const started = new Map<string, number>();
-  for (const o of sessions) {
-    if (o.parent?.id !== p.id) continue;
-    started.set(o.parent.basis, Math.min(started.get(o.parent.basis) ?? Infinity, o.createdAt));
-  }
-  const bases = [...started].sort((a, b) => a[1] - b[1]).map(([basis]) => basis);
-  const current = sessions.find((o) => o.id === p.id)?.findings?.basis;
-  if (current && !bases.includes(current)) bases.push(current);
-  return bases.length > 1 ? bases.indexOf(p.basis) + 1 : null;
-}
-
-// A subtask's finding as it reads beside its title, e.g. "#2, round 2".
-export function findingNumber(sessions: readonly Session[], s: Session) {
-  if (!s.parent) return '';
-  const round = roundOf(sessions, s);
-  return `#${s.parent.finding + 1}${round ? `, round ${round}` : ''}`;
-}
-
-// A task's own subtasks and theirs, how many are still open and how many archived.
-export function subtaskCounts(sessions: readonly Session[], id: string) {
-  const all = descendantsOf(sessions, id).map((d) => d.session);
-  const archived = all.filter((o) => o.archived).length;
-  return { open: all.length - archived, archived };
-}
-
-// The finding numbers from the root task down, e.g. 1.2 for finding 2 of the subtask on finding 1.
-export const findingPath = (sessions: readonly Session[], s: Session) =>
-  [...ancestorsOf(sessions, s).slice(1), s].map((o) => (o.parent ? o.parent.finding + 1 : '?')).join('.');
-
 export const sessionLabel = (session: Session, branch: string) => session.title || branch;
 
 export function ago(ms: number, now = Date.now()) {
@@ -212,27 +93,16 @@ export function ago(ms: number, now = Date.now()) {
 export interface DecisionView {
   key: string;
   problem: string;
-  brief: string;
   context: string;
   options: QuestionOption[];
 }
 
-// The question or end-of-turn choice the session waits on; a menu is not one.
+// The ask_human question the session waits on; a menu or a round is not one.
 export function decisionOf(s: Session): DecisionView | null {
   const key = decisionKey(s);
-  if (key?.startsWith('q:')) {
-    const q = s.question!;
-    const d = s.summary?.question === q.toolUseId ? s.summary.decision : null;
-    return { key, problem: d?.problem || q.title, brief: d?.brief ?? '', context: q.details, options: q.options };
-  }
-  if (!key?.startsWith('s:')) return null;
-  const d = turnDecision(s)!;
-  return { key, problem: d.problem, brief: d.brief, context: s.lastMessage || d.context || '', options: d.options };
-}
-
-// The advice shown with the decision or menu the session waits on now, never one left from an earlier one.
-export function adviceFor(s: Session) {
-  return s.advice && s.advice.key === decisionKey(s) ? s.advice : null;
+  if (!key?.startsWith('q:')) return null;
+  const q = s.question!;
+  return { key, problem: q.title, context: q.details, options: q.options };
 }
 
 export type Attention = 'clearing' | 'decide' | 'focus' | 'working' | 'idle' | 'exited';

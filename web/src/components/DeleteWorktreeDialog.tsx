@@ -120,7 +120,6 @@ export function DeleteWorktreeDialog() {
           ))}
           <p className={styles.muted}>
             {keeps ? "This task's Claude quits, its terminal closes and the task leaves the board." : folder ? "Claude quits, the task folder's terminals close and the task leaves the board." : "Claude quits, the worktree's terminals close and the task leaves the board."}
-            {!!loss?.subtasks && ` ${loss.subtasks === 1 ? 'Its subtask goes' : `Its ${loss.subtasks} subtasks go`} with it, ${loss.subtasks === 1 ? 'its Claude' : 'their Claudes'} too.`}
           </p>
           {risky && (
             <label className={styles.approve}>

@@ -5,7 +5,7 @@ import { keyAction, KEYS, rowFor, typingLock, type Card, type Key, type KeyConte
 
 const page: Target = { editable: false, control: false, option: false, resizer: false };
 const card = (kind: Kind, patch: Partial<Card> = {}): Card =>
-  ({ kind, options: 3, questions: [], lone: false, suggestion: false, primary: true, why: false, composing: false, ...patch });
+  ({ kind, options: 3, questions: [], lone: false, primary: true, composing: false, ...patch });
 const ctx = (patch: Partial<KeyContext> = {}): KeyContext =>
   ({ view: 'queue', sheet: null, card: card('ask'), deck: 3, guarded: false, held: false, repos: true, target: page, modal: null, popovers: [], tip: false, ...patch });
 
@@ -14,7 +14,7 @@ const key = (k: string, patch: Partial<Key> = {}): Key => ({ key: k, code: CODES
 
 test('digits match the physical key: é on the 2 key sends option 2 on an ask card, and the keypad works too', () => {
   assert.deepEqual(keyAction(ctx(), { key: 'é', code: 'Digit2' }), { type: 'option', index: 1 });
-  assert.deepEqual(keyAction(ctx({ card: card('turn') }), { key: '3', code: 'Numpad3' }), { type: 'option', index: 2 });
+  assert.deepEqual(keyAction(ctx(), { key: '3', code: 'Numpad3' }), { type: 'option', index: 2 });
   assert.equal(keyAction(ctx(), { key: "'", code: 'Digit4' }), null, 'no fourth option');
   assert.equal(keyAction(ctx(), { key: '2', code: 'KeyQ' }), null, 'a 2 typed elsewhere on some layout');
 });
@@ -31,9 +31,8 @@ test('on a menu a digit picks the option numbered across its questions, and on a
 test('the keys stay off while guarded (answer keys only), on auto-repeat, with Meta, Ctrl or Alt, in a field, and under a dialog other than the sheet', () => {
   const guarded = ctx({ guarded: true, card: card('idle') });
   for (const k of ['1', 'Enter', 'w', 'x']) assert.equal(keyAction(guarded, key(k)), null, `${k} while guarded`);
-  assert.equal(keyAction(ctx({ guarded: true, card: card('ask', { suggestion: true }) }), key('e')), null);
   assert.deepEqual(keyAction(guarded, key('ArrowRight')), { type: 'skip' });
-  assert.deepEqual(keyAction(ctx({ guarded: true }), key('y')), { type: 'elaborate' });
+  assert.deepEqual(keyAction(ctx({ guarded: true }), key(' ')), { type: 'details' });
 
   assert.equal(keyAction(ctx(), key('Enter', { repeat: true })), null);
   assert.equal(keyAction(ctx(), key('1', { repeat: true })), null);
@@ -94,13 +93,12 @@ test('in the sheet 1 to 4 switch tabs (4 when there are artifacts), J and K act 
   assert.deepEqual(keyAction(diff, key('?')), { type: 'keys' });
 });
 
-test('V switches views (to an empty queue too), N needs a repository, and Esc closes Elaborate, then the composer, then leaves the Wall', () => {
+test('V switches views (to an empty queue too), N needs a repository, and Esc closes the composer, then leaves the Wall', () => {
   assert.deepEqual(keyAction(ctx(), key('v')), { type: 'view', to: 'wall' });
   assert.deepEqual(keyAction(ctx({ view: 'wall' }), key('V')), { type: 'view', to: 'queue' });
   assert.deepEqual(keyAction(ctx({ view: 'wall', card: null, deck: 0 }), key('v')), { type: 'view', to: 'queue' });
   assert.deepEqual(keyAction(ctx({ view: 'wall' }), key('n')), { type: 'new-task' });
   assert.equal(keyAction(ctx({ repos: false }), key('n')), null);
-  assert.deepEqual(keyAction(ctx({ card: card('ask', { why: true, composing: true }) }), key('Escape')), { type: 'close', what: 'why' });
   assert.deepEqual(keyAction(ctx({ card: card('ask', { composing: true }) }), key('Escape')), { type: 'close', what: 'composer' });
   assert.equal(keyAction(ctx(), key('Escape')), null);
   assert.deepEqual(keyAction(ctx({ view: 'wall' }), key('Escape')), { type: 'view', to: 'queue' });
@@ -126,14 +124,13 @@ test('Esc has one order: a held send goes back first, then a tooltip is dismisse
   }
 });
 
-test('each card kind takes its own keys: W, E, Y and Space on decisions, X and W on Your turn, O and D on any card', () => {
+test('each card kind takes its own keys: W and Space on decisions, X and W on Your turn, O and D on any card', () => {
   const idle = ctx({ card: card('idle') });
   assert.deepEqual(keyAction(idle, key('x')), { type: 'archive' });
   assert.deepEqual(keyAction(idle, key('w')), { type: 'compose' });
-  for (const k of ['e', 'y', ' ', '1']) assert.equal(keyAction(idle, key(k)), null, `${k} on Your turn`);
+  for (const k of [' ', '1']) assert.equal(keyAction(idle, key(k)), null, `${k} on Your turn`);
   assert.equal(keyAction(ctx(), key('x')), null);
-  assert.equal(keyAction(ctx(), key('e')), null, 'no suggestion to edit');
-  assert.deepEqual(keyAction(ctx({ card: card('turn', { suggestion: true }) }), key('e')), { type: 'edit' });
+  for (const k of ['e', 'y']) assert.equal(keyAction(ctx(), key(k)), null, `${k} is no key of the board`);
   assert.deepEqual(keyAction(ctx({ card: card('prompt') }), key('d')), { type: 'open', tab: 'diff' });
   assert.deepEqual(keyAction(ctx({ card: card('menu') }), key('O')), { type: 'open', tab: 'overview' });
   assert.equal(keyAction(ctx({ deck: 1 }), key('ArrowRight')), null, 'nothing to skip to');
@@ -148,8 +145,6 @@ test('every row of the Keys table does something, so the Keys dialog lists exact
     '←': [ctx(), key('ArrowLeft')],
     Space: [ctx(), key(' ')],
     W: [ctx(), key('w')],
-    E: [ctx({ card: card('ask', { suggestion: true }) }), key('e')],
-    Y: [ctx(), key('y')],
     'O / D': [ctx(), key('o')],
     X: [ctx({ card: card('idle') }), key('x')],
     Z: [ctx(), key('z')],

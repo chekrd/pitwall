@@ -3,7 +3,7 @@ import { api } from '../api.ts';
 import { openSheet } from '../router.ts';
 import { useStore } from '../store.ts';
 import type { Session } from '../types.ts';
-import { ancestorsOf, attentionOf, locate, sessionLabel, type Shown } from '../util.ts';
+import { attentionOf, locate, sessionLabel, type Shown } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import styles from './RestartBanner.module.css';
 import { STATE_LABELS } from './Status.tsx';
@@ -90,14 +90,7 @@ function PauseBanner({ folded }: { folded: boolean }) {
   );
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-// "2 tasks and 3 subtasks", either left out when there are none.
-function tally(list: Session[]) {
-  const subtasks = list.filter((s) => s.parent).length;
-  const tasks = list.length - subtasks;
-  return [tasks && plural(tasks, 'task'), subtasks && plural(subtasks, 'subtask')].filter(Boolean).join(' and ');
-}
+const tally = (list: Session[]) => `${list.length} ${list.length === 1 ? 'task' : 'tasks'}`;
 
 const ORDER: Shown[] = ['decide', 'focus', 'idle', 'working'];
 
@@ -110,18 +103,13 @@ function counts(tasks: Session[]) {
 }
 
 function TaskLinks({ tasks }: { tasks: Session[] }) {
-  const { repos, sessions } = useStore();
-  const name = (s: Session) => sessionLabel(s, locate(repos, s).branch);
-  return tasks.map((s, i) => {
-    const parent = s.parent && ancestorsOf(sessions, s).at(-1);
-    return (
-      <span key={s.id}>
-        {i > 0 && ', '}
-        <button type="button" className={styles.task} onClick={() => openSheet(s.id)}>{name(s)}</button>
-        {parent && <span data-subtask-of> (subtask of {name(parent)})</span>}
-      </span>
-    );
-  });
+  const { repos } = useStore();
+  return tasks.map((s, i) => (
+    <span key={s.id}>
+      {i > 0 && ', '}
+      <button type="button" className={styles.task} onClick={() => openSheet(s.id)}>{sessionLabel(s, locate(repos, s).branch)}</button>
+    </span>
+  ));
 }
 
 const endedByRestart = (s: Session) => s.status === 'exited' && !!s.interrupted && s.interrupted.cause !== 'pause' && !s.archived;

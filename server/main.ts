@@ -1,7 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createApp, socketServer, UI_INDEX } from './app.ts';
 import { onDrift } from './claudeFormat.ts';
-import { settleExplanations } from './explain.ts';
 import { HOST, PORT, USAGE_FILE } from './config.ts';
 import { schedules, uxEvents } from './db.ts';
 import { sync } from './ingest.ts';
@@ -32,7 +31,6 @@ await refreshWorkspace({ scan: true });
 await sync();
 S.settleAsides();
 S.settleStarting();
-settleExplanations();
 setInterval(() => void sync().then(() => {
   S.pauseStep();
   S.sendDueDrafts();

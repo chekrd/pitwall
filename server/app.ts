@@ -11,16 +11,13 @@ import { bodyLimit } from 'hono/body-limit';
 import type { WSContext } from 'hono/ws';
 import { WebSocketServer } from 'ws';
 import { z } from 'zod';
-import { handleAdvisorMcp, retryAdvice, stopAdvice } from './advisor.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
 import { drift } from './claudeFormat.ts';
 import { listCommands } from './commands.ts';
-import { actionBodies, bodies, isAction, onDecision, type ActionHandlers, type ActionName, type Responses, type RouteInput } from './contract.ts';
+import { actionBodies, bodies, isAction, type ActionHandlers, type ActionName, type Responses, type RouteInput } from './contract.ts';
 import { HOST, PORT, ROOT, UPLOADS_DIR, WEB_DIST } from './config.ts';
 import { repos, roots, schedules, sessions, uxEvents } from './db.ts';
 import { openDecision, Refusal } from './decision.ts';
-import { elaborate } from './explain.ts';
-import { respond } from './findings.ts';
 import { folderDiff } from './folderTasks.ts';
 import { fullDiff, listBranches, repoRoot, upstreamOf } from './git.ts';
 import { handleMcp } from './mcp.ts';
@@ -92,26 +89,19 @@ export type Snapshot = State & { uiEntry: string | null };
 
 const actions: ActionHandlers<string> = {
   answer: async (id, b) => { await S.answer(id, b); },
-  dismiss: (id, b) => { S.dismiss(id, b.key ?? null); },
+  dismiss: (id, b) => { S.dismiss(id, b.key); },
   rename: async (id, b) => { await S.rename(id, b.title); },
   'answer-menu': async (id, b) => { await S.answerMenu(id, b); },
   'answer-round': async (id, b) => { await S.answerRound(id, b); },
   'decline-menu': async (id, b) => { await S.declineMenu(id, b); },
-  'accept-advice': async (id, b) => { await S.acceptAdvice(id, b.adviceAt); },
-  'retry-advice': (id) => { retryAdvice(id); },
-  'stop-advice': (id) => { stopAdvice(id); },
-  elaborate: (id) => { elaborate(id); },
   focus: async (id) => { await S.focus(id); },
   finder: async (id) => { await S.openIn(id, 'finder'); },
   vscode: async (id) => { await S.openIn(id, 'vscode'); },
   quit: async (id) => { await S.quit(id); },
   forget: async (id) => { await S.forget(id); },
   archive: async (id, b) => { await S.archive(id, b.archived ?? true); },
-  priority: (id, b) => { S.setPriority(id, b.priority); },
-  resolve: async (id, b) => { await S.resolve(id, b.state); },
   'delete-worktree': async (id, b) => { await deleteWorktree(id, { discard: b.discard === true }); },
   'dismiss-clear-error': (id) => { clearing.dismiss(id); },
-  finding: async (id, b) => ({ id: await respond(id, b) }),
   park: (id, b) => { S.park(id, b); },
   'edit-park': (id, b) => { S.editPark(id, b); },
   unpark: (id, b) => { S.unpark(id, b.draft); },
@@ -120,7 +110,7 @@ const actions: ActionHandlers<string> = {
   'close-aside': async (id, b) => { await S.closeAside(id, b.aside); },
 };
 
-const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'answer-round', 'decline-menu', 'accept-advice', 'dismiss']);
+const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'answer-round', 'decline-menu', 'dismiss']);
 
 const read = <K extends keyof typeof bodies>(c: Context, route: K) => input(c, bodies[route]) as Promise<RouteInput<K>>;
 
@@ -165,7 +155,6 @@ export function createApp({ usage, ui }: AppDeps) {
   app.get('/api/state', (c) => c.json(state() satisfies Responses['GET /api/state']));
 
   app.all('/mcp', (c) => handleMcp(c.req.raw));
-  app.all('/mcp/advisor/:token', (c) => handleAdvisorMcp(c.req.raw, c.req.param('token')));
 
   // Repositories and the folders scanned for them.
 
@@ -326,7 +315,6 @@ export function createApp({ usage, ui }: AppDeps) {
     if (!isAction(name)) return c.text('unknown action', 404);
     const body: Data = await input(c, actionBodies[name]);
     if (sessions.get(id)?.starting && name !== 'forget') throw new Invalid('this task has no Claude yet');
-    if (onDecision.has(name)) S.expectDecision(id, body.key as string | null | undefined);
     const before = sessions.get(id);
     const answered = before && answering.has(name) ? boardAnswer(before, name, body) : null;
     if (answered) tracker.answeredOnBoard(answered.decision as string);

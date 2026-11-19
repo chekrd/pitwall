@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { arrivals, freeze, primary } from './deck.ts';
+import { arrivals } from './deck.ts';
 import { arrange, createQueue, FRESH_MS, GUARD_MS, UPDATED_MS, type Deal } from './queue.ts';
-import { advice, options, question, session, turn } from './testing.ts';
+import { question, session } from './testing.ts';
 import type { Session } from './types.ts';
 
 const ask = (id: string, patch: Partial<Session> = {}) => session(id, { question: question(`q-${id}`), ...patch });
@@ -36,15 +36,15 @@ function world(storage = new Map<string, string>()) {
   return { q, advance, deals, storage, now: () => now };
 }
 
-const a = ask('a', { rank: 2 });
-const b = ask('b', { rank: 3 });
-const c = ask('c', { rank: 4 });
+const a = ask('a');
+const b = ask('b');
+const c = ask('c');
 
 test('the card being read is pinned by id: an arrival takes its place in the order behind it and is announced until shown', () => {
   const { q } = world();
   q.sync([a, b]);
   assert.equal(q.state().front, 'a');
-  const urgent = ask('urgent', { rank: 1 });
+  const urgent = ask('urgent');
   q.sync([urgent, a, b]);
   assert.equal(q.state().front, 'a');
   assert.deepEqual(q.state().order, ['a', 'b', 'urgent']);
@@ -98,7 +98,7 @@ test('when the card being read leaves the one after it comes up', () => {
   assert.equal(q.state().front, 'b', 'the first arrival into an empty deck comes to the front');
 });
 
-test('the guard holds the answer keys for 900 ms when the front card changes, when its decision changes, and when what ⏎ sends changes', () => {
+test('the guard holds the answer keys for 900 ms when the front card changes and when its decision changes', () => {
   const { q, advance } = world();
   q.sync([a, b]);
   assert.equal(q.guarded(), true, 'the first card shown is guarded too');
@@ -107,59 +107,16 @@ test('the guard holds the answer keys for 900 ms when the front card changes, wh
   q.sync([a, b]);
   assert.equal(q.guarded(), false, 'a snapshot that changes nothing on the card');
 
-  const updated = ask('a', { rank: 2, question: question('q-a2') });
+  const updated = ask('a', { question: question('q-a2') });
   q.sync([updated, b]);
   assert.equal(q.state().front, 'a');
   assert.equal(q.guarded(), true);
   assert.equal(q.state().updated.get('a'), q.state().guardUntil - GUARD_MS + UPDATED_MS);
   advance(UPDATED_MS);
   assert.deepEqual([...q.state().updated], [], '"Updated just now" ends after 10 s');
-
-  const advised = { ...updated, advice: advice('q:q-a2', { choice: 'Keep', at: 7 }) };
-  q.sync([advised, b]);
-  q.freeze('q:q-a2', freeze(advised)!);
   advance(GUARD_MS);
-  q.sync([advised, b]);
-  assert.equal(q.guarded(), false);
-  q.sync([{ ...advised, advice: advice('q:q-a2', { choice: 'Merge', at: 8 }) }, b]);
-  assert.equal(q.guarded(), true, 'the primary turned from Accept suggestion to Send “Keep”');
-});
-
-test('a second opinion that finishes while ⏎ has nothing to send becomes what it sends, restarts the guard and shows as late; no later one replaces it', () => {
-  const { q, advance } = world();
-  const s = ask('s');
-  const key = 'q:q-s';
-  q.sync([s]);
-  q.freeze(key, freeze(s)!);
-  advance(GUARD_MS);
-  assert.deepEqual(primary(s, q.state().frozen.get(key)!), { label: 'Pick an option', disabled: true, press: null });
-
-  const done = { ...s, advice: advice(key, { choice: 'Merge', at: 9 }) };
-  q.sync([done]);
-  assert.deepEqual(q.state().frozen.get(key), { via: 'advice', label: 'Merge', adviceAt: 9, late: true });
-  assert.equal(q.guarded(), true);
-  assert.deepEqual(primary(done, q.state().frozen.get(key)!).press, { action: 'accept-advice', body: { key, adviceAt: 9 }, label: 'Merge' });
-
-  advance(GUARD_MS);
-  const newer = { ...s, advice: advice(key, { choice: 'Keep', at: 12 }) };
-  q.sync([newer]);
-  assert.deepEqual(q.state().frozen.get(key), { via: 'advice', label: 'Merge', adviceAt: 9, late: true });
-  assert.deepEqual(primary(newer, q.state().frozen.get(key)!), {
-    label: 'Send “Merge”', disabled: false, press: { action: 'answer', body: { key, choice: 'Merge' }, label: 'Merge' },
-  }, '⏎ never switches to the newer suggestion');
-  assert.equal(q.guarded(), true, 'the relabel restarts the guard');
-});
-
-test('a rewrite of the decision that drops the frozen option freezes it again, as an update', () => {
-  const { q, advance } = world();
-  const s = session('t', { summary: turn('t1'), advice: advice('s:t1', { choice: 'Ship', at: 7 }) });
-  q.sync([s]);
-  q.freeze('s:t1', freeze(s)!);
-  advance(GUARD_MS);
-  q.sync([{ ...s, summary: turn('t1', options('Ship now', 'Wait')) }]);
-  assert.deepEqual(q.state().frozen.get('s:t1'), { via: 'advice', label: null, adviceAt: 7 }, 'the advice matches no option now');
-  assert.equal(q.guarded(), true);
-  assert.ok(q.state().updated.has('t'));
+  q.sync([updated, b]);
+  assert.equal(q.guarded(), false, 'the same snapshot again');
 });
 
 test('skip, previous and jump move the front, each in a transition of its own', () => {
@@ -180,7 +137,7 @@ test('skip, previous and jump move the front, each in a transition of its own', 
 
 test('skip and previous go by the order as the last move left it, with no new deck in between; a jump needs a card the deck has', () => {
   const { q, deals } = world();
-  const d = ask('d', { rank: 5 });
+  const d = ask('d');
   q.sync([a, b, c, d]);
   q.skip();
   q.previous();
@@ -293,18 +250,15 @@ test('a menu\'s picks are kept by decision, a reload too, so its card comes back
   assert.deepEqual(world(first.storage).q.picksOf('m:m1'), first.q.picksOf('m:m1'));
 });
 
-test('the pin and the frozen choices live in sessionStorage too, so a reload restores both', () => {
+test('the pin lives in sessionStorage too, so a reload restores it', () => {
   const first = world();
   first.q.sync([a, b]);
   first.q.jump('b');
-  first.q.freeze('q:q-b', { via: 'recommended', label: 'Keep' });
   const reloaded = world(first.storage);
   assert.equal(reloaded.q.state().front, 'b');
-  assert.deepEqual([...reloaded.q.state().frozen], [['q:q-b', { via: 'recommended', label: 'Keep' }]]);
   reloaded.q.sync([a, b]);
   assert.equal(reloaded.q.state().front, 'b');
   assert.equal(reloaded.q.guarded(), true);
-  assert.equal(world(new Map([['pitwall:frozen', '{not json']])).q.state().frozen.size, 0);
 });
 
 test('a fresh ring lasts 2.6 s', () => {
@@ -334,23 +288,4 @@ test('what waits for the deals under way runs after their changes, once the tran
   assert.deepEqual(log, ['nothing under way', 'the first send held', 'the second send held'], 'not inside the transition\'s update');
   for (const fn of timers.splice(0)) fn();
   assert.deepEqual(log, ['nothing under way', 'the first send held', 'the second send held', 'Z']);
-});
-
-test('a second opinion that finishes or changes on the card being read restarts the guard, though ⏎ stays on the choice frozen, as it changes what the option it picked sends', () => {
-  const { q, advance } = world();
-  const s = session('s', { status: 'waiting', question: question('q1', [{ label: 'Keep' }, { label: 'Merge', recommended: true }]) });
-  q.sync([s]);
-  q.freeze('q:q1', { via: 'recommended', label: 'Merge' });
-  advance(GUARD_MS);
-  const advised = { ...s, advice: advice('q:q1', { choice: 'Merge', at: 7 }) };
-  assert.equal(primary(advised, q.state().frozen.get('q:q1')!).label, 'Send “Merge”');
-  q.sync([advised]);
-  assert.equal(q.guarded(), true, 'it finished');
-  advance(GUARD_MS);
-  q.sync([{ ...advised, advice: advice('q:q1', { choice: 'Merge', at: 8 }) }]);
-  assert.equal(q.guarded(), true, 'it changed');
-  advance(GUARD_MS);
-  q.sync([{ ...advised, advice: advice('q:q1', { choice: 'Merge', at: 8 }) }]);
-  assert.equal(q.guarded(), false, 'the same snapshot again');
-  assert.equal(q.state().updated.has('s'), false, 'the decision is the same');
 });

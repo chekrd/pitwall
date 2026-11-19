@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict';
 import { decisionKey } from '../../../server/decision.ts';
 import { until } from '../cdp.ts';
-import { card, listen, loads, logged, named, navigation, openNewTask, openQueue, POSTED_MS, ready, received, tiles, withOwnBuild, type Check, type Probe } from '../helpers.ts';
+import { listen, loads, logged, named, navigation, openNewTask, openQueue, POSTED_MS, ready, received, tiles, withOwnBuild, type Check, type Probe } from '../helpers.ts';
 
 export const builds: Check[] = [
   {
-    name: 'P1a.mock-contract two answers at once to one end-of-turn decision: one 204 and one 400 answered (two 204s with --legacy), both in /mock/log',
+    name: 'P1a.mock-contract two answers at once to one decision: one 204 and one 400 answered (two 204s with --legacy), both in /mock/log',
     expectedErrors: [/status of 400/],
     async run({ page, mock }) {
       const { legacy } = await mock.get('/mock');
       const group = async () => (await mock.get('/api/state')).sessions.find((s: { id: string }) => s.id === 's-group');
-      const { summary } = await group();
-      const body = { key: `s:${summary.basis}`, choice: summary.decision.options[0].label };
+      const body = { key: 'q:toolu_01Group', choice: 'By attention' };
       // Not the board: today's UI throws when the double send of --legacy reorders it twice at once.
       await page.goto(`${mock.url}/mock`);
       const replies = await page.eval(async (body) => {
@@ -38,33 +37,6 @@ export const builds: Check[] = [
     },
   },
   {
-    name: 'P1a.compat-accept the card accepts the second opinion on a question and on a menu; the snapshot names what was sent',
-    clock: 'fast',
-    async run({ page, mock, shot }) {
-      const { legacy } = await mock.get('/mock');
-      const sessionOf = async (id: string) => (await mock.get('/api/state')).sessions.find((s: { id: string }) => s.id === id);
-      for (const [id, key, text, action] of [
-        ['s-cart', 'q:toolu_01Cart', 'Merge both carts. Cap each line at available stock and show a toast listing anything trimmed.', 'accept-advice'],
-        ['s-hooks', 'm:toolu_01Hooks', 'Backoff: Exponential, 5 tries · Give up: Email the account owner, Disable the endpoint', 'answer-menu'],
-      ]) {
-        await page.goto(`${mock.url}/`);
-        await page.click(`[data-segment][data-session="${id}"]`);
-        await ready(page, id);
-        assert.equal((await page.eval(card))!.primary, 'Accept suggestion');
-        // The segment keeps focus after the click, and ⏎ on it would press it again.
-        await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
-        await page.key('Enter');
-        const [accepted] = await logged(mock, `the accepted second opinion of ${id}`, (e) => e.action === action && e.sessionId === id, POSTED_MS);
-        assert.deepEqual([accepted.status, accepted.body.key ?? `m:${accepted.body.toolUseId}`], [204, key]);
-        const s = await sessionOf(id);
-        if (legacy) assert.equal('answered' in s, false);
-        else assert.deepEqual([s.answered.key, s.answered.text], [key, text]);
-        await until(`${id} to start working`, async () => (await sessionOf(id)).status === 'working');
-        await shot(`accepted-${id}`);
-      }
-    },
-  },
-  {
     name: 'P1a.compat-dismiss the card dismisses a question: it closes, the tile leaves Decide, and nothing counts as answered',
     clock: 'fast',
     async run({ page, mock, shot }) {
@@ -83,24 +55,23 @@ export const builds: Check[] = [
     },
   },
   {
-    name: 'P1a.mock-reset an answer still typing when the scenario loads again fails and leaves the fresh scenario alone; so does a note waiting behind an answer to an end-of-turn decision',
+    name: 'P1a.mock-reset an answer still typing when the scenario loads again fails and leaves the fresh scenario alone; so does a note waiting behind an answer',
     async run({ holds, mock }) {
       const { legacy } = await mock.get('/mock');
       const sessionsNow = async () => new Map<string, any>((await mock.get('/api/state')).sessions.map((s: { id: string }) => [s.id, s]));
       const answer = (id: string, body: object) => fetch(`${mock.url}/api/sessions/${id}/answer`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
       });
-      const { summary } = (await sessionsNow()).get('s-group');
       const sends = [
         answer('s-cart', { key: 'q:toolu_01Cart', choice: 'Keep the account cart' }),
-        answer('s-group', { key: `s:${summary.basis}`, choice: summary.decision.options[0].label }),
+        answer('s-group', { key: 'q:toolu_01Group', choice: 'By attention' }),
       ];
       if (legacy) await Promise.all(sends);
       else await until('both answers to be claimed and typing', async () => {
         const now = await sessionsNow();
         return now.get('s-cart').answered && now.get('s-group').answered;
       });
-      // A message meets an end-of-turn decision and claims it, so one still waiting its turn must not reach the fresh s-group.
+      // A message waits for the answer typing before it, so one still waiting must not reach the fresh s-group.
       sends.push(answer('s-group', { key: null, text: 'Also bump the version' }));
       if (legacy) await sends[2];
       else await until('the note to wait its turn', async () => (await mock.log()).some((e) => e.sessionId === 's-group' && e.body.key === null && e.status === null));
@@ -117,7 +88,7 @@ export const builds: Check[] = [
       const now = await sessionsNow();
       const [cart, group] = [now.get('s-cart'), now.get('s-group')];
       assert.deepEqual([cart.question?.toolUseId, cart.answered ?? null, cart.status], ['toolu_01Cart', null, 'idle']);
-      assert.deepEqual([decisionKey(group), group.answered ?? null, group.status], [`s:${summary.basis}`, null, 'idle']);
+      assert.deepEqual([decisionKey(group), group.answered ?? null, group.status], ['q:toolu_01Group', null, 'idle']);
     },
   },
   {

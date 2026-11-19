@@ -110,6 +110,15 @@ process.on('uncaughtException', (err) => {
 
 const other = (scheme: Look['scheme']): Look['scheme'] => (scheme === 'dark' ? 'light' : 'dark');
 
+// A page that closes posts the sends it still holds, with keepalive, so they can land after the next check has loaded
+// its scenario and answer it there; the next check waits until they have.
+async function settleClosed(mock: Mock) {
+  await sleep(300);
+  await within(5000, 'the closed page\'s posts', (async () => {
+    while ((await mock.log()).some((e) => e.status === null)) await sleep(50);
+  })());
+}
+
 // Setup and teardown count as the check's own: a failure there fails the check, not the run. A check that times
 // out is still running; it has its page closed under it and is waited on for a while, and the worker then takes a
 // fresh mock (timedOut), so nothing it does later reaches the next check.
@@ -185,7 +194,10 @@ async function runOne(mock: Mock, browser: Browser, check: Check, look: Look) {
     const shot = page ? await within(10_000, 'the screenshot', page.shot(file)).then(() => file, () => null) : null;
     return { failure: { err, file: shot }, timedOut };
   } finally {
-    if (page) await within(10_000, 'closing the page', page.close()).catch(() => {});
+    if (page) {
+      await within(10_000, 'closing the page', page.close()).catch(() => {});
+      await settleClosed(mock).catch(() => {});
+    }
     if (timedOut) await within(10_000, 'the timed-out check', running!).catch(() => {});
   }
 }

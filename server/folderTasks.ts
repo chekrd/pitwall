@@ -15,7 +15,7 @@ export async function makeTaskFolder(folderPath: string, name: string) {
   return path;
 }
 
-// Added to every Claude that starts or resumes in a task folder, subtasks too.
+// Added to every Claude that starts or resumes in a task folder.
 export function folderArgs(cwd: string) {
   const task = taskFolderOf(cwd);
   if (!task) return [];

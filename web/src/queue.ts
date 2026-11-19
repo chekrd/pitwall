@@ -1,20 +1,18 @@
 import { useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { decisionKey } from '../../server/decision.ts';
-import { kindOf, refreeze, resolveFront, rotate, targetOf, type Frozen } from './deck.ts';
+import { kindOf, resolveFront, rotate, targetOf } from './deck.ts';
 import type { MenuAnswer, Session } from './types.ts';
 import { record } from './recorder.ts';
-import { adviceFor } from './util.ts';
 
-// The queue's own state, which no snapshot carries: the card being read, what ⏎ sends on each decision, the key
-// guard, and the markers the cards show.
+// The queue's own state, which no snapshot carries: the card being read, the key guard, and the markers the cards
+// show.
 
 export const GUARD_MS = 900;
 export const UPDATED_MS = 10_000;
 export const FRESH_MS = 2600;
 const KEPT = 100;
 const FRONT_KEY = 'pitwall:front';
-const FROZEN_KEY = 'pitwall:frozen';
 const PICKS_KEY = 'pitwall:picks';
 
 // How a card change moves: an answer drops down, a dismissal or archive goes sideways, a skip goes back, and a send
@@ -34,7 +32,6 @@ export interface QueueState {
   order: readonly string[];
   // Decision keys there when the page loaded or drawn at the front since; null before the first snapshot.
   seen: ReadonlySet<string> | null;
-  frozen: ReadonlyMap<string, Frozen>;
   guardUntil: number;
   // Session ids, each with the time its "Updated just now" or its fresh ring ends.
   updated: ReadonlyMap<string, number>;
@@ -91,7 +88,6 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
     shown: null,
     order: [],
     seen: null,
-    frozen: read(FROZEN_KEY, (raw) => new Map<string, Frozen>(JSON.parse(raw)), new Map()),
     guardUntil: 0,
     updated: new Map(),
     fresh: new Map(),
@@ -106,7 +102,7 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
   };
   const subscribers = new Set<() => void>();
   // The front card as last arranged, to tell an outside change of it.
-  let arranged: { id: string; sig: string; target: string; offer: string } | null = null;
+  let arranged: { id: string; sig: string; target: string } | null = null;
   // The card as the view last drew it.
   let drawn: { id: string; sig: string } | null = null;
   // The deck of the last sync, which a move arranges again around its new front.
@@ -114,7 +110,6 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
 
   function commit(next: QueueState) {
     if (next.front !== state.front) write(FRONT_KEY, next.front);
-    if (next.frozen !== state.frozen) write(FROZEN_KEY, JSON.stringify([...next.frozen]));
     state = next;
     for (const fn of subscribers) fn();
   }
@@ -138,38 +133,23 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
   };
 
   // Arranges the deck around `pinned`, the card wanted at the front: it keeps the pin, or moves it to the card that
-  // followed it, and restarts the guard when the card at the front, its decision or what ⏎ sends changes, and when
-  // its second opinion finishes or changes, which changes what its own option sends.
+  // followed it, and restarts the guard when the card at the front, its decision or what ⏎ sends changes.
   function arrangeAround(pinned: string | null) {
     const at = now();
-    let { guardUntil, updated, frozen, notSent } = state;
+    let { guardUntil, updated, notSent } = state;
     const seen = state.seen ?? new Set(deck.flatMap((s) => decisionKey(s) ?? []));
     const front = resolveFront(deck, pinned, state.order);
 
     const card = deck.find((s) => s.id === front) ?? null;
-    const key = card && decisionKey(card);
-    const update = (id: string) => {
-      updated = markUpdated(updated, id);
-      guardUntil = guard();
-    };
-    if (card && key) {
-      const was = frozen.get(key);
-      const re = was && refreeze(was, card);
-      if (re) {
-        frozen = new Map(frozen).set(key, re.frozen);
-        if (re.why === 'rewritten') update(card.id);
-        else guardUntil = guard();
-      }
-    }
     const before = arranged?.id ?? null;
     const sig = card ? signature(card, at) : '';
-    const target = card ? targetOf(card, (key && frozen.get(key)) || null, at) : '';
-    const advice = card && adviceFor(card);
-    const offer = advice?.state === 'done' ? String(advice.at) : '';
+    const target = card ? targetOf(card, at) : '';
     if (card && before !== card.id) guardUntil = guard();
-    else if (card && arranged!.sig !== sig) update(card.id);
-    else if (card && (arranged!.target !== target || arranged!.offer !== offer)) guardUntil = guard();
-    arranged = card ? { id: card.id, sig, target, offer } : null;
+    else if (card && arranged!.sig !== sig) {
+      updated = markUpdated(updated, card.id);
+      guardUntil = guard();
+    } else if (card && arranged!.target !== target) guardUntil = guard();
+    arranged = card ? { id: card.id, sig, target } : null;
 
     const pending = front ? notSent.get(front) : undefined;
     if (front && pending?.shown === false) notSent = new Map(notSent).set(front, { ...pending, shown: true });
@@ -177,9 +157,9 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
     const inDeck = (id: string) => deck.some((s) => s.id === id);
     if ([...notSent.keys()].some((id) => !inDeck(id))) notSent = new Map([...notSent].filter(([id]) => inDeck(id)));
     const order = rotate(deck, front, waiting(notSent)).map((s) => s.id);
-    const same = front === state.front && order.join() === state.order.join() && seen === state.seen && frozen === state.frozen &&
+    const same = front === state.front && order.join() === state.order.join() && seen === state.seen &&
       updated === state.updated && notSent === state.notSent && guardUntil === state.guardUntil;
-    if (!same) commit({ ...state, front, order, seen, frozen, updated, notSent, guardUntil });
+    if (!same) commit({ ...state, front, order, seen, updated, notSent, guardUntil });
   }
 
   const move = (front: string, deal: Deal) => transition(() => arrangeAround(front), deal);
@@ -278,11 +258,6 @@ export function createQueue({ now = Date.now, storage = null, transition = (chan
       }, 'enter-back');
     },
 
-    // Written from the render that first showed the card, with the value it drew.
-    freeze(key: string, value: Frozen) {
-      if (state.frozen.has(key)) return;
-      commit({ ...state, frozen: keep(new Map(state.frozen).set(key, value)) });
-    },
     picksOf: (key: string) => picks.get(key) ?? null,
     pick(key: string, value: readonly MenuAnswer[]) {
       picks = keep(new Map(picks).set(key, value.map((p) => ({ labels: [...p.labels], other: p.other }))));

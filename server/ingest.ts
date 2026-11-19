@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
-import { adviseOpen } from './advisor.ts';
 import { storeArtifacts } from './artifacts.ts';
 import { conversationMeta, forgetHooked, liveConversations, signal, startSource, type Activity, type LiveProcess } from './conversations.ts';
 import { repos, sessions, type Session, type SessionStatus } from './db.ts';
@@ -10,9 +9,7 @@ import { handOver, leftBy, taskOf } from './handover.ts';
 import { fullDiff, pullRequestUrl, repoRoot } from './git.ts';
 import * as terminal from './terminal.ts';
 import { askInput, roundOf } from './mcp.ts';
-import { trackDecisions } from './priority.ts';
 import { archivePatch, bootTime, interruption, pickedUp } from './restart.ts';
-import { summarizeStale } from './summary.ts';
 import { describeLinks } from './linkAbout.ts';
 import { mergeLinks } from './links.ts';
 import { notify, refreshWorkspace, repoView, taskFolderOf, workspace } from './workspace.ts';
@@ -178,6 +175,8 @@ async function readTranscript(s: Session, p?: LiveProcess) {
 let syncing = false;
 let again = false;
 
+export const inSync = () => syncing;
+
 export async function sync() {
   if (syncing) {
     again = true;
@@ -223,7 +222,7 @@ async function syncLive() {
       update(s.id, handOver(s, conversation, Date.now()));
       changed = true;
     }
-    // A conversation that left its task by /resume and came back brings the task back, a settled subtask reopened.
+    // A conversation that left its task by /resume and came back brings the task back.
     if (s.status === 'exited' && s.archived) {
       update(s.id, archivePatch(s, false));
       s = sessions.get(s.id)!;
@@ -278,10 +277,7 @@ async function syncLive() {
     void refreshDiffstat(s.id);
     changed = true;
   }
-  trackDecisions();
   if (changed) notify();
-  adviseOpen();
-  void summarizeStale();
   void describeLinks();
 }
 

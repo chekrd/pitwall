@@ -1,8 +1,7 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { loginEnv } from './env.ts';
 
@@ -257,29 +256,4 @@ export function pullRequestUrlOf(remoteUrl: string, id: number) {
   if (remote.includes('/_git/')) return `${remote}/pullrequest/${id}`;
   if (remote.includes('github.com')) return `${remote}/pull/${id}`;
   return null;
-}
-
-// clonefile fails across volumes, so a repo outside the data volume gets a plain copy.
-const cloneInto = (src: string, dest: string) =>
-  run('/bin/cp', ['-cR', src, `${dest}/`]).catch(() => run('/bin/cp', ['-R', src, `${dest}/`]));
-
-// A detached worktree whose files are APFS clones of `worktree`, uncommitted and ignored files included.
-export async function addScratchCopy(worktree: string, dest: string) {
-  await git(worktree, ['worktree', 'add', '--detach', '--no-checkout', dest, 'HEAD']);
-  const entries = (await readdir(worktree)).filter((e) => e !== '.git');
-  await Promise.all(entries.map((e) => cloneInto(join(worktree, e), dest)));
-  await git(dest, ['reset', '--quiet']);
-}
-
-// A task folder's copy is a folder of such copies, one per worktree.
-export async function addScratchCopies(worktrees: { path: string; name: string }[], dest: string) {
-  await mkdir(dest, { recursive: true });
-  await Promise.all(worktrees.map((w) => addScratchCopy(w.path, join(dest, w.name))));
-}
-
-export async function removeScratchCopy(dir: string) {
-  const copies = existsSync(join(dir, '.git')) ? [dir] : (await readdir(dir).catch(() => [])).map((e) => join(dir, e));
-  const commons = await Promise.all(copies.map((c) => git(c, ['rev-parse', '--path-format=absolute', '--git-common-dir']).then((s) => s.trim(), () => null)));
-  await rm(dir, { recursive: true, force: true });
-  for (const common of commons) if (common) await git(dirname(common), ['worktree', 'prune']).catch(() => {});
 }

@@ -9,8 +9,8 @@ const NOW = 1_792_000_000_000;
 
 const session = (patch: Partial<Session>) => ({
   id: 's1', conversation: 's1', history: [], repoId: 1, worktree: '/w', cwd: '/w', pid: 1, tty: null, title: null, firstPrompt: null, status: 'idle',
-  question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
-  dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, interrupted: null, turnError: null,
+  question: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
+  dismissedAsk: null, round: null, dismissedRound: null, prs: [], activity: null, menu: null, answered: null, artifacts: [], links: [], model: null, effort: null, interrupted: null, turnError: null,
   archived: false, createdAt: 0, updatedAt: 0, ...patch,
 }) as Session;
 
@@ -82,13 +82,9 @@ test('a decision that closes without a board answer was answered in the terminal
   assert.equal(wait.median_wait_s, 5);
 });
 
-test('no content reaches the table: question, options, advice and answer text stay out, and so does any content field a page sends', () => {
+test('no content reaches the table: question, options and answer text stay out, and so does any content field a page sends', () => {
   const { db, store, tracker, record, at } = recorder();
-  const advice = {
-    key: 'q:toolu_1', state: 'done' as const, startedAt: 0, activity: null, choice: 'Ship Zephyr', answer: 'Ship Zephyr now, it is ready',
-    confidence: 85, reasoning: 'Zephyr tests pass', at: 1,
-  };
-  const asked = session({ title: 'Zephyr task', question: question(0), advice });
+  const asked = session({ title: 'Zephyr task', question: question(0) });
   at(0);
   tracker.observe([]);
   tracker.observe([asked]);
@@ -108,13 +104,13 @@ test('no content reaches the table: question, options, advice and answer text st
   const keys = (v: unknown): string[] => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keys(x)]) : []);
   for (const r of rows) for (const k of keys(r.data ? JSON.parse(String(r.data)) : {})) assert.ok(!CONTENT_FIELDS.has(k), `${String(r.name)} carries ${k}`);
   assert.equal(JSON.parse(String(rows[0].data)).optionCount, 2);
-  assert.deepEqual(JSON.parse(String(rows[3].data)), { kind: 'ask', waitMs: 0, confidence: 85, how: 'option-and-text', option: 0, files: 1, followed: 'edited' });
+  assert.deepEqual(JSON.parse(String(rows[3].data)), { kind: 'ask', waitMs: 0, how: 'option-and-text', option: 0, files: 1 });
 });
 
 test('a read event keeps the time on every section, the summary among them, but nothing else under its sections', () => {
-  const sections = { summary: 1200, 'worth knowing': 800, facts: 600, text: 'Zephyr', prompt: { said: 'Zephyr' } };
+  const sections = { summary: 1200, 'latest reply': 800, facts: 600, text: 'Zephyr', prompt: { said: 'Zephyr' } };
   const e = cleanEvent('read', { screen: 'task', sections, summary: 'Zephyr' }, NOW)!;
-  assert.deepEqual(JSON.parse(e.data!), { screen: 'task', sections: { summary: 1200, 'worth knowing': 800, facts: 600 } });
+  assert.deepEqual(JSON.parse(e.data!), { screen: 'task', sections: { summary: 1200, 'latest reply': 800, facts: 600 } });
 });
 
 test('a migration keeps the rows recorded before it, as from the page', () => {

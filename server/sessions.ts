@@ -4,25 +4,22 @@ import { existsSync } from 'node:fs';
 import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { adviseOpen } from './advisor.ts';
 import { answering, Called } from './answering.ts';
 import { listCommands } from './commands.ts';
 import { conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, signal, transcriptFile, type ConversationLog, type LiveProcess } from './conversations.ts';
 import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
-import { checkDecision } from './decision.ts';
 import { handOver, taskOf } from './handover.ts';
-import { sessions, type Parent, type Session, type Starting } from './db.ts';
+import { sessions, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
 import { isClean, listBranches, pullBranch, switchBranch } from './git.ts';
 import { CLAUDE, headless } from './headless.ts';
 import { asking, type AskBody } from './asides.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
-import { clip, scheduleRerank, trackDecisions } from './priority.ts';
 import { notify, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
-import { retired, sync } from './ingest.ts';
+import { inSync, retired, sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
 import { archivePatch } from './restart.ts';
 import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
@@ -47,7 +44,6 @@ interface NewClaude {
   prompt?: string | undefined;
   title?: string;
   setup?: string | null | undefined;
-  parent?: Parent;
   model?: string | undefined;
   effort?: string | undefined;
   running?: { model: string | null; effort: string | null };
@@ -63,7 +59,7 @@ function addTask(opts: NewClaude, status: Session['status']) {
     id, repoId: opts.repoId, worktree: opts.worktree, cwd: opts.worktree, pid: null, tty: null,
     title: opts.title || null, firstPrompt: opts.prompt || null, status,
   });
-  sessions.update(id, { parent: opts.parent ?? null, scheduled: opts.scheduled ?? null, ...opts.running });
+  sessions.update(id, { scheduled: opts.scheduled ?? null, ...opts.running });
   return id;
 }
 
@@ -231,19 +227,9 @@ async function isCommand(s: Session, text: string) {
   return !!name && (await listCommands(s.worktree)).some((c) => c.name === name);
 }
 
-export function expectDecision(id: string, seen: string | null | undefined) {
-  checkDecision(must(id), seen);
-}
+const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided: notify, isCommand, checkUploads });
 
-function decided() {
-  trackDecisions();
-  adviseOpen();
-  notify();
-}
-
-const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided, isCommand, checkUploads });
-
-export const { answerMenu, answerRound, declineMenu, acceptAdvice, dismiss } = answers;
+export const { answerMenu, answerRound, declineMenu, dismiss } = answers;
 
 // A send from the board may carry drafts, which leave the task once it went out.
 export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: unknown }) {
@@ -270,6 +256,8 @@ export function unpark(id: string, draft: unknown) {
   sessions.update(id, { parked: removeParked(must(id).parked, [draft]) });
   notify();
 }
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 const ASIDE_TOOLS = 'Read,Grep,Glob,WebFetch,WebSearch';
 const ASIDE_MS = 15 * 60_000;
@@ -331,7 +319,10 @@ export const dropAsides = (gone: Session[]) => Promise.all(gone.map((s) => aside
 const ends = turnEnds();
 const autoSending = new Set<string>();
 
+// A sync writes a turn's end before it reads the reply that ended it, so drafts wait for the sync to finish, whose
+// change runs this again.
 export function sendDueDrafts() {
+  if (inSync()) return;
   for (const due of ends.observe(sessions.all(), pausing.stopping())) {
     if (autoSending.has(due.id)) continue;
     autoSending.add(due.id);
@@ -447,7 +438,6 @@ export async function forget(id: string) {
   sessions.remove(id);
   await dropAsides([s]);
   await rm(join(SESSIONS_DIR, id), { recursive: true, force: true });
-  scheduleRerank();
   notify();
 }
 
@@ -465,24 +455,6 @@ async function bringBack(id: string) {
   if (s?.status !== 'exited' || s.archived || !existsSync(s.cwd)) return;
   await continueConversation({ repoId: s.repoId, worktree: s.worktree, cwd: s.cwd, continueId: s.conversation })
     .catch((err) => console.warn('resume on unarchive failed', id, err));
-}
-
-export function setPriority(id: string, priority: unknown) {
-  must(id);
-  if (priority !== null && priority !== 'high' && priority !== 'low') throw new Error(`unknown priority ${JSON.stringify(priority)}`);
-  sessions.update(id, { priority });
-  notify();
-  scheduleRerank();
-}
-
-// Solved and Dropped also archive the subtask, so it leaves the queue; Reopen brings it back.
-export async function resolve(id: string, state: unknown) {
-  const s = must(id);
-  if (!s.parent) throw new Error('only a subtask is marked solved or dropped');
-  if (state !== null && state !== 'solved' && state !== 'dropped') throw new Error('unknown resolution');
-  sessions.update(id, { ...archivePatch(s, !!state), resolution: state ? { state, at: Date.now() } : null });
-  notify();
-  await (state ? sync() : bringBack(id));
 }
 
 // Works where the branch is already checked out, else switches the main checkout to it; either way at origin's latest.

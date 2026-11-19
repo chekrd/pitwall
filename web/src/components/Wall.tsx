@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useStore } from '../store.ts';
 import type { Session } from '../types.ts';
-import { attentionOf, openSubtasksOfAll } from '../util.ts';
+import { attentionOf } from '../util.ts';
 import { Icon } from './Icon.tsx';
 import styles from './Wall.module.css';
 import { WallTile } from './WallTile.tsx';
@@ -22,9 +22,8 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
     );
   }
   const { active, archived } = orderTiles(sessions);
-  const subtasksOf = openSubtasksOfAll(sessions);
   const working = sessions.filter((s) => !s.archived && attentionOf(s) === 'working').length;
-  const title = !sessions.length ? (repos.length ? 'Ready when you are.' : 'Welcome to Pitwall.') : deck.length ? 'Every agent, in priority order' : 'All caught up.';
+  const title = !sessions.length ? (repos.length ? 'Ready when you are.' : 'Welcome to Pitwall.') : deck.length ? 'Every agent, in the order they need you' : 'All caught up.';
   const sub = !sessions.length ? null
     : deck.length ? `${meter(deck, null).label} ${deck.length === 1 ? 'waits' : 'wait'} in the queue.`
     : working ? `${working} ${working === 1 ? 'agent is' : 'agents are'} on it.`
@@ -51,7 +50,7 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
         </div>
       )}
       <div className={styles.tiles}>
-        {active.map((s) => <WallTile key={s.id} session={s} repos={repos} unsettled={subtasksOf(s.id)} />)}
+        {active.map((s) => <WallTile key={s.id} session={s} repos={repos} />)}
       </div>
       {schedules.length > 0 && (
         <details className={styles.fold} data-schedules open={scheduledOpen} onToggle={(e) => setScheduledOpen(e.currentTarget.open)}>
@@ -63,7 +62,7 @@ export function Wall({ deck }: { deck: readonly Session[] }) {
         <details className={styles.fold} open={archivedOpen} onToggle={(e) => setArchivedOpen(e.currentTarget.open)}>
           <summary><Icon name="chevron-right" size={14} />Archived ({archived.length})</summary>
           <div className={styles.tiles}>
-            {archivedOpen && archived.map((s) => <WallTile key={s.id} session={s} repos={repos} unsettled={subtasksOf(s.id)} />)}
+            {archivedOpen && archived.map((s) => <WallTile key={s.id} session={s} repos={repos} />)}
           </div>
         </details>
       )}

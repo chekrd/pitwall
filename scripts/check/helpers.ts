@@ -509,7 +509,6 @@ export const dockState = () => {
         mono: !!line && getComputedStyle(line).fontFamily.includes('monospace'),
         clock: c.querySelector('[data-clock]')?.textContent ?? null,
         pr: pr && getComputedStyle(pr).animationName,
-        know: !!c.querySelector('button [data-know]'),
         box: box(c),
         nameBox: box(name),
         lineBox: box(line),

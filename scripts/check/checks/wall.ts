@@ -4,7 +4,7 @@ import { card, frame, meterIn, openFromWall, openSheetOf, settled, sheetOpen, ti
 
 export const wall: Check[] = [
   {
-    name: 'P4.1 the Wall: its title and the queue\'s counts, Back to the queue Esc; tiles in priority order with repo · branch and no rank or line counts; Archived (1) collapsed; working clocks tick; Esc goes to the queue and V back; a menu answered from the board that stays open turns Needs focus by the clock alone',
+    name: 'P4.1 the Wall: its title and the queue\'s counts, Back to the queue Esc; tiles in the order they need you, the longest waiting first in each kind, with repo · branch and no line counts; Archived (1) collapsed; working clocks tick; Esc goes to the queue and V back; a menu answered from the board that stays open turns Needs focus by the clock alone',
     async run({ page, mock, shot }) {
       const wall = () => ({
         title: document.querySelector('main h1')?.textContent,
@@ -19,7 +19,7 @@ export const wall: Check[] = [
       await page.until('the tiles', tiles);
       const shown = await page.eval(wall);
       assert.deepEqual({ ...shown, texts: undefined }, {
-        title: 'Every agent, in priority order',
+        title: 'Every agent, in the order they need you',
         sub: '3 decisions · 1 terminal prompt · 2 finished turns wait in the queue.',
         back: 'Back to the queue Esc',
         order: [
@@ -31,7 +31,7 @@ export const wall: Check[] = [
         texts: undefined,
       });
       for (const [id, text] of Object.entries(shown.texts)) {
-        assert.doesNotMatch(text, /#\d|(^|\s)[+−]\d/, `${id} shows a rank or a line count`);
+        assert.doesNotMatch(text, /(^|\s)[+−]\d/, `${id} shows a line count`);
       }
       assert.match(shown.texts['s-cart'], /storefront · guest-cart-merge/);
       assert.match(shown.texts['s-invoice'], /billing-api · invoice-rounding/);
@@ -139,7 +139,7 @@ export const wall: Check[] = [
         assert.deepEqual([m.overlap, m.label, m.shown, m.justIn], [false, '12 decisions · 3 terminal prompts · 5 finished turns', '', []]);
         assert.ok(m.segments.every((w) => w >= 6), `segments ${m.segments.join(', ')}`);
       }
-      await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 2 });
+      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
       await page.until('the Just-in chip at 1100 px', () =>
         !!(document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument?.querySelector('[data-justin]'));
       assert.deepEqual((await page.eval(meterIn, true)).justIn, ['Just in']);
@@ -148,7 +148,7 @@ export const wall: Check[] = [
     },
   },
   {
-    name: 'P4.4 a tile opens its sheet on Overview, which takes focus itself: the working banner with a 30 px clock that ticks, the composer, Session summary · updated, Worth knowing, the latest reply with its code in colour, Facts with the repository, the worktree\'s name and its path under ~, whose Path, Branch and Session copy on a click (the path whole) and say Copied in place, Worth knowing and the reply copy from their heading, and the Artifacts links; Esc in the composer\'s command list closes only the list',
+    name: 'P4.4 a tile opens its sheet on Overview, which takes focus itself: the working banner with a 30 px clock that ticks, the composer, the latest reply with its code in colour, Facts with the repository, the worktree\'s name and its path under ~, whose Path, Branch and Session copy on a click (the path whole) and say Copied in place, the reply copies from its heading, and the Artifacts links; Esc in the composer\'s command list closes only the list',
     clock: 'fast',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
@@ -167,9 +167,7 @@ export const wall: Check[] = [
         const sheet = document.querySelector<HTMLElement>('#task-sheet')!;
         return {
           working: sheet.innerText.includes('Claude is working'),
-          know: sheet.innerText.includes('Two customers were billed one cent too much'),
           composer: !!sheet.querySelector('textarea'),
-          status: [...sheet.querySelectorAll('h3')].map((h) => h.textContent).find((t) => t?.startsWith('Session summary')),
           reply: sheet.innerText.includes("CLAUDE'S LATEST REPLY") && sheet.innerText.includes('The cent goes missing'),
           facts: [...sheet.querySelectorAll('dt')].map((d) => d.textContent),
           values: Object.fromEntries([...sheet.querySelectorAll('dt')].map((d) => [d.textContent, (d.nextElementSibling as HTMLElement).innerText.trim()])),
@@ -178,11 +176,10 @@ export const wall: Check[] = [
       });
       assert.equal(first.size, '30px');
       assert.deepEqual([overview.values.Repository, overview.values.Worktree, overview.values.Path], ['billing-api', 'invoice-rounding', '~/code/worktrees/invoice-rounding/billing-api']);
-      assert.deepEqual({ ...overview, status: undefined, values: undefined }, {
-        working: true, know: true, composer: true, status: undefined, values: undefined, reply: true,
+      assert.deepEqual({ ...overview, values: undefined }, {
+        working: true, composer: true, values: undefined, reply: true,
         facts: ['Task', 'Repository', 'Worktree', 'Path', 'Branch', 'Model', 'Context', 'Terminal', 'Session'], artifacts: ['Where the cent goes missing'],
       });
-      assert.match(overview.status ?? '', /^Session summary · updated \d+m ago$/);
       await until('the clock to tick', async () => (await page.eval(clock))?.text !== first.text);
       await page.until('the sheet to settle', settled);
       await shot('sheet-overview');
@@ -200,14 +197,12 @@ export const wall: Check[] = [
       assert.deepEqual(copied, [`${await mock.home()}/code/worktrees/invoice-rounding/billing-api`, 'invoice-rounding', 's-invoice']);
       await shot('sheet-facts-copied');
 
-      await page.eval(() => {
-        for (const what of ['Copy worth knowing', 'Copy reply']) document.querySelector<HTMLElement>(`#task-sheet h3 button[aria-label="${what}"]`)!.click();
-      });
-      await page.until('Worth knowing and the reply copied', () => (window as unknown as { copied: string[] }).copied.length === 5);
+      await page.eval(() => document.querySelector<HTMLElement>('#task-sheet h3 button[aria-label="Copy reply"]')!.click());
+      await page.until('the reply copied', () => (window as unknown as { copied: string[] }).copied.length === 4);
       await shot('sheet-reply-copied');
       const state = await mock.get('/api/state');
       const invoice = state.sessions.find((x: { id: string }) => x.id === 's-invoice');
-      assert.deepEqual((await page.eval(() => (window as unknown as { copied: string[] }).copied)).slice(3), [invoice.summary.learnings.join('\n\n'), invoice.lastMessage]);
+      assert.deepEqual((await page.eval(() => (window as unknown as { copied: string[] }).copied)).slice(3), [invoice.lastMessage]);
 
       await page.click('#task-sheet textarea');
       await page.type('/re');

@@ -2,7 +2,7 @@ import { checkDecision, decisionKey, Refusal } from '../../server/decision.ts';
 import type { MenuAnswer, RoundAnswers, Session, SessionStatus } from './types.ts';
 import { menuStuck } from './util.ts';
 
-export type Action = 'answer' | 'answer-menu' | 'answer-round' | 'decline-menu' | 'accept-advice' | 'dismiss';
+export type Action = 'answer' | 'answer-menu' | 'answer-round' | 'decline-menu' | 'dismiss';
 
 // `key` is the decision the card showed, null for a plain message. It is always sent, since the server takes a
 // missing key for a page from before that check.
@@ -16,7 +16,6 @@ export interface Body {
   // A round of questions and the answers to it, by question.
   round?: string;
   replies?: RoundAnswers;
-  adviceAt?: number;
   // Drafts the send carries, which leave the task once it went out.
   drafts?: string[];
 }
@@ -36,7 +35,6 @@ export interface Item<R = unknown> extends Request {
   id: string;
   sessionId: string;
   key: string | null;
-  typed: boolean;
   command: boolean;
   // The session as the post found it, or the press until it posts, to tell from a later snapshot that the send took.
   status: SessionStatus;
@@ -80,9 +78,8 @@ export const active = (i: Item) => i.state === 'held' || i.state === 'sending' |
 const isNote = (i: Item) => i.action === 'answer' && i.key === null && !i.command;
 const isAnswer = (i: Item) => i.action === 'answer' && i.key !== null && !i.command;
 
-// Everything a flush sends goes out at once and can reach the server in any order. A note that lands first would
-// claim an end-of-turn decision before its answer, or be refused before a question's answer, and either way one of
-// the two would be lost with no page left to say so. So a session's notes ride along with its decision answer, or
+// Everything a flush sends goes out at once and can reach the server in any order. A note that lands first would be
+// refused before a question's answer, and one of the two would be lost with no page left to say so. So a session's notes ride along with its decision answer, or
 // with its first note.
 function fold(due: readonly Item[]): Folded[] {
   const host = new Map<string, Item>();
@@ -230,7 +227,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     if (i.state === 'waiting' && wentOut(i, s)) return { state: 'sent', sentAt: now() };
     if (s.status === 'exited') return { state: 'failed', error: 'this session has ended; continue it first', code: 'ended' };
     try {
-      checkDecision(s, i.key, i.typed);
+      checkDecision(s, i.key);
       return null;
     } catch (err) {
       if (!(err instanceof Refusal)) throw err;
@@ -289,7 +286,6 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
       const item: Item<R> = {
         ...request, body, id, sessionId: s.id,
         key: request.action === 'answer-menu' || request.action === 'decline-menu' ? `m:${body.toolUseId}` : request.action === 'answer-round' ? `r:${body.round}` : (body.key ?? null),
-        typed: request.action === 'answer' && !body.choice,
         command: !!request.command, status: s.status, lastTurn: s.lastTurn, answeredAt: s.answered?.at ?? null, restore, dueAt: now() + holdMs, state: 'held',
       };
       set([...items, item]);

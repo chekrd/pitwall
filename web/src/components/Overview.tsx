@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { sessionAction } from '../api.ts';
-import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, typed, type Composer as Note } from '../deck.ts';
+import { choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, typed, type Composer as Note } from '../deck.ts';
 import type { Request } from '../outbox.ts';
 import { roundTitle } from '../../../server/rounds.ts';
 import { queue } from '../queue.ts';
@@ -10,11 +10,10 @@ import { hold, useBusy } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { Link, RepoView, Session } from '../types.ts';
 import { useDecision } from '../useDecision.ts';
-import { adviceFor, ago, attentionOf, contextUse, coverageOf, decisionOf, effortName, findingNumber, folderTaskOf, isDelivered, modelName, shortUrl, subtaskCounts, tilde, underTask, worktreeName } from '../util.ts';
+import { ago, attentionOf, contextUse, decisionOf, effortName, folderTaskOf, isDelivered, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
-import { CopyButton, useCopy } from './CopyButton.tsx';
-import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
-import { Findings, ParentPath, Subtasks, SubtaskOf } from './Findings.tsx';
+import { useCopy } from './CopyButton.tsx';
+import { Composer, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { Icon } from './Icon.tsx';
 import { Later, LaterActions } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
@@ -25,7 +24,6 @@ import { interruptedAs, resumePaused } from './RestartBanner.tsx';
 import { RoundBody } from './RoundBody.tsx';
 import styles from './Overview.module.css';
 import { scheduledNote } from '../schedules.ts';
-import { SecondOpinion } from './SecondOpinion.tsx';
 import { editFailedTask } from './NewTaskForm.tsx';
 import { failedToStart, STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
@@ -60,21 +58,16 @@ function LinkList({ links }: { links: Link[] }) {
   );
 }
 
-// A decision answered on its task page: the same options, second opinion and reply box as on its card. A send is held
-// with its Undo as from the card, and the box goes with it. `box` is off while Message Claude stays for the writing in it.
+// A decision answered on its task page: the same options and reply box as on its card. A send is held with its Undo as
+// from the card, and the box goes with it. `box` is off while Message Claude stays for the writing in it.
 function Queued({ session, name, box: ownBox }: { session: Session; name: string; box: boolean }) {
   const menu = session.menu;
   const decision = menu ? null : decisionOf(session);
-  const { key, frozen, picks, setPicks, toggle, answerOwn, lone } = useDecision(session, menu);
+  const { key, picks, toggle, answerOwn, lone } = useDecision(session, menu);
   const round = kindOf(session) === 'round' ? session.round : null;
   const [replies, setReplies] = useRoundAnswers(round ? key : null);
-  const roundPress = round ? primaryOf(session, frozen, { replies }) : null;
-  const { sessions } = useStore();
-  const carded = !underTask(sessions, session);
-  const advice = adviceFor(session);
-  const done = advice?.state === 'done' ? advice : null;
+  const roundPress = round ? primaryOf(session, { replies }) : null;
   const draft = useDraft(session.id);
-  const [focus, setFocus] = useState(0);
   const [note, setNote] = useState<string | null>(null);
   const box: Note = { open: true, text: draft.text, files: readyPaths(draft), uploading: uploading(draft) };
   const send = (r: Request | null) => {
@@ -86,14 +79,9 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
     if (lone) send(menuAnswer(session, [{ labels: [label], other: '' }]));
     else toggle(question, label);
   };
-  const menuPress = menu ? primaryOf(session, frozen, { picks }) : null;
+  const menuPress = menu ? primaryOf(session, { picks }) : null;
   const submitMenu = () => {
     if (menuPress?.press && !('intent' in menuPress.press)) send(menuPress.press);
-  };
-  const edit = () => {
-    if (!done) return;
-    editDraft(session.id, (d) => ({ ...d, text: suggestionText(done) }));
-    setFocus((n) => n + 1);
   };
   const toCard = () => {
     queue.jump(session.id);
@@ -101,28 +89,17 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
   };
   return (
     <section className={styles.queued} data-queued data-ux-section="decision">
-      <span className={styles.kicker}>{carded && 'In your queue · '}{menu ? 'Asked in the terminal' : round ? 'Questions' : 'Decision'}</span>
+      <span className={styles.kicker}>In your queue · {menu ? 'Asked in the terminal' : round ? 'Questions' : 'Decision'}</span>
       {decision && (
         <>
           <h3>{decision.problem}</h3>
-          <SecondOpinion session={session} advice={advice} />
-          <Options
-            options={decision.options}
-            advice={done}
-            frozen={frozen}
-            composing={!!draft.text}
-            accepting={false}
-            onPick={(label) => send(choose(session, label, box))}
-            onAccept={() => send(acceptance(session))}
-            onEdit={edit}
-            coverage={coverageOf(session, sessions, decision.key)}
-          />
+          <Options options={decision.options} onPick={(label) => send(choose(session, label, box))} />
           {ownBox && <Composer
             session={session}
             decision={decision.key}
             label="Your own answer"
             placeholder={decision.options.length ? 'Or write your own answer, / for commands, paste or drop files…' : 'Reply, / for commands, paste or drop files…'}
-            focus={focus}
+            focus={0}
             note={note}
             onSend={send}
             onEscape={closeSheet}
@@ -148,7 +125,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
             decision={key}
             label="A message instead of answers"
             placeholder="Write to Claude instead of answering; the questions close with it…"
-            focus={focus}
+            focus={0}
             note={note}
             onSend={send}
             onEscape={closeSheet}
@@ -157,16 +134,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
       )}
       {menu && (
         <>
-          <MenuBody
-            session={session}
-            menu={menu}
-            picks={picks}
-            advice={advice}
-            onPick={pickInMenu}
-            onOther={answerOwn}
-            onPicks={setPicks}
-            onSubmit={submitMenu}
-          />
+          <MenuBody menu={menu} picks={picks} onPick={pickInMenu} onOther={answerOwn} onSubmit={submitMenu} />
           {!lone && (
             <button type="button" data-variant="primary" disabled={menuPress?.disabled} onClick={submitMenu}>{menuPress?.label}</button>
           )}
@@ -177,7 +145,7 @@ function Queued({ session, name, box: ownBox }: { session: Session; name: string
           <button type="button" data-explain={round ? 'Clear the questions without answering them' : 'Clear the question without answering it'} onClick={() => send(dismissal(session))}>Dismiss</button>
         )}
         {menu && <button type="button" {...explain(TIPS.decline)} onClick={() => send(declining(session))}>Decline</button>}
-        {carded && <button type="button" data-explain="Its card in the queue, with Elaborate" onClick={toCard}>Open its card</button>}
+        <button type="button" data-explain="Its card in the queue" onClick={toCard}>Open its card</button>
       </div>
     </section>
   );
@@ -254,7 +222,7 @@ function ClearFailed({ session }: { session: Session }) {
         <p><strong>Clear task did not finish.</strong> {session.clearError}</p>
       </div>
       <button type="button" onClick={() => void sessionAction(session.id, 'dismiss-clear-error').catch(reportError)}>Dismiss</button>
-      {!session.parent && <button type="button" data-variant="primary" onClick={() => askDeleteWorktree(session)}>Clear task…</button>}
+      <button type="button" data-variant="primary" onClick={() => askDeleteWorktree(session)}>Clear task…</button>
     </section>
   );
 }
@@ -335,11 +303,10 @@ function ContextGauge({ session }: { session: Session }) {
 }
 
 export function Overview({ session, name, branch, repo }: { session: Session; name: string; branch?: string | undefined; repo?: RepoView | undefined }) {
-  const { home, repos, sessions } = useStore();
+  const { home, repos } = useStore();
   const task = folderTaskOf(repos, session);
-  const counts = subtaskCounts(sessions, session.id);
   const busy = useBusy();
-  const { summary, activity } = session;
+  const { activity } = session;
   const attention = attentionOf(session);
   const { archived } = session;
   const { clearing } = session;
@@ -356,7 +323,6 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const waits = waitingText(session, sending) !== null;
   // What the turn under way answers; a message still queued is not it.
   const trigger = sending || session.unanswered?.queued ? null : session.unanswered?.text ?? session.lastPrompt;
-  const learnings = summary?.learnings ?? [];
   const artifacts = session.artifacts.toReversed();
   const links = session.links.toReversed();
   const delivered = links.filter((l) => isDelivered(l.url));
@@ -374,7 +340,6 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
       {queued && <DecisionBelow scroller={scroller} what={session.menu ? 'Question' : kindOf(session) === 'round' ? 'Questions' : 'Decision'} />}
       <div className={styles.grid}>
         <div className={styles.main}>
-          <SubtaskOf session={session} />
           {clearing && (
             <section className={styles.working} data-clearing data-ux-section="clearing">
               <span className={styles.spinner} aria-hidden />
@@ -406,7 +371,6 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           )}
           {deciding && reply}
           {queued && <Queued session={session} name={name} box={!writing} />}
-          <Findings session={session} />
           {!archived && attention === 'focus' && (
             <section className={styles.blocked} data-ux-section="terminal prompt">
               <p>Claude is showing <strong>{session.waitingFor ?? 'a prompt'}</strong> in its terminal. Answer it there.</p>
@@ -446,42 +410,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             </div>
           )}
           {!starting && <Later session={session} name={name} />}
-          {learnings.length > 0 && (
-            <section className={styles.know} data-ux-section="worth knowing">
-              <h3 className={styles.label} data-explain="Something notable Claude found or learned; shown only when it is worth your attention">Worth knowing<CopyButton value={learnings.join('\n\n')} what="Worth knowing" /></h3>
-              {learnings.map((k) => <p key={k}>{k}</p>)}
-            </section>
-          )}
-          <section className={styles.status} data-ux-section="summary">
-            <h3 className={styles.label} data-explain="A short summary of the session, rewritten by a model after each of Claude's messages">
-              Session summary {summary && <span>· updated {ago(summary.at)}</span>}
-            </h3>
-            <p>{summary?.text || 'No summary yet; it is written once Claude replies.'}</p>
-            {!!summary?.progress?.length && <ul>{summary.progress.map((k) => <li key={k}>{k}</li>)}</ul>}
-          </section>
         </div>
         <aside className={styles.aside}>
           <section aria-label="Facts" data-ux-section="facts">
             <dl className={styles.facts}>
-              {session.parent ? (
-                <>
-                  <dt>Subtask of</dt>
-                  <dd><ParentPath session={session} /></dd>
-                  <dt data-explain="The finding of the task's review this subtask was started from">Finding</dt>
-                  <dd data-finding>{findingNumber(sessions, session)} {session.parent.title}</dd>
-                </>
-              ) : (
-                <>
-                  <dt>Task</dt>
-                  <dd>{session.firstPrompt ?? '—'}</dd>
-                </>
-              )}
-              {(counts.open > 0 || counts.archived > 0) && (
-                <>
-                  <dt data-explain="The subtasks started from this task's findings, and theirs">Subtasks</dt>
-                  <dd data-subtask-counts>{counts.open} open · {counts.archived} archived</dd>
-                </>
-              )}
+              <dt>Task</dt>
+              <dd>{session.firstPrompt ?? '—'}</dd>
               {session.scheduled && (
                 <>
                   <dt data-explain="The schedule that started this task">Schedule</dt>
@@ -550,7 +484,6 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               <LinkList links={cited} />
             </section>
           )}
-          <Subtasks session={session} />
           {session.history.length > 0 && (
             <section data-ux-section="earlier conversations">
               <h3 className={styles.label} data-explain="The conversations this task had before a /clear started the one it has now; claude --resume takes their ids">Earlier conversations</h3>

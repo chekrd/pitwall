@@ -5,17 +5,16 @@ import { closeSheet, openerOfTask, showTab, type Route, type Tab } from '../rout
 import { useStore } from '../store.ts';
 import type { RepoView, Session, Upstream } from '../types.ts';
 import { useBusy } from '../sends.ts';
-import { descendantsOf, locate, openSubtasks, sessionLabel, shownOf } from '../util.ts';
+import { locate, sessionLabel, shownOf } from '../util.ts';
 import { Artifacts } from './Artifacts.tsx';
 import { Conversation } from './Conversation.tsx';
 import { DiffView } from './DiffView.tsx';
-import { ParentCrumb, stateLabel } from './Findings.tsx';
 import { Icon } from './Icon.tsx';
 import { Overview } from './Overview.tsx';
 import { BranchMark } from './Parts.tsx';
 import { ClearButton, SessionMenu } from './SessionMenu.tsx';
 import { StateMark } from './StateMark.tsx';
-import { hintOf, PrChips, stoppedOnError } from './Status.tsx';
+import { hintOf, labelOf, PrChips, stoppedOnError } from './Status.tsx';
 import { TaskName } from './TaskName.tsx';
 import styles from './TaskSheet.module.css';
 import { toast } from './Toasts.tsx';
@@ -73,8 +72,6 @@ interface BodyProps {
 function Body({ session, name, repos, tab, item, back }: BodyProps) {
   const { repo, worktree, branch } = locate(repos, session);
   const attention = shownOf(session, useBusy());
-  const { sessions } = useStore();
-  const { open, total } = openSubtasks(sessions, session.id);
   const stat = session.diffstat;
   const tabs: { key: Tab; label: string; kbd: string }[] = [
     { key: 'overview', label: 'Overview', kbd: '1' },
@@ -92,19 +89,13 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
           <span>{back === 'wall' ? 'Wall' : 'Queue'}</span>
           <kbd>Esc</kbd>
         </button>
-        <div className={styles.heading} data-subtask={!!session.parent || undefined}>
-          {session.parent && <div className={styles.crumb}><ParentCrumb session={session} /></div>}
+        <div className={styles.heading}>
           <BranchMark session={session} branch={branch} />
           <TaskName session={session} name={name} />
-          <span className={styles.state} data-attention={session.archived ? 'archived' : attention} data-resolution={session.resolution?.state} data-error={stoppedOnError(session, attention) || undefined} data-explain={session.archived ? undefined : hintOf(session, attention)}>
+          <span className={styles.state} data-attention={session.archived ? 'archived' : attention} data-error={stoppedOnError(session, attention) || undefined} data-explain={session.archived ? undefined : hintOf(session, attention)}>
             <StateMark state={session.archived ? 'archived' : attention} size={8} />
-            {stateLabel(session, attention)}
+            {session.archived ? 'Archived' : labelOf(session, attention)}
           </span>
-          {total > 0 && (
-            <span className={styles.open} data-open-count data-settled={!open.length || undefined} data-explain={subtasksExplained(sessions, repos, session.id, open)}>
-              {open.length ? `${open.length} of ${total} ${total === 1 ? 'subtask' : 'subtasks'} open` : <><Icon name="check" size={13} />{total === 1 ? 'Subtask' : `All ${total} subtasks`} solved or dropped</>}
-            </span>
-          )}
           <PrChips prs={session.prs} status={session.status} />
           {session.repoId !== null && <UpstreamMark session={session} diffOpen={current === 'diff'} />}
         </div>
@@ -177,12 +168,4 @@ function UpstreamMark({ session, diffOpen }: { session: Session; diffOpen: boole
   return pr?.url
     ? <a {...marks} href={prFilesUrl(pr.url)} target="_blank" rel="noreferrer" data-ux="pr-files">{text}</a>
     : <span {...marks}>{text}</span>;
-}
-
-function subtasksExplained(sessions: readonly Session[], repos: RepoView[], id: string, open: readonly Session[]) {
-  const label = (o: Session) => `“${sessionLabel(o, locate(repos, o).branch)}”`;
-  const all = descendantsOf(sessions, id).map((d) => d.session);
-  const by = (state: string) => all.filter((o) => o.resolution?.state === state).map(label);
-  const groups: [string, string[]][] = [['Still open', open.map(label)], ['Solved', by('solved')], ['Dropped', by('dropped')]];
-  return groups.filter(([, names]) => names.length).map(([what, names]) => `${what}: ${names.join(', ')}.`).join(' ');
 }

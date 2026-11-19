@@ -11,7 +11,7 @@ const UNCONFIRMED: ReadonlySet<string> = new Set(['held', 'sending', 'waiting', 
 
 // The message this page is sending to the task, from the press until a snapshot shows that it took.
 export function useSending(session: Session) {
-  return useSends().findLast((i) => i.sessionId === session.id && !i.command && UNCONFIRMED.has(i.state) && (i.action === 'answer' || i.action === 'accept-advice')) ?? null;
+  return useSends().findLast((i) => i.sessionId === session.id && !i.command && UNCONFIRMED.has(i.state) && i.action === 'answer') ?? null;
 }
 
 const sendingText = (i: Item) => [i.body.choice, i.body.text].filter(Boolean).join(' — ') || i.label;

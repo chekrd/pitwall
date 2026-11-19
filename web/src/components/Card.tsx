@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { acceptance, choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, suggestionText, type Composer as Note, type Intent } from '../deck.ts';
+import { choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, type Composer as Note, type Intent } from '../deck.ts';
 import type { Action, Card as Keys } from '../keys.ts';
 import type { Request } from '../outbox.ts';
 import { roundTitle } from '../../../server/rounds.ts';
@@ -10,17 +10,15 @@ import { hold } from '../sends.ts';
 import type { RepoView, Session } from '../types.ts';
 import { useDecision, useKeyed } from '../useDecision.ts';
 import { useFront } from '../useKeys.ts';
-import { adviceFor, attentionOf, decisionOf, locate, sessionLabel } from '../util.ts';
+import { attentionOf, decisionOf, locate, sessionLabel } from '../util.ts';
 import { track } from '../ux.ts';
 import styles from './Card.module.css';
-import { Composer, editDraft, readyPaths, uploading, useDraft } from './Composer.tsx';
-import { CopyButton } from './CopyButton.tsx';
+import { Composer, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { MenuBody } from './MenuBody.tsx';
 import { Age, BranchMark, Headline } from './Parts.tsx';
-import { ParentCrumb } from './Findings.tsx';
 import { PromptBody } from './PromptBody.tsx';
 import { RoundBody } from './RoundBody.tsx';
 import { archive, ClearButton, openTerminal, SessionMenu } from './SessionMenu.tsx';
@@ -28,8 +26,7 @@ import { StateMark } from './StateMark.tsx';
 import { labelOf, stoppedOnError } from './Status.tsx';
 import { TaskRail } from './TaskRail.tsx';
 import { TurnBody } from './TurnBody.tsx';
-import { elaborate, explanationFor } from './WhyPanel.tsx';
-import { explain, SENDS, TIPS } from './explain.ts';
+import { explain, TIPS } from './explain.ts';
 
 // The guard as the card draws it, redrawn when it ends.
 function useGuarded(until: number) {
@@ -63,32 +60,28 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   const q = useQueue();
   const article = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
-  const why = useRef<HTMLElement>(null);
   const { worktree, branch } = locate(repos, session);
   const name = sessionLabel(session, branch);
   const kind = kindOf(session) ?? 'idle';
   const attention = attentionOf(session);
-  const decision = kind === 'ask' || kind === 'turn' ? decisionOf(session) : null;
+  const decision = kind === 'ask' ? decisionOf(session) : null;
   const menu = kind === 'menu' ? session.menu : null;
   // The compiler reads what a callback uses during render, so a `decision!.options` there would throw on other cards.
   const options = decision?.options ?? [];
   const round = kind === 'round' ? session.round : null;
-  // What a reply can be written to instead: a question, an end-of-turn choice or a round.
+  // What a reply can be written to instead: a question or a round.
   const asks = decision !== null || round !== null;
-  const { key, frozen, picks, setPicks, toggle, answerOwn, questions, lone } = useDecision(session, menu);
+  const { key, picks, setPicks, toggle, answerOwn, questions, lone } = useDecision(session, menu);
   const [replies, setReplies] = useRoundAnswers(round ? key : null);
-  const advice = adviceFor(session);
-  const done = advice?.state === 'done' ? advice : null;
   const draft = useDraft(session.id);
   const filled = !!draft.text || draft.files.length > 0;
   const guarded = useGuarded(q.guardUntil);
   const notSent = q.notSent.get(session.id);
 
-  const [composing, setComposing] = useState(() => (decision?.options.length === 0 && !done) || filled);
+  const [composing, setComposing] = useState(() => decision?.options.length === 0 || filled);
   const [focusAsk, setFocusAsk] = useState(0);
   const [note, setNote] = useState<string | null>(null);
   const [hidden, setHidden] = useKeyed(key, () => false);
-  const [whyOpen, setWhyOpen] = useKeyed(key, () => false);
 
   // A draft that comes back, from a send taken back or refused, shows in the reply box.
   useEffect(() => {
@@ -102,7 +95,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   }, [note]);
 
   useEffect(() => {
-    track('card-shown', { task: session.id, decision: key ?? undefined, kind, advice: done ? done.confidence : null, deck });
+    track('card-shown', { task: session.id, decision: key ?? undefined, kind, deck });
   }, [session.id, key]);
 
   // An outside change brings the card in; a deal runs its own transition.
@@ -115,13 +108,9 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     if (scroll.current) scroll.current.scrollTop = 0;
   }, [kind, key]);
 
-  useEffect(() => {
-    if (whyOpen) why.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [whyOpen]);
-
   const open = kind === 'idle' || (asks && composing);
   const box: Note = { open: asks && composing, text: draft.text, files: readyPaths(draft), uploading: uploading(draft) };
-  const primary = primaryOf(session, frozen, { composer: box, picks: menu ? picks : undefined, replies: round ? replies : undefined });
+  const primary = primaryOf(session, { composer: box, picks: menu ? picks : undefined, replies: round ? replies : undefined });
 
   const focusCard = () => article.current?.focus({ preventScroll: true });
   const compose = () => {
@@ -159,19 +148,6 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     if (r) send(r);
     else setNote('An attachment is still uploading; nothing was sent.');
   };
-  const edit = () => {
-    if (!done) return;
-    editDraft(session.id, (d) => ({ ...d, text: suggestionText(done) }));
-    compose();
-  };
-  const toggleWhy = () => {
-    if (!decision) return;
-    if (!whyOpen) {
-      const e = explanationFor(session, decision.key);
-      if (!e || e.state === 'failed') elaborate(session, decision.key);
-    }
-    setWhyOpen(!whyOpen);
-  };
   const pickInMenu = (question: number, label: string) => {
     if (!lone) return toggle(question, label);
     if (queue.guarded()) return;
@@ -185,10 +161,6 @@ export function Card({ session, repos, deck, enter }: CardProps) {
   const decline = () => {
     if (!queue.guarded()) send(declining(session));
   };
-  const accept = () => {
-    const r = acceptance(session);
-    if (r && !queue.guarded()) send(r);
-  };
   const archiveIt = () => {
     if (!queue.guarded()) archive(session, name);
   };
@@ -198,9 +170,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     options: options.length,
     questions: questions.map((x) => x.options.length),
     lone,
-    suggestion: !!done && decision !== null,
     primary: !primary.disabled && primary.press !== null,
-    why: whyOpen,
     composing: asks && composing,
   };
   const act = (a: Action) => {
@@ -211,33 +181,23 @@ export function Card({ session, repos, deck, enter }: CardProps) {
     else if (a.type === 'previous') queue.previous();
     else if (a.type === 'details') setHidden(!hidden);
     else if (a.type === 'compose') compose();
-    else if (a.type === 'edit') edit();
-    else if (a.type === 'elaborate') toggleWhy();
     else if (a.type === 'open') openSheet(session.id, a.tab);
     else if (a.type === 'archive') archiveIt();
-    else if (a.type === 'close' && a.what === 'why') setWhyOpen(false);
     else if (a.type === 'close') closeComposer();
   };
   useFront({ card: keys, act });
 
-  const learnings = session.summary?.learnings ?? [];
-  const rankReason = session.rankReason && (
-    <em className={styles.reason} data-explain="Why it sits here in the queue; a model ranks the open decisions">{session.rankReason}</em>
-  );
-  const mine = session.priority && metaChip(`${session.priority === 'high' ? 'High' : 'Low'} priority`, 'Your priority for this task, from More actions; the ranking weighs it with everything else');
   let meta: ReactNode;
   if (kind === 'ask') {
-    meta = <><Age at={session.question?.askedAt ?? session.updatedAt} prefix="asked " />{metaChip(session.question?.category ?? '', 'The kind of question, as Claude classified it')}{mine}{rankReason}</>;
-  } else if (kind === 'turn') {
-    meta = <><Age at={session.summary?.at ?? session.updatedAt} prefix="asked " />{metaChip("from Claude's last message", "Claude ended its turn with a choice for you; a model read it from its last message")}{mine}{rankReason}</>;
+    meta = <><Age at={session.question?.askedAt ?? session.updatedAt} prefix="asked " />{metaChip(session.question?.category ?? '', 'The kind of question, as Claude classified it')}</>;
   } else if (menu) {
-    meta = <><Age at={menu.at} prefix="asked " />{metaChip('asked in the terminal', 'Claude opened a choice menu in its terminal; answering here picks the options there for you')}{mine}{rankReason}</>;
+    meta = <><Age at={menu.at} prefix="asked " />{metaChip('asked in the terminal', 'Claude opened a choice menu in its terminal; answering here picks the options there for you')}</>;
   } else if (round) {
     const n = round.questions.length;
-    meta = <><Age at={round.at} prefix="asked " />{metaChip(n === 1 ? '1 question' : `${n} questions`, 'Claude asked these at once; answer each on its own and send them together')}{mine}{rankReason}</>;
+    meta = <><Age at={round.at} prefix="asked " />{metaChip(n === 1 ? '1 question' : `${n} questions`, 'Claude asked these at once; answer each on its own and send them together')}</>;
   } else if (kind === 'prompt') {
     meta = <><Age at={session.updatedAt} />{session.tty && <code className={styles.tty} data-explain="The terminal device Claude runs on">{session.tty}</code>}</>;
-  } else meta = <Age at={session.summary?.at ?? session.updatedAt} prefix="finished " />;
+  } else meta = <Age at={session.updatedAt} prefix="finished " />;
 
   const composer = {
     focus: focusAsk,
@@ -281,10 +241,7 @@ export function Card({ session, repos, deck, enter }: CardProps) {
             <span className={styles.more}><ClearButton session={session} /><SessionMenu session={session} worktree={worktree} name={name} /></span>
           </nav>
         </div>
-        <div className={styles.meta}>
-          <ParentCrumb session={session} />
-          {meta}
-        </div>
+        <div className={styles.meta}>{meta}</div>
       </header>
       <div ref={scroll} className={styles.scroll} data-scroll>
         <div className={styles.layout}>
@@ -294,32 +251,14 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               <DecisionBody
                 session={session}
                 decision={decision}
-                kind={kind as 'ask' | 'turn'}
-                advice={advice}
-                frozen={frozen}
-                accepting={primary.press !== null && !('intent' in primary.press) && primary.press.action === 'accept-advice'}
                 hidden={hidden}
                 onDetails={() => setHidden(!hidden)}
-                whyOpen={whyOpen}
-                whyRef={why}
-                onCloseWhy={() => setWhyOpen(false)}
                 onPick={pick}
-                onAccept={accept}
-                onEdit={edit}
                 composer={open ? composer : null}
               />
             )}
             {menu && (
-              <MenuBody
-                session={session}
-                menu={menu}
-                picks={picks}
-                advice={advice}
-                onPick={pickInMenu}
-                onOther={answerOwn}
-                onPicks={setPicks}
-                onSubmit={pressPrimary}
-              />
+              <MenuBody menu={menu} picks={picks} onPick={pickInMenu} onOther={answerOwn} onSubmit={pressPrimary} />
             )}
             {round && (
               <div className={styles.round}>
@@ -332,18 +271,11 @@ export function Card({ session, repos, deck, enter }: CardProps) {
             )}
             {kind === 'prompt' && <PromptBody session={session} />}
             {kind === 'idle' && <TurnBody session={session} />}
-            {learnings.length > 0 && (
-              <div className={styles.know} data-know>
-                <span className={styles.knowLabel}>Worth knowing</span>
-                {learnings.map((k) => <span key={k}>{k}</span>)}
-                <CopyButton value={learnings.join('\n\n')} what="Worth knowing" />
-              </div>
-            )}
             {(kind === 'ask' || menu || round) && session.lastMessage && (
               <div className={styles.reply} data-reply><LatestReply key={session.lastMessage} text={session.lastMessage} /></div>
             )}
           </div>
-          <TaskRail session={session} summaryText={kind !== 'idle'} />
+          <TaskRail session={session} />
         </div>
       </div>
       <footer className={styles.foot} data-kind={kind} data-guarding={guarded || undefined}>
@@ -378,11 +310,6 @@ export function Card({ session, repos, deck, enter }: CardProps) {
               onClick={() => (composing ? closeComposer() : compose())}
             >
               {round ? 'Write instead' : 'Write my own'} <kbd>W</kbd>
-            </button>
-          )}
-          {decision && (
-            <button type="button" className={styles.secondary} aria-pressed={whyOpen} {...explain(SENDS.elaborate)} onClick={toggleWhy}>
-              Elaborate <kbd>Y</kbd>
             </button>
           )}
           {kind === 'idle' && (

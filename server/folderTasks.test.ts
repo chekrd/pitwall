@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { repos } from './db.ts';
 import { folderArgs, folderDiff, makeTaskFolder, openWorktree, prWorktree } from './folderTasks.ts';
-import { folders, placeOf, refreshWorkspace, taskFolderOf, taskWorktrees } from './workspace.ts';
+import { folders, refreshWorkspace, taskFolderOf, taskWorktrees } from './workspace.ts';
 
 const env = {
   ...process.env,
@@ -44,7 +44,6 @@ test('a folder with two repositories takes a task that opens a worktree only in 
   await assert.rejects(makeTaskFolder(folder, 'cross-cut'), /already exists/);
   await assert.rejects(makeTaskFolder(folder, 'a b'), /cannot name a branch/);
   assert.deepEqual(taskWorktrees(task), []);
-  assert.match(placeOf({ repoId: null, worktree: task }), /none yet/);
 
   const opened = await openWorktree({ repo: 'API', task_folder: `${task}/` });
   assert.deepEqual(opened, { path: join(task, 'api'), branch: 'cross-cut', base: 'main', setup: null });

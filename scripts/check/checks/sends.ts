@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import { sleep, until } from '../cdp.ts';
-import { actions, byText, card, dealt, frontIs, HELD_MS, logged, matches, openQueue, pastePng, pillAt, POSTED_MS, pressEnter, ready, replyIn, sent, stateOf, still, toastsOf, unguarded, watchDeals, type Check } from '../helpers.ts';
+import { actions, byText, card, dealt, frontIs, HELD_MS, logged, matches, openQueue, pastePng, pillAt, POSTED_MS, pressEnter, ready, replyIn, still, toastsOf, unguarded, watchDeals, type Check } from '../helpers.ts';
 
 export const sends: Check[] = [
   {
-    name: 'P5.2.1 ⏎ on s-cart deals it down and s-hooks comes up; the toast says Sending: “Merge both carts” on one line of a set width, counts down and offers Undo Esc; the meter counts 2 decisions; 5 s on, one accept-advice goes out with the second opinion it showed',
+    name: 'P5.2.1 ⏎ on s-cart deals it down and s-hooks comes up; the toast says Sending: “Merge both carts” on one line of a set width, counts down and offers Undo Esc; the meter counts 2 decisions; 5 s on, one answer goes out with the option Claude recommends',
     async run({ page, mock, shot }) {
-      const { advice } = await stateOf(mock, 's-cart');
       await openQueue(page, mock);
       await ready(page, 's-cart');
       await page.eval(watchDeals);
@@ -25,7 +24,7 @@ export const sends: Check[] = [
       ]);
       await shot('queue-held');
       const sent = await logged(mock, 'the held send', (e) => e.method === 'POST' && e.action !== null, POSTED_MS);
-      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.body, e.status]), [['accept-advice', 's-cart', { key: 'q:toolu_01Cart', adviceAt: advice.at }, 204]]);
+      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.body, e.status]), [['answer', 's-cart', { key: 'q:toolu_01Cart', choice: 'Merge both carts' }, 204]]);
       assert.ok(sent[0].at - pressed >= 4900, `posted ${sent[0].at - pressed} ms after ⏎`);
     },
   },
@@ -65,92 +64,6 @@ export const sends: Check[] = [
     },
   },
   {
-    name: 'P5.2.3 the choice frozen while the second opinion runs stays: with Send “Merge both carts” shown, advice that finishes on Ask the shopper shows on option 3, option 1 keeps the highlight, and ⏎ answers Merge both carts, not the advice',
-    clock: 'fast',
-    scenario: 'freeze',
-    async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      assert.equal((await page.eval(card))!.primary, 'Send “Merge both carts”');
-      await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
-      const third = await page.until('the late second opinion on option 3', () => {
-        const option = document.querySelector('[data-card] [data-option="3"]')?.parentElement;
-        return option?.innerText.includes("Second opinion's pick · 71%") && option.innerText;
-      });
-      assert.match(third, /Ask the shopper, because it fits what the task asks for\./);
-      const frozen = await page.eval(() => [...document.querySelectorAll('[data-card] [data-frozen] [data-option]')].map((o) => (o as HTMLElement).dataset.option));
-      assert.deepEqual([frozen, (await page.eval(card))!.primary], [['1'], 'Send “Merge both carts”']);
-      await shot('queue-freeze');
-      await page.until('the guard to end', unguarded);
-      await page.key('Enter');
-      await logged(mock, 'the send', sent, POSTED_MS);
-      assert.deepEqual((await actions(mock)).map((e) => [e.action, e.body]), [['answer', { key: 'q:toolu_01Cart', choice: 'Merge both carts' }]]);
-    },
-  },
-  {
-    name: 'P5.2.4 a second opinion that came in after the freeze is accepted by its own digit: 3 sends accept-advice with the new advice\'s at',
-    clock: 'fast',
-    scenario: 'freeze',
-    async run({ page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      const advice = await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
-      await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes("Second opinion's pick · 71%"));
-      await page.until('the guard to end', unguarded);
-      await page.key('3');
-      await logged(mock, 'the send', sent, POSTED_MS);
-      assert.deepEqual((await actions(mock)).map((e) => [e.action, e.body]), [['accept-advice', { key: 'q:toolu_01Cart', adviceAt: advice.at }]]);
-    },
-  },
-  {
-    name: 'P5.2.5 advice that changes after the freeze relabels the primary to Send “Merge both carts”, guarded about 0.9 s, and ⏎ answers with that choice instead of accepting',
-    async run({ page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      assert.equal((await page.eval(card))!.primary, 'Accept suggestion');
-      await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Merge both carts' });
-      const changed = Date.now();
-      await page.until('the relabel, guarded', () => {
-        const c = document.querySelector<HTMLElement>('[data-card] [data-primary]');
-        return c?.firstElementChild?.textContent === 'Send “Merge both carts”' && c.hasAttribute('data-guarded');
-      });
-      await page.until('the guard to end', unguarded);
-      const held = Date.now() - changed;
-      assert.ok(held > 700 && held < 1600, `the guard ended ${held} ms after the advice changed`);
-      await page.key('Enter');
-      await logged(mock, 'the send', sent, POSTED_MS);
-      assert.deepEqual((await actions(mock)).map((e) => [e.action, e.body]), [['answer', { key: 'q:toolu_01Cart', choice: 'Merge both carts' }]]);
-    },
-  },
-  {
-    name: 'P5.2.6 the server refuses an accept whose advice changed during the hold: 400 advice-changed, the toast Not sent to Merge guest cart on login: the second opinion changed; read it again, s-cart back as peek 1 marked Not sent, and Show brings it to the front with the banner',
-    clock: 'fast',
-    expectedErrors: [/status of 400/],
-    async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.key('Enter');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Merge both carts' });
-      const [refused] = await logged(mock, 'the refused accept', (e) => e.action === 'accept-advice', POSTED_MS);
-      assert.deepEqual([refused.status, refused.code], [400, 'advice-changed']);
-      const [error] = await page.until('the error toast', toastsOf, 'error');
-      assert.equal(error.text, 'Not sent to Merge guest cart on login: the second opinion changed; read it again\nShow');
-      const [first] = await page.until('s-cart as peek 1', () => {
-        const p = document.querySelector<HTMLElement>('[data-peek="1"]');
-        return p?.dataset.session === 's-cart' && [p.innerText];
-      });
-      assert.match(first, /not sent/i);
-      assert.equal((await page.eval(card))!.session, 's-hooks');
-      await shot('queue-not-sent-peek');
-      await page.click('[data-toast][data-kind="error"] button', 'Show');
-      await page.until('s-cart at the front', frontIs, 's-cart');
-      assert.equal(await page.eval(() => document.querySelector('[data-card] [data-not-sent]')?.textContent), 'Not sent: the second opinion changed; read it again');
-      await page.until('the card to settle', still);
-      await shot('queue-not-sent-banner');
-    },
-  },
-  {
     name: 'P5.2.7 the key guard: ⏎ as the first card comes up does nothing; two ⏎ 300 ms apart hold one send, and two 650 ms apart one more while the card after it stays; an auto-repeated ⏎ does nothing, and a double click on an option holds it once',
     async run({ holds, page, mock }) {
       await openQueue(page, mock);
@@ -161,6 +74,8 @@ export const sends: Check[] = [
       await page.until('s-hooks at the front', frontIs, 's-hooks');
       assert.equal((await page.eval(toastsOf, 'undo'))?.length, 1);
       await page.until('the guard to end', unguarded);
+      await page.key('1');
+      await page.key('4');
       await page.eval(pressEnter, [650]);
       await page.until('s-group at the front', frontIs, 's-group');
       await holds('the second ⏎ to leave the card after it', 400, async () => (await page.eval(card))!.session === 's-group');
@@ -171,7 +86,7 @@ export const sends: Check[] = [
       await page.until('s-astro at the front', frontIs, 's-astro');
       await until('the three held sends', async () => (await actions(mock)).length >= 3, POSTED_MS);
       assert.deepEqual((await actions(mock)).map((e) => [e.sessionId, e.action, e.body.choice ?? null]).toSorted(byText), [
-        ['s-cart', 'accept-advice', null], ['s-group', 'answer', 'By repo'], ['s-hooks', 'answer-menu', null],
+        ['s-cart', 'answer', 'Merge both carts'], ['s-group', 'answer', 'By repo'], ['s-hooks', 'answer-menu', null],
       ]);
     },
   },
@@ -186,37 +101,6 @@ export const sends: Check[] = [
       await page.until('the details hidden', () => document.querySelector('[data-card] section[aria-label="Claude\'s details"] button')?.getAttribute('aria-expanded') === 'false');
       assert.deepEqual([(await page.eval(card))!.session, await page.eval(toastsOf, 'undo')], ['s-cart', null]);
       await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
-    },
-  },
-  {
-    name: 'P5.2.9 the menu: its picks start as the second opinion\'s, Accept suggestion; 4 unpicks Email the account owner, Send answer; Use the suggestion picks them again; an empty question 2 reads Answer both questions, off; picked again, ⏎ sends answer-menu with the picks on screen',
-    clock: 'fast',
-    async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await page.key('ArrowRight');
-      await ready(page, 's-hooks');
-      const primary = () => [document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent, document.querySelector<HTMLButtonElement>('[data-card] [data-primary]')?.disabled];
-      const picks = () => [...document.querySelectorAll('[data-card] section[role="group"]')].map((q) => [...q.querySelectorAll('[aria-pressed="true"]')].map((o) => o.querySelector('span span')?.textContent));
-      assert.deepEqual(await page.eval(primary), ['Accept suggestion', false]);
-      await page.key('4');
-      await page.until('Send answer', (label: string) => document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent === label, 'Send answer');
-      await page.click('[data-card] button', 'Use the suggestion');
-      await page.until('Accept suggestion', (label: string) => document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent === label, 'Accept suggestion');
-      assert.deepEqual(await page.eval(picks), [['Exponential, 5 tries'], ['Email the account owner', 'Disable the endpoint']]);
-      await page.key('4');
-      await page.key('6');
-      await page.until('Answer both questions', (label: string) => document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent === label, 'Answer both questions');
-      assert.deepEqual(await page.eval(primary), ['Answer both questions', true]);
-      await page.key('5');
-      await page.until('Send answer', (label: string) => document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent === label, 'Send answer');
-      const onScreen = await page.eval(picks);
-      await shot('queue-menu-picks');
-      await page.key('Enter');
-      await page.until('s-group at the front', frontIs, 's-group');
-      const [sent] = await logged(mock, 'the menu answer', (e) => e.action === 'answer-menu', POSTED_MS);
-      assert.deepEqual([sent.status, sent.body.toolUseId], [204, 'toolu_01Hooks']);
-      assert.deepEqual(sent.body.answers, onScreen.map((labels) => ({ labels, other: '' })));
-      assert.deepEqual(onScreen, [['Exponential, 5 tries'], ['Post to #billing-alerts']]);
     },
   },
   {
@@ -293,7 +177,7 @@ export const sends: Check[] = [
       await page.click('[data-card] footer button', 'Dismiss');
       await page.until('s-hooks at the front', frontIs, 's-hooks');
       assert.deepEqual(await page.eval(dealt), ['side']);
-      assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Dismissing “What should happen to a guest cart when the shopper logs in\?”\s*· [1-5] s\s+Undo\s+Esc$/);
+      assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Dismissing “Guest cart or account cart when a shopper logs in\?”\s*· [1-5] s\s+Undo\s+Esc$/);
       const [sent] = await logged(mock, 'the dismissal', (e) => e.action === 'dismiss', POSTED_MS);
       assert.deepEqual([sent.sessionId, sent.status, sent.body], ['s-cart', 204, { key: 'q:toolu_01Cart' }]);
     },
@@ -376,7 +260,7 @@ export const sends: Check[] = [
     },
   },
   {
-    name: 'P5.2.16 the early check: an answer held on s-group whose turn moves on (lastTurn t9) fails with Not sent to Group board tiles by repo: this question is no longer open, and nothing is posted',
+    name: 'P5.2.16 the early check: an answer held on s-group whose question is replaced fails with Not sent to Group board tiles by repo: this question is no longer open, and nothing is posted',
     clock: 'fast',
     async run({ holds, page, mock }) {
       await openQueue(page, mock);
@@ -384,7 +268,7 @@ export const sends: Check[] = [
       await ready(page, 's-group');
       await page.key('1');
       await page.until('s-astro at the front', frontIs, 's-astro');
-      await mock.post('/mock/patch', { id: 's-group', patch: { lastTurn: 't9' } });
+      await mock.post('/mock/patch', { id: 's-group', patch: { question: { toolUseId: 'toolu_02Group' } } });
       const [error] = await page.until('the error toast', toastsOf, 'error');
       assert.equal(error.text, 'Not sent to Group board tiles by repo: this question is no longer open\nShow');
       await holds('nothing to go out', HELD_MS, async () => !(await actions(mock)).length);
@@ -402,7 +286,7 @@ export const sends: Check[] = [
       await page.type('Group by repo, attention inside');
       await page.key('Enter');
       await page.until('s-astro at the front', frontIs, 's-astro');
-      await mock.post('/mock/patch', { id: 's-group', patch: { lastTurn: 't9', status: 'working', activity: { step: 'Edit web/src/order.ts', since: Date.now() } } });
+      await mock.post('/mock/patch', { id: 's-group', patch: { question: null, lastTurn: 't9', status: 'working', activity: { step: 'Edit web/src/order.ts', since: Date.now() } } });
       const [error] = await page.until('the error toast', toastsOf, 'error');
       assert.equal(error.text, 'Not sent to Group board tiles by repo: this question is no longer open\nShow');
       await page.click('[data-toast][data-kind="error"] button', 'Show');
@@ -450,7 +334,7 @@ export const sends: Check[] = [
         const posted = await actions(mock);
         return posted.length && posted;
       }, POSTED_MS);
-      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['accept-advice', 's-cart', 204]]);
+      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['answer', 's-cart', 204]]);
       assert.ok(sent[0].at - pressed > 8000, `posted ${sent[0].at - pressed} ms after ⏎, inside the drop`);
       await holds('the send to go out once', 1000, async () => (await actions(mock)).length === 1);
     },
@@ -464,7 +348,7 @@ export const sends: Check[] = [
       const pressed = Date.now();
       await sleep(300);
       await page.goto('about:blank');
-      const [sent] = await logged(mock, 'the answer posted on pagehide', (e) => e.action === 'accept-advice');
+      const [sent] = await logged(mock, 'the answer posted on pagehide', (e) => e.action === 'answer');
       assert.deepEqual([sent.sessionId, sent.status], ['s-cart', 204]);
       assert.ok(sent.at - pressed < 2000, `posted ${sent.at - pressed} ms after the press`);
     },

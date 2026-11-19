@@ -42,9 +42,6 @@
     --idle: light-dark(#1a1712, #f4efe7);
     --idle-line: light-dark(rgb(26 23 18 / 0.38), rgb(244 239 231 / 0.4));
     --work: light-dark(#4c6079, #9db1c7);
-    --know: light-dark(#1f56c8, #8cc0ff);
-    --know-tint: light-dark(#ebf1ff, rgb(140 192 255 / 0.085));
-    --know-line: light-dark(#86a6ea, rgb(140 192 255 / 0.5));
     --danger: light-dark(#b93427, #ff8070);
     --ok: light-dark(#19764a, #5ad69a);
     --ok-ring: light-dark(rgb(25 118 74 / 0.14), rgb(90 214 154 / 0.16));

@@ -24,11 +24,11 @@ export const queueCard: Check[] = [
     },
   },
   {
-    name: 'P5.1.2 the card header names the branch and the task, Overview, Diff and Artifacts 2 but no repo; the meta has the rank reason and no rank number; Artifacts 2, O and D open the sheet',
+    name: 'P5.1.2 the card header names the branch and the task, Overview, Diff and Artifacts 2 but no repo; the meta has how long ago it was asked and its kind; Artifacts 2, O and D open the sheet',
     async run({ page, mock }) {
       await openQueue(page, mock);
       const { header } = (await page.eval(card))!;
-      for (const text of ['guest-cart-merge', 'Merge guest cart on login', 'Overview', 'Diff', 'Artifacts 2', 'Blocks the checkout fix; Claude idles until you answer']) assert.ok(header.includes(text), `the header lacks ${text}:\n${header}`);
+      for (const text of ['guest-cart-merge', 'Merge guest cart on login', 'Overview', 'Diff', 'Artifacts 2', 'asked 10m ago', 'product decision']) assert.ok(header.includes(text), `the header lacks ${text}:\n${header}`);
       assert.ok(!header.includes('storefront'), 'the header names storefront');
       assert.doesNotMatch(header, /#\d/);
       const closed = () => !document.querySelector('#task-sheet') && location.pathname === '/';
@@ -45,15 +45,15 @@ export const queueCard: Check[] = [
     },
   },
   {
-    name: 'P5.1.3 the decision fits the window and the page does not scroll: the headline, the brief, the details, all three options with their descriptions, the suggestion, and the task\'s rail with its goal and Session summary show; in a narrower window each starts in view, in the card\'s scroll area; Worth knowing and Claude\'s latest reply follow in that one scroll area',
+    name: 'P5.1.3 the decision fits the window and the page does not scroll: the headline, the details, all three options with their descriptions, and the task\'s rail with its goal show; in a narrower window each starts in view, in the card\'s scroll area; Claude\'s latest reply follows in that one scroll area',
     async run({ page, mock, look, shot }) {
       await openQueue(page, mock);
       await page.until('the card to settle', still);
       const fit = await page.eval(() => ({ card: !!document.querySelector('[data-card]'), scroll: document.scrollingElement!.scrollHeight, height: innerHeight }));
       assert.equal(fit.scroll, fit.height, 'the page scrolls');
       const parts = [
-        '[data-card]', '[data-card] h1', '[data-card] h1 + p', '[data-card] section[aria-label="Claude\'s details"]',
-        '[data-card] [data-option="1"]', '[data-card] [data-option="2"]', '[data-card] [data-option="3"]', '[data-card] [data-suggestion]', '[data-card] [data-primary]',
+        '[data-card]', '[data-card] h1', '[data-card] section[aria-label="Claude\'s details"]',
+        '[data-card] [data-option="1"]', '[data-card] [data-option="2"]', '[data-card] [data-option="3"]', '[data-card] [data-primary]',
         // A narrower card puts the rail under the decision.
         ...(look.width >= 1440 ? ['[data-card] [data-rail]'] : []),
       ];
@@ -67,39 +67,22 @@ export const queueCard: Check[] = [
       assert.deepEqual(options.map((o) => o[0]), ['1', '2', '3']);
       const text = (await page.eval(card))!.text;
       for (const part of [
-        'Guest carts live in a cookie that expires after 24 h', 'What should happen to a guest cart when the shopper logs in?', 'Both carts can hold items; today the guest cart is silently dropped.',
-        "CLAUDE'S DETAILS", 'Add up quantities per product, capped at stock; a toast lists anything trimmed', 'Drop the guest cart as today, but tell the shopper',
+        'Guest cart or account cart when a shopper logs in?', "CLAUDE'S DETAILS", 'Add up quantities per product, capped at stock; a toast lists anything trimmed', 'Drop the guest cart as today, but tell the shopper',
         'A choice dialog after login; one more step before checkout', "CLAUDE'S LATEST REPLY", 'I drafted mergeCarts() in src/cart/mergeCarts.ts',
       ]) assert.ok(text.includes(part), `the card lacks ${part}`);
       const rail = await page.eval(() => document.querySelector<HTMLElement>('[data-card] [data-rail]')!.innerText);
-      for (const part of ['TASK', 'Shoppers lose their guest cart when they log in (CHK-412).', 'SESSION SUMMARY', 'Cart merge drafted with stock caps', 'Found CartService.mergeOnLogin is a no-op']) {
+      for (const part of ['TASK', 'Shoppers lose their guest cart when they log in (CHK-412).']) {
         assert.ok(rail.includes(part), `the rail lacks ${part}:\n${rail}`);
       }
       await shot('queue-fit');
-      for (const selector of ['[data-card] [data-know]', '[data-card] [data-reply]', '[data-card] [data-rail]']) {
+      for (const selector of ['[data-card] [data-reply]', '[data-card] [data-rail]']) {
         await page.eval((sel: string) => document.querySelector(sel)!.scrollIntoView({ block: 'nearest' }), selector);
         await page.until(`${selector} to show whole`, whole, selector);
       }
     },
   },
   {
-    name: 'P5.1.4 option 1 carries Second opinion\'s pick · 82% and Claude recommends, the reply, the reasoning, Edit E and high confidence, with the frozen highlight; the primary reads Accept suggestion',
-    async run({ page, mock }) {
-      await openQueue(page, mock);
-      const first = await page.eval(() => {
-        const option = document.querySelector('[data-card] [data-option="1"]')!.parentElement as HTMLElement;
-        return { frozen: option.hasAttribute('data-frozen'), others: [...document.querySelectorAll('[data-card] [data-option]')].filter((o) => o.parentElement!.hasAttribute('data-frozen')).length, text: option.innerText };
-      });
-      assert.deepEqual([first.frozen, first.others], [true, 1]);
-      for (const part of [
-        "Second opinion's pick · 82%", 'Claude recommends', 'Merge both carts. Cap each line at available stock and show a toast listing anything trimmed.',
-        'CHK-412 says a cart must never lose items', 'Edit\nE', 'high confidence you agree',
-      ]) assert.ok(first.text.includes(part), `option 1 lacks ${part}:\n${first.text}`);
-      assert.equal((await page.eval(card))!.primary, 'Accept suggestion');
-    },
-  },
-  {
-    name: 'P5.1.5 → skips to s-hooks, a menu whose questions stand side by side numbered 1–3 and 4–6 over the band Second opinion · 64% · medium, and focus moves onto it from the card that went; five more come back to s-cart, and ← brings the last card, Fix broken doc anchors',
+    name: 'P5.1.5 → skips to s-hooks, a menu whose questions stand side by side numbered 1–3 and 4–6, and focus moves onto it from the card that went; five more come back to s-cart, and ← brings the last card, Fix broken doc anchors',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await page.eval(() => document.querySelector<HTMLElement>('[data-card] [data-option="2"]')!.focus());
@@ -109,11 +92,9 @@ export const queueCard: Check[] = [
       const menu = await page.eval(() => ({
         columns: [...document.querySelectorAll('[data-card] section[role="group"]')].map((q) => [...q.querySelectorAll<HTMLElement>('[data-option]')].map((o) => o.dataset.option)),
         tops: [...document.querySelectorAll('[data-card] section[role="group"]')].map((q) => Math.round(q.getBoundingClientRect().top)),
-        band: document.querySelector<HTMLElement>('[data-card] [data-advice]')?.innerText ?? '',
       }));
       assert.deepEqual(menu.columns, [['1', '2', '3'], ['4', '5', '6']]);
       assert.equal(menu.tops[0], menu.tops[1], 'the questions are not side by side');
-      assert.match(menu.band, /^Second opinion · 64% · medium/);
       await page.until('the card to settle', still);
       await shot('queue-menu');
       for (const id of ['s-group', 's-astro', 's-reviews', 's-anchors', 's-cart']) {
@@ -145,48 +126,6 @@ export const queueCard: Check[] = [
       await page.key('ArrowLeft');
       await page.until('s-cart again', frontIs, 's-cart');
       assert.deepEqual(await page.eval(details), { shown: true, toggle: 'Hide Space', expanded: 'true' });
-    },
-  },
-  {
-    name: 'P5.1.7 Elaborate: Y opens the explanation below the details, which stay, and asks for it once; it arrives about 1.2 s later; Y closes it. On s-group it fails with Could not explain: … and Retry asks again',
-    async run({ page, mock, shot }) {
-      await mock.post('/mock/patch', { id: 's-cart', patch: { explanation: null } });
-      await openQueue(page, mock);
-      await page.key('y');
-      const below = (text: string) => {
-        const why = document.querySelector<HTMLElement>('[data-card] [data-elaborate]');
-        const details = document.querySelector<HTMLElement>('[data-card] section[aria-label="Claude\'s details"]');
-        return !!why && !!details && why.innerText.includes(text) && details.innerText.includes('CartService.mergeOnLogin') &&
-          !!(details.compareDocumentPosition(why) & Node.DOCUMENT_POSITION_FOLLOWING) && details.parentElement === why.parentElement;
-      };
-      await page.until('the explanation loading below the details', below, 'Reading the code to explain this…');
-      const [asked] = await logged(mock, 'the request for the explanation', (e) => e.action === 'elaborate');
-      assert.deepEqual([asked.sessionId, asked.body, asked.status], ['s-cart', { key: 'q:toolu_01Cart' }, 204]);
-      await page.until('the explanation', below, 'Background.');
-      const took = Date.now() - asked.at;
-      assert.ok(took > 900 && took < 3000, `the explanation came ${took} ms after the request`);
-      assert.equal(await page.eval(() => document.querySelector('[data-card] footer button[aria-pressed="true"]')?.textContent), 'Elaborate Y');
-      await page.until('the card to settle', still);
-      await shot('queue-elaborate');
-      await page.key('y');
-      await page.until('the explanation to close', () => !document.querySelector('[data-card] [data-elaborate]'));
-      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('[data-card] section[aria-label="Claude\'s details"]')?.innerText.includes('CartService.mergeOnLogin')), true);
-      assert.equal((await mock.log()).filter((e) => e.action === 'elaborate').length, 1);
-
-      await page.click('[data-peek="2"] > span');
-      await page.until('s-group at the front', frontIs, 's-group');
-      await page.key('y');
-      const failed = await page.until('the failure', () => {
-        const why = document.querySelector<HTMLElement>('[data-card] [data-elaborate="failed"]');
-        return why?.innerText.includes('Retry') && why.innerText;
-      });
-      assert.match(failed, /Could not explain: the explanation run timed out after 300 s/);
-      await page.click('[data-card] [data-elaborate] button', 'Retry');
-      const asks = await until('the second request', async () => {
-        const found = (await mock.log()).filter((e) => e.action === 'elaborate' && e.sessionId === 's-group' && e.status !== null);
-        return found.length === 2 && found;
-      });
-      assert.deepEqual(asks.map((e) => [e.body.key, e.status]), [['s:t-group-4', 204], ['s:t-group-4', 204]]);
     },
   },
   {
@@ -242,20 +181,7 @@ export const queueCard: Check[] = [
     },
   },
   {
-    name: 'P5.1.9 E opens the reply box with the second opinion\'s reply, focused',
-    async run({ page, mock }) {
-      await openQueue(page, mock);
-      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
-      await page.key('e');
-      const box = await page.until('the reply box', () => {
-        const field = document.querySelector<HTMLTextAreaElement>('[data-card] textarea');
-        return field && { value: field.value, focused: document.activeElement === field };
-      });
-      assert.deepEqual(box, { value: 'Merge both carts. Cap each line at available stock and show a toast listing anything trimmed.', focused: true });
-    },
-  },
-  {
-    name: 'P5.1.10 a click on peek 2 brings s-group to the front; the 5th meter segment shows Lazy-load product reviews as a Your-turn card with its summary, latest reply, Session summary, and in the footer only the reply box and Archive X, on one row',
+    name: 'P5.1.10 a click on peek 2 brings s-group to the front; the 5th meter segment shows Lazy-load product reviews as a Your-turn card with its latest reply, and in the footer only the reply box and Archive X, on one row',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await page.click('[data-peek="2"] > span');
@@ -265,7 +191,7 @@ export const queueCard: Check[] = [
       const shown = (await page.eval(card))!;
       assert.deepEqual([shown.kind, shown.label, shown.primary], ['idle', 'Lazy-load product reviews · Your turn', null]);
       for (const part of [
-        'Reviews now load when scrolled into view', "CLAUDE'S LATEST REPLY", 'The reviews section now loads when it comes within 600 px', 'SESSION SUMMARY', 'Reviews split into a lazy chunk (41 kB)', 'Archive\nX',
+        'Claude finished its turn', "CLAUDE'S LATEST REPLY", 'The reviews section now loads when it comes within 600 px', 'Archive\nX',
       ]) assert.ok(shown.text.includes(part), `the card lacks ${part}`);
       assert.equal(await page.eval(() => !!document.querySelector('[data-card] table')), true);
       const bar = await page.eval(() => {
@@ -308,7 +234,7 @@ export const queueCard: Check[] = [
       await page.key('ArrowRight');
       await page.until('s-hooks at the front', frontIs, 's-hooks');
       const label = (await page.eval(card))!.label;
-      await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 1 });
+      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
       const chip = await page.until('the Just-in chip', () => document.querySelector<HTMLElement>('[data-justin]')?.innerText.trim());
       assert.equal(chip, look.width > 1100 ? 'Just in: Retire the v1 orders API' : 'Just in');
       assert.equal((await page.eval(card))!.label, label);
@@ -373,7 +299,7 @@ export const queueCard: Check[] = [
       assert.deepEqual(await page.eval(() => [location.pathname, document.querySelector('nav[aria-label="View"] a[aria-label="Queue"]')?.getAttribute('href'), !!document.querySelector('[data-card]'), !!document.querySelector('[data-tile]')]), ['/', '/', false, false]);
       assert.equal(await page.eval(() => document.querySelector('main[data-empty] a')?.getAttribute('href')), '/wall');
       await shot('queue-zero');
-      await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 1 });
+      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
       await page.until('the new card at the front', frontIs, 's-new');
       assert.equal(await page.eval(() => location.pathname), '/');
     },
@@ -451,54 +377,6 @@ export const queueCard: Check[] = [
         assert.equal(await page.eval(whole, selector), true, `${selector} does not scroll into view`);
       }
       await shot('queue-long-menu');
-    },
-  },
-  {
-    name: 'P5.1.19 a second opinion still running shows a spinner, a ticking clock, the step and Stop, which stops it at once; Retry asks again; on a menu the band shows running and failed too, and so does the task\'s page',
-    clock: 'fast',
-    async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await page.click('[data-peek="2"] > span');
-      await page.until('s-group at the front', frontIs, 's-group');
-      const running = () => {
-        const box = document.querySelector<HTMLElement>('[data-card] [data-advice="running"]');
-        return box && { text: box.innerText, spinner: !!box.querySelector('[aria-hidden]'), clock: box.querySelector('strong + span')?.textContent ?? null };
-      };
-      const first = await page.until('the running second opinion', running);
-      assert.match(first.text, /^Second opinion in progress\s+\d+:\d\d\s+Stop\s+Read web\/src\/order\.ts$/);
-      assert.equal(first.spinner, true);
-      await page.until('the clock to tick', (clock) => {
-        const box = document.querySelector<HTMLElement>('[data-card] [data-advice="running"]');
-        return !!box && box.querySelector('strong + span')?.textContent !== clock;
-      }, first.clock);
-      await page.until('the card to settle', still);
-      await shot('queue-advice-running');
-      const pressed = Date.now();
-      await page.click('[data-card] [data-advice] button', 'Stop');
-      const [stop] = await logged(mock, 'the stop', (e) => e.action === 'stop-advice');
-      assert.deepEqual([stop.sessionId, stop.body, stop.status], ['s-group', { key: 's:t-group-4' }, 204]);
-      assert.ok(stop.at - pressed < 1000, `stopped ${stop.at - pressed} ms after the press`);
-      const stopped = await page.until('the stopped box', () => document.querySelector<HTMLElement>('[data-card] [data-advice="failed"]')?.innerText);
-      assert.match(stopped, /^Second opinion stopped\s+Retry$/);
-      await page.click('[data-card] [data-advice] button', 'Retry');
-      const [retry] = await logged(mock, 'the retry', (e) => e.action === 'retry-advice');
-      assert.deepEqual([retry.sessionId, retry.body, retry.status], ['s-group', { key: 's:t-group-4' }, 204]);
-
-      await mock.post('/mock/advice', { id: 's-hooks', state: 'thinking' });
-      await page.click('[data-segment][data-session="s-hooks"]');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      const band = await page.until('the band running', running);
-      assert.match(band.text, /^Second opinion in progress\s+\d+:\d\d\s+Stop\s+Read the changed files$/);
-      await mock.post('/mock/advice', { id: 's-hooks', state: 'failed' });
-      const failed = await page.until('the band failed', () => document.querySelector<HTMLElement>('[data-card] [data-advice="failed"]')?.innerText);
-      assert.match(failed, /^Second opinion failed: the advisor gave an empty answer\s+Retry$/);
-      await page.until('the card to settle', still);
-      await shot('queue-menu-advice-failed');
-      await page.key('o');
-      const onPage = await page.until('the failed second opinion on its page', () => document.querySelector<HTMLElement>('#task-sheet [data-queued] [data-advice="failed"]')?.innerText);
-      assert.match(onPage, /^Second opinion failed: the advisor gave an empty answer\s+Retry$/);
-      await mock.post('/mock/advice', { id: 's-hooks', state: 'thinking' });
-      await page.until('the running second opinion on its page', () => !!document.querySelector('#task-sheet [data-queued] [data-advice="running"] button'));
     },
   },
   {
@@ -584,35 +462,6 @@ export const queueCard: Check[] = [
       await page.key('Enter');
       const [focus] = await logged(mock, 'the terminal request', (e) => e.action === 'focus');
       assert.deepEqual([focus.sessionId, focus.status], ['s-hooks', 204]);
-    },
-  },
-  {
-    name: 'P5.1.23 s-group waits for its second opinion with the primary off as Pick an option; when the advice finishes it becomes what ⏎ sends: Suggestion ready · Accept, guarded about 0.9 s, its option highlighted',
-    async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await page.click('[data-peek="2"] > span');
-      await page.until('s-group at the front', frontIs, 's-group');
-      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
-      assert.deepEqual(await page.eval(() => {
-        const c = document.querySelector<HTMLElement>('[data-card]')!;
-        return [c.querySelector('[data-primary]')?.firstElementChild?.textContent, c.querySelector<HTMLButtonElement>('[data-primary]')?.disabled, c.querySelectorAll('[data-frozen]').length];
-      }), ['Pick an option', true, 0]);
-      await mock.post('/mock/advice', { id: 's-group', state: 'done', choice: 'By attention', confidence: 74 });
-      const done = Date.now();
-      const relabelled = await page.until('the relabel', () => {
-        const c = document.querySelector<HTMLElement>('[data-card]')!;
-        const p = c.querySelector<HTMLButtonElement>('[data-primary]')!;
-        return p.hasAttribute('data-guarded') && {
-          label: p.firstElementChild?.textContent, disabled: p.disabled,
-          frozen: [...c.querySelectorAll('[data-frozen] [data-option]')].map((o) => o.textContent?.slice(0, 13)),
-        };
-      });
-      assert.deepEqual(relabelled, { label: 'Suggestion ready · Accept', disabled: false, frozen: ['1By attention'] });
-      await page.until('the guard to end', () => !document.querySelector('[data-card] footer[data-guarding]'));
-      const held = Date.now() - done;
-      assert.ok(held > 700 && held < 1600, `the guard ended ${held} ms after the advice finished`);
-      await page.until('the card to settle', still);
-      await shot('queue-suggestion-ready');
     },
   },
   {
@@ -710,65 +559,27 @@ export const queueCard: Check[] = [
       await page.until('the card after it once focus left', frontIs, 's-hooks');
     },
   },  {
-    name: 'P5.1.d4 a decision without options shows its second opinion as a block of its own, highlighted as what ⏎ accepts, with Edit; Accept suggestion is the primary',
-    scenario: 'freetext',
-    async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await page.click('[data-segment][data-session="s-flag"]');
-      await page.until('s-flag at the front', frontIs, 's-flag');
-      const shown = await page.eval(() => {
-        const block = document.querySelector<HTMLElement>('[data-card] [data-suggestion]')!;
-        return {
-          options: document.querySelectorAll('[data-card] [data-option]').length, frozen: block.hasAttribute('data-frozen'), text: block.innerText,
-          buttons: [...block.querySelectorAll('button')].map((b) => b.textContent),
-        };
-      });
-      assert.deepEqual({ ...shown, text: undefined }, { options: 0, frozen: true, text: undefined, buttons: ['Edit E'] });
-      assert.match(shown.text, /^Second opinion's own answer · 77%\s+Call it `checkout\.mergeGuestCart`, like the other checkout flags\.\s+Every flag in config\/flags\.ts follows checkout\.<feature>\.\s+Edit\s+E\s+high confidence you agree$/);
-      assert.equal((await page.eval(card))!.primary, 'Accept suggestion');
-      await page.until('the card to settle', still);
-      await shot('queue-free-text');
-    },
-  },
-  {
-    name: 'P5.1.d5 an end-of-turn choice read from a long last message shows that whole message as its Context next to the options, Space hides and shows it, and the brief stays one line',
+    name: 'P5.1.d5 a turn that ends asking in plain text is a Your-turn card, not a decision: the whole reply shows under Claude finished its turn, with no options, and the footer holds the reply box and Archive',
     scenario: 'turn-long',
     async run({ page, mock, shot }) {
-      const { lastMessage, summary } = await stateOf(mock, 's-push');
+      const { lastMessage } = await stateOf(mock, 's-push');
       await openQueue(page, mock);
       await page.click('[data-segment][data-session="s-push"]');
       await page.until('s-push at the front', frontIs, 's-push');
-      const shown = () => {
-        const section = document.querySelector<HTMLElement>('[data-card] section[aria-label="Context"]');
-        const lead = document.querySelector<HTMLElement>('[data-card] p[data-explain]');
-        return {
-          text: section?.querySelector<HTMLElement>(':scope > div:last-child:not(:first-child)')?.innerText ?? null,
-          toggle: section?.querySelector('button')?.textContent, expanded: section?.querySelector('button')?.getAttribute('aria-expanded'),
-          options: [...document.querySelectorAll<HTMLElement>('[data-card] [data-option]')].map((o) => o.innerText.split('\n').filter(Boolean)[1]),
-          sideBySide: !!section && section.closest('[data-card]')!.querySelector('[data-option]')!.getBoundingClientRect().left > section.getBoundingClientRect().right,
-          lead: lead && { text: lead.textContent, lines: Math.round(lead.getBoundingClientRect().height / parseFloat(getComputedStyle(lead).lineHeight)) },
-        };
-      };
-      const before = await page.eval(shown);
+      const shown = (await page.eval(card))!;
+      assert.deepEqual([shown.kind, shown.label, shown.primary], ['idle', 'Keep the upload warning across folders · Your turn', null]);
+      assert.ok(shown.text.includes('Claude finished its turn'), shown.text);
       for (const line of ['I dropped that commit locally', 'listingUploads', 'only keeps the warning working', 'Should I push it?']) {
-        assert.ok(before.text?.includes(line), `the Context lacks “${line}”`);
+        assert.ok(shown.text.includes(line), `the reply lacks “${line}”`);
       }
-      assert.ok(!before.text?.includes('7bb08719db4'), "the summarizer's context shows instead of the last message");
-      assert.equal(before.text?.split(/\n+/).filter(Boolean).length, lastMessage.split(/\n+/).filter(Boolean).length);
-      assert.deepEqual({ ...before, text: undefined }, {
-        text: undefined, toggle: 'Hide Space', expanded: 'true', options: ['Push', "Don't push yet"], sideBySide: true,
-        lead: { text: summary.decision.brief, lines: 1 },
-      });
+      assert.ok(lastMessage.endsWith('Should I push it?'));
+      assert.deepEqual(await page.eval(() => [
+        document.querySelectorAll('[data-card] [data-option]').length,
+        document.querySelector('[data-card] footer textarea')?.getAttribute('aria-label'),
+        [...document.querySelectorAll('[data-card] footer button')].some((b) => b.textContent?.startsWith('Archive')),
+      ]), [0, 'Message Claude', true]);
       await page.until('the card to settle', still);
       await shot('queue-turn-long');
-      await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
-      await page.key(' ');
-      assert.deepEqual(await page.until('the context hidden', () => {
-        const section = document.querySelector<HTMLElement>('[data-card] section[aria-label="Context"]');
-        return section && !section.innerText.includes('listingUploads') && section.querySelector('button')?.getAttribute('aria-expanded');
-      }), 'false');
-      await page.key(' ');
-      await page.until('the context shown again', () => !!document.querySelector<HTMLElement>('[data-card] section[aria-label="Context"]')?.innerText.includes('listingUploads'));
     },
   },
 ];

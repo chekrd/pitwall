@@ -28,16 +28,13 @@ export interface Target {
 
 export interface Card {
   kind: Kind;
-  // Ask and end of turn: how many options there are.
+  // An ask: how many options there are.
   options: number;
   // A menu: how many options each question has.
   questions: number[];
   // A menu of one single-choice question, which a pick sends.
   lone: boolean;
-  // A done second opinion, which E copies into the composer.
-  suggestion: boolean;
   primary: boolean;
-  why: boolean;
   composing: boolean;
 }
 
@@ -68,8 +65,6 @@ export type Action =
   | { type: 'previous' }
   | { type: 'details' }
   | { type: 'compose' }
-  | { type: 'edit' }
-  | { type: 'elaborate' }
   | { type: 'open'; tab: 'overview' | 'diff' }
   | { type: 'archive' }
   | { type: 'undo' }
@@ -79,7 +74,7 @@ export type Action =
   | { type: 'keys' }
   | { type: 'tab'; tab: Tab }
   | { type: 'file'; step: 1 | -1 }
-  | { type: 'close'; what: 'why' | 'composer' | 'tooltip' | 'file' }
+  | { type: 'close'; what: 'composer' | 'tooltip' | 'file' }
   | { type: 'back' };
 
 export const KEYS_DIALOG = 'keys';
@@ -101,10 +96,9 @@ interface Row {
 // Digits by the physical key: on many non-US layouts the number row types letters or symbols without Shift.
 const digit = (e: Key) => Number(/^(?:Digit|Numpad)([1-9])$/.exec(e.code)?.[1] ?? 0);
 const named = (...keys: string[]) => (e: Key) => keys.includes(e.key) || keys.includes(e.key.toLowerCase());
-const deciding = (card: Card | null) => card?.kind === 'ask' || card?.kind === 'turn';
 
 function numbered(card: Card | null, n: number): Action | null {
-  if (deciding(card)) return n <= card!.options ? { type: 'option', index: n - 1 } : null;
+  if (card?.kind === 'ask') return n <= card.options ? { type: 'option', index: n - 1 } : null;
   if (card?.kind !== 'menu') return null;
   let at = n - 1;
   for (const [question, count] of card.questions.entries()) {
@@ -121,19 +115,16 @@ function escape(ctx: KeyContext): Action | null {
   if (ctx.tip) return { type: 'close', what: 'tooltip' };
   if (ctx.sheet) return ctx.sheet.narrowed ? { type: 'close', what: 'file' } : { type: 'back' };
   if (ctx.view === 'wall') return ctx.deck ? { type: 'view', to: 'queue' } : null;
-  if (ctx.card?.why) return { type: 'close', what: 'why' };
   return ctx.card?.composing ? { type: 'close', what: 'composer' } : null;
 }
 
 export const KEYS: readonly Row[] = [
   { keys: '1 – 9', help: 'Send that option; in a menu, pick it', scopes: ['queue'], guarded: true, matches: (e) => digit(e) > 0, act: (ctx, e) => numbered(ctx.card, digit(e)) },
-  { keys: '↵', help: 'What the main button says: send the choice, the picks or the answers, or open the terminal; on a finished turn, go to the reply box', scopes: ['queue'], guarded: true, matches: named('Enter'), act: (ctx) => (ctx.card?.primary ? { type: 'primary' } : null) },
+  { keys: '↵', help: 'What the main button says: send Claude\'s recommended option, the picks or the answers, or open the terminal; on a finished turn, go to the reply box', scopes: ['queue'], guarded: true, matches: named('Enter'), act: (ctx) => (ctx.card?.primary ? { type: 'primary' } : null) },
   { keys: '→', help: 'Skip: the card goes to the back of the deck', scopes: ['queue'], repeats: true, matches: named('ArrowRight'), act: (ctx) => (ctx.card && ctx.deck > 1 ? { type: 'skip' } : null) },
   { keys: '←', help: 'Bring the last card back to the front', scopes: ['queue'], repeats: true, matches: named('ArrowLeft'), act: (ctx) => (ctx.card && ctx.deck > 1 ? { type: 'previous' } : null) },
-  { keys: 'Space', help: "Show or hide Claude's details", scopes: ['queue'], matches: named(' '), act: (ctx) => (deciding(ctx.card) ? { type: 'details' } : null) },
-  { keys: 'W', help: 'Write your own answer', scopes: ['queue'], guarded: true, matches: named('w'), act: (ctx) => (deciding(ctx.card) || ctx.card?.kind === 'idle' || ctx.card?.kind === 'round' ? { type: 'compose' } : null) },
-  { keys: 'E', help: 'Edit the suggestion before sending it', scopes: ['queue'], guarded: true, matches: named('e'), act: (ctx) => (deciding(ctx.card) && ctx.card!.suggestion ? { type: 'edit' } : null) },
-  { keys: 'Y', help: 'Elaborate: the background, read from the code', scopes: ['queue'], matches: named('y'), act: (ctx) => (deciding(ctx.card) ? { type: 'elaborate' } : null) },
+  { keys: 'Space', help: "Show or hide Claude's details", scopes: ['queue'], matches: named(' '), act: (ctx) => (ctx.card?.kind === 'ask' ? { type: 'details' } : null) },
+  { keys: 'W', help: 'Write your own answer', scopes: ['queue'], guarded: true, matches: named('w'), act: (ctx) => (ctx.card?.kind === 'ask' || ctx.card?.kind === 'idle' || ctx.card?.kind === 'round' ? { type: 'compose' } : null) },
   { keys: 'O / D', help: 'Open the task on Overview or Diff', scopes: ['queue'], matches: named('o', 'd'), act: (ctx, e) => (ctx.card ? { type: 'open', tab: e.key.toLowerCase() === 'o' ? 'overview' : 'diff' } : null) },
   { keys: 'X', help: 'Archive a finished task', scopes: ['queue'], guarded: true, matches: named('x'), act: (ctx) => (ctx.card?.kind === 'idle' ? { type: 'archive' } : null) },
   { keys: 'Z', help: 'Take back the last send while it waits to go out', scopes: ['queue', 'wall', 'sheet'], matches: named('z'), act: () => ({ type: 'undo' }) },

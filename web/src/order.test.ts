@@ -1,76 +1,63 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { orderTiles } from './order.ts';
-import type { Session } from './types.ts';
+import { orderTiles, waitingSince } from './order.ts';
+import { menu, question, session } from './testing.ts';
+import type { Round, Session } from './types.ts';
 
-const session = (id: string, patch: Partial<Session> = {}): Session => ({
-  id, conversation: id, history: [], repoId: 1, worktree: `/w/${id}`, cwd: `/w/${id}`, pid: 1, tty: '/dev/ttys001', title: id, firstPrompt: null, status: 'idle',
-  question: null, rank: null, rankReason: null, priority: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't1', waitingFor: null,
-  dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null, activity: null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null, model: null, effort: null, context: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null, archived: false,
-  createdAt: 0, updatedAt: 0, ...patch,
-});
-
-const question = (toolUseId: string) => ({ toolUseId, title: 'Which way?', details: 'd', options: [], category: 'plan-problem', askedAt: 1 });
-const endOfTurn = { text: 'h', basis: 't1', at: 1, question: null, decision: { problem: 'Ship it?', brief: 'Tests pass.', options: [{ label: 'Ship' }] } };
-const menu = { toolUseId: 'm1', at: 1, questions: [{ question: 'Colour?', header: 'Colour', multiSelect: false, options: [{ label: 'Red' }] }] };
+const round = (key: string, at: number): Round => ({ key, source: 'tool', title: 'Round', intro: '', at, questions: [] });
 
 const ids = (list: Session[]) => list.map((s) => s.id);
 
-test('decisions come first by rank, unranked ones last, then Needs focus, Your turn, working and ended', () => {
+test('decisions come first, then Needs focus, Your turn, working and ended', () => {
   const { active } = orderTiles([
     session('ended', { status: 'exited' }),
     session('working', { status: 'working' }),
     session('your-turn'),
     session('needs-focus', { status: 'waiting', waitingFor: 'a permission prompt' }),
-    session('unranked', { question: question('q3') }),
-    session('second', { rank: 2, summary: endOfTurn }),
-    session('first', { rank: 1, status: 'waiting', menu }),
+    session('ask', { question: question('q3') }),
+    session('menu', { status: 'waiting', menu: menu('m1') }),
   ]);
-  assert.deepEqual(ids(active), ['first', 'second', 'unranked', 'needs-focus', 'your-turn', 'working', 'ended']);
+  assert.deepEqual(ids(active), ['ask', 'menu', 'needs-focus', 'your-turn', 'working', 'ended']);
 });
 
-test('a decision read from an older turn is not one', () => {
+test('within a kind the one waiting longest comes first: a decision by when it was asked, any other by when it last changed', () => {
   const { active } = orderTiles([
-    session('stale', { rank: 1, summary: endOfTurn, lastTurn: 't2' }),
-    session('needs-focus', { status: 'waiting' }),
+    session('new-turn', { updatedAt: 300 }),
+    session('old-turn', { updatedAt: 100, createdAt: 9 }),
+    session('new-prompt', { status: 'waiting', updatedAt: 250 }),
+    session('old-prompt', { status: 'waiting', updatedAt: 50 }),
+    session('late-ask', { question: question('q2', undefined, 40), updatedAt: 1 }),
+    session('round', { round: round('r1', 20), updatedAt: 500 }),
+    session('early-menu', { status: 'waiting', menu: { ...menu('m1'), at: 10 }, updatedAt: 900 }),
+  ]);
+  assert.deepEqual(ids(active), ['early-menu', 'round', 'late-ask', 'old-prompt', 'new-prompt', 'old-turn', 'new-turn']);
+  assert.equal(waitingSince(active[2]), 40);
+  assert.equal(waitingSince(active[3]), 50);
+});
+
+test('a question Claude asks in plain text is a finished turn, not a decision', () => {
+  const { active } = orderTiles([
+    session('plain', { lastMessage: 'Should I ship it?', updatedAt: 1 }),
+    session('needs-focus', { status: 'waiting', updatedAt: 5 }),
     session('decision', { question: question('q1'), createdAt: 5 }),
   ]);
-  assert.deepEqual(ids(active), ['decision', 'needs-focus', 'stale']);
+  assert.deepEqual(ids(active), ['decision', 'needs-focus', 'plain']);
 });
 
-test('the older task comes first among equals', () => {
+test('tasks at work and ended ones keep the order they started in', () => {
   const { active } = orderTiles([
-    session('newer', { createdAt: 2 }),
-    session('older', { createdAt: 1 }),
-    session('later-decision', { rank: 1, question: question('q2'), createdAt: 4 }),
-    session('earlier-decision', { rank: 1, question: question('q1'), createdAt: 3 }),
+    session('newer', { status: 'working', createdAt: 2, updatedAt: 1 }),
+    session('older', { status: 'working', createdAt: 1, updatedAt: 9 }),
   ]);
-  assert.deepEqual(ids(active), ['earlier-decision', 'later-decision', 'older', 'newer']);
+  assert.deepEqual(ids(active), ['older', 'newer']);
 });
 
 test('archived tasks are listed apart, the most recently changed first', () => {
   const { active, archived } = orderTiles([
-    session('old', { archived: true, updatedAt: 1, rank: 1, question: question('q1') }),
+    session('old', { archived: true, updatedAt: 1, question: question('q1') }),
     session('live'),
     session('recent', { archived: true, updatedAt: 2, status: 'exited' }),
   ]);
   assert.deepEqual(ids(active), ['live']);
   assert.deepEqual(ids(archived), ['recent', 'old']);
-});
-
-test('subtasks leave the Wall to their task, which stands where its most urgent subtask would', () => {
-  const parent = (id: string) => ({ id, basis: 't1', finding: 0, title: 'f', kind: 'accept' as const, text: '' });
-  const { active, archived } = orderTiles([
-    session('review'),
-    session('fix', { status: 'working', parent: parent('review') }),
-    session('other', { status: 'waiting' }),
-    session('ask', { question: question('q1'), parent: parent('review') }),
-    session('orphan', { status: 'working', parent: parent('gone') }),
-    session('old', { parent: parent('review'), archived: true }),
-    session('shelved', { archived: true }),
-    session('left', { status: 'working', parent: parent('shelved') }),
-    session('deep', { status: 'waiting', parent: parent('fix') }),
-  ]);
-  assert.deepEqual(ids(active), ['review', 'other', 'orphan', 'left']);
-  assert.deepEqual(ids(archived), ['shelved']);
 });

@@ -3,11 +3,11 @@ import { test, type TestContext } from 'node:test';
 import { setImmediate as settle } from 'node:timers/promises';
 import { deckOf, kindOf } from './deck.ts';
 import { ADOPTED_MS, CONFIRM_MS, createOutbox, NO_ANSWER, NOT_SENT, type Folded, type Outgoing, type Request } from './outbox.ts';
-import { menu, question, session, turn } from './testing.ts';
+import { menu, question, session } from './testing.ts';
 import type { Session } from './types.ts';
 
 const cart = session('cart', { question: question('q1') });
-const group = session('group', { summary: turn('t1') });
+const group = session('group', { question: { ...question('q2'), title: 'Ship it?' } });
 const hooks = session('hooks', { status: 'waiting', menu: menu('m1') });
 const reviews = session('reviews');
 
@@ -77,7 +77,7 @@ test('Z takes back only the newest held item, and the others still post on time'
   const { box, posts, tick } = outbox(t);
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), 'first');
   tick(1000);
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), 'second');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), 'second');
   tick(1000);
   assert.equal(box.undo()?.restore, 'second');
   tick(3000);
@@ -89,7 +89,7 @@ test('Z takes back only the newest held item, and the others still post on time'
 test('a refusal fails the item with the server\'s message and code; "answered" counts as sent', async (t) => {
   const { box, posts, tick } = outbox(t);
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), 'draft');
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), '');
   tick(5000);
   posts[0].fail(refusal('this question is no longer open', 'stale'));
   posts[1].fail(refusal('you already answered this', 'answered'));
@@ -181,22 +181,20 @@ test('a note whose landing a snapshot showed before its post failed is not hande
   assert.deepEqual(flushed, []);
 });
 
-test('the early check: another decision fails a held item unposted, an answer from elsewhere drops it quietly, and a plain message may meet the end-of-turn decision it answers', async (t) => {
+test('the early check: another decision fails a held item unposted, an answer from elsewhere drops it quietly, and a plain message to a turn that asked in plain text goes out', async (t) => {
   const { box, posts, tick } = outbox(t);
   const moved = box.hold(cart, answer('q:q1', { choice: 'Keep' }), 'draft');
   const elsewhere = box.hold(hooks, menuAnswer, '');
-  const reply = box.hold(group, note('Ship it after lunch'), '');
-  const later = box.hold(reviews, answer(null, { text: 'Thanks' }), '');
+  const reply = box.hold(reviews, note('Ship it after lunch'), '');
   const out = box.reconcile([
     { ...cart, question: question('q2') },
     { ...hooks, answered: { key: 'm:m1', text: 'Backoff: Linear', at: 5 } },
-    group,
-    { ...reviews, summary: turn('t1') },
+    { ...reviews, lastMessage: 'All green. Ship it?' },
   ]);
   assert.deepEqual(out.map((i) => [i.id, i.state, i.code]), [[moved, 'failed', 'stale'], [elsewhere, 'answered', undefined]]);
   assert.equal(out[0].error, 'this question is no longer open');
   tick(5000);
-  assert.deepEqual(posts.map((p) => p.out.sessionId).toSorted(), ['group', 'reviews'], `${reply} and ${later} still go out`);
+  assert.deepEqual(posts.map((p) => p.out.sessionId), ['reviews'], `${reply} still goes out`);
   await settle();
 
   const waiting = createOutbox({ post: () => Promise.reject(new TypeError('Failed to fetch')) });
@@ -211,7 +209,7 @@ test('the early check: another decision fails a held item unposted, an answer fr
 test('the early check fails a held item whose session is gone or has ended', (t) => {
   const { box } = outbox(t);
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), '');
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), '');
   const out = box.reconcile([{ ...group, status: 'exited' }]);
   assert.deepEqual(out.map((i) => [i.sessionId, i.code, i.error]), [
     ['cart', 'gone', 'the task is gone'],
@@ -313,7 +311,7 @@ test('busy: a held, sending, waiting or unconfirmed send keeps its session out o
   await settle();
   assert.equal(box.items()[0].state, 'sent');
   assert.deepEqual([...box.busy()], ['cart']);
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), '');
   tick(5000);
   posts.at(-1)!.fail(refusal('this question is no longer open', 'stale'));
   await settle();
@@ -326,7 +324,7 @@ test('flush hands every held and waiting item over exactly once, and none of the
   tick(5000);
   posts[0].fail(new TypeError('Failed to fetch'));
   await settle();
-  const held = [box.hold(group, answer('s:t1', { choice: 'Ship' }), ''), box.hold(hooks, menuAnswer, ''), box.hold(reviews, command(null, '/compact'), '')];
+  const held = [box.hold(group, answer('q:q2', { choice: 'Ship' }), ''), box.hold(hooks, menuAnswer, ''), box.hold(reviews, command(null, '/compact'), '')];
   const flushed: Folded[] = [];
   box.flush((out) => flushed.push(out));
   assert.deepEqual(flushed.flatMap((f) => f.ids).toSorted(), [waiting, ...held].toSorted());
@@ -358,7 +356,7 @@ test('flush takes a send still queued behind its session\'s post under way, once
 
 test('flush folds a session\'s notes into its decision answer, or into its first note, in press order; a menu answer and a note stay two posts', (t) => {
   const { box } = outbox(t);
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), '');
   box.hold(group, note('Tag it too', ['/u/a.png']), '');
   box.hold(reviews, note('First'), '');
   box.hold(reviews, command(null, '/compact'), '');
@@ -368,7 +366,7 @@ test('flush folds a session\'s notes into its decision answer, or into its first
   const flushed: Folded[] = [];
   box.flush((out) => flushed.push(out));
   assert.deepEqual(flushed.map(({ sessionId, action, body }) => ({ sessionId, action, body })), [
-    { sessionId: 'group', action: 'answer', body: { key: 's:t1', choice: 'Ship', text: 'Tag it too', files: ['/u/a.png'] } },
+    { sessionId: 'group', action: 'answer', body: { key: 'q:q2', choice: 'Ship', text: 'Tag it too', files: ['/u/a.png'] } },
     { sessionId: 'reviews', action: 'answer', body: { key: null, text: 'First\n\nSecond', files: ['/u/b.txt'] } },
     { sessionId: 'reviews', action: 'answer', body: { key: null, text: '/compact' } },
     { sessionId: 'hooks', action: 'answer-menu', body: { toolUseId: 'm1', answers: picks } },
@@ -406,7 +404,7 @@ test('idle() resolves only once nothing is held, sending or waiting', async (t) 
 
 test('sendNow posts a session\'s held items at once, one after the other in press order, and leaves the rest held', async (t) => {
   const { box, posts, tick, states } = outbox(t);
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), '');
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), '');
   box.hold(group, note('Tag it too'), '');
   void box.sendNow('group');
@@ -423,7 +421,7 @@ test('sendNow resolves once every post of the session has an answer, a refusal t
   const { box, posts } = outbox(t);
   let typed = false;
   await box.sendNow('group');
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), '');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), '');
   box.hold(group, note('Tag it too'), '');
   void box.sendNow('group').then(() => (typed = true));
   posts[0].ok();
@@ -444,7 +442,7 @@ test('every change is reported, so a view of the items can re-render', (t) => {
 test('a page that stays after a flush, as a frozen one that resumes, hears back: a post that failed leaves its item waiting or failed, not sent', async (t) => {
   const { box, posts, tick } = outbox(t);
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), 'cart draft');
-  box.hold(group, answer('s:t1', { choice: 'Ship' }), 'group draft');
+  box.hold(group, answer('q:q2', { choice: 'Ship' }), 'group draft');
   const flushed: ((err: unknown) => void)[] = [];
   box.flush(() => new Promise((_, fail) => flushed.push(fail)));
   assert.deepEqual(box.items().map((i) => i.state), ['sent', 'sent']);
@@ -459,9 +457,10 @@ test('a page that stays after a flush, as a frozen one that resumes, hears back:
 
 test('what a page that went away left unconfirmed is adopted: out of the deck and never posted again, gone once a snapshot shows it went out, and failed with what it took once the server would refuse it or, still open 3 s after it was due, never got it', (t) => {
   const { box, posts, tick, states } = outbox(t);
+  const idle = session('group');
   const gone = createOutbox<string>({ post: () => new Promise(() => {}) });
   gone.hold(cart, answer('q:q1', { choice: 'Keep', text: 'and log it' }), 'cart draft');
-  gone.hold(group, note('Ship it after lunch'), 'group draft');
+  gone.hold(idle, note('Ship it after lunch'), 'group draft');
   gone.hold(hooks, menuAnswer, 'hooks draft');
   gone.hold(reviews, note('Bump the version'), 'reviews draft');
   gone.flush(() => {});
@@ -476,7 +475,7 @@ test('what a page that went away left unconfirmed is adopted: out of the deck an
 
   box.reconcile([
     { ...cart, answered: { key: 'q:q1', text: 'Keep', at: 5 } },
-    group,
+    idle,
     hooks,
     { ...reviews, status: 'working', lastTurn: 't2' },
     { ...asks, question: question('q8') },
@@ -486,7 +485,7 @@ test('what a page that went away left unconfirmed is adopted: out of the deck an
     ['hooks draft', 'sent', undefined],
     ['asks draft', 'failed', 'stale'],
   ], 'the answer and the note that went out are gone, and the answer to a question asked again is refused at once');
-  box.confirm([{ ...group, status: 'working' }, { ...hooks, menu: null }]);
+  box.confirm([{ ...idle, status: 'working' }, { ...hooks, menu: null }]);
   assert.equal(box.items().length, 3, 'confirm does not judge what was adopted');
 
   tick(ADOPTED_MS + 5000);

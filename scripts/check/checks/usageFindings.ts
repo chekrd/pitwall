@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { until } from '../cdp.ts';
-import { approveLoss, byText, frontIs, logged, luminance, menuItems, openFromWall, openNewTask, openQueue, openSheetOf, ready, stateOf, still, tiles, toastsOf, whole, type Check } from '../helpers.ts';
+import { approveLoss, logged, menuItems, openFromWall, openNewTask, openQueue, openSheetOf, ready, tiles, whole, type Check } from '../helpers.ts';
 
 export const usageFindings: Check[] = [
   {
@@ -60,9 +59,9 @@ export const usageFindings: Check[] = [
       const now = Math.floor(Date.now() / 1000);
       const shown = () => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-window]')].map((w) => w.innerText.replace(/\s+/g, ' ').trim().split(' ↻')[0]);
       await mock.post('/mock/status-line', { at: Date.now(), rate_limits: { five_hour: { used_percentage: 23, resets_at: now + 7200 }, seven_day: { used_percentage: 12, resets_at: now + 86_400 } } });
-      await page.until('the full reading', () => (document.querySelector('header [data-usage]') as HTMLElement | null)?.innerText.includes('23%') || null);
+      await page.until('the full reading', () => document.querySelector<HTMLElement>('header [data-usage]')?.innerText.includes('23%') || null);
       await mock.post('/mock/status-line', { at: Date.now(), rate_limits: { seven_day: { used_percentage: 13, resets_at: now + 86_400 } } });
-      await page.until('the weekly-only reading', () => (document.querySelector('header [data-usage]') as HTMLElement | null)?.innerText.includes('13%') || null);
+      await page.until('the weekly-only reading', () => document.querySelector<HTMLElement>('header [data-usage]')?.innerText.includes('13%') || null);
       assert.deepEqual(await page.eval(shown), ['5h 23%', '7d 13%']);
     },
   },
@@ -211,252 +210,16 @@ export const usageFindings: Check[] = [
     },
   },
   {
-    name: 'P8.findings-decision a decision about the findings heads its options Claude\'s options, in the order Claude gave them, not ranked; each option names the findings it acts on and which were already answered on their own, the second opinion marks its pick, and the findings say the options answer them together',
-    scenario: 'findings',
-    async run({ page, mock, shot }) {
-      const now = Date.now();
-      await mock.post('/mock/patch', { id: 's-review', patch: {
-        summary: { decision: {
-          problem: 'Which review findings should Claude fix?', brief: 'Three issues, none verified.', context: '',
-          options: [
-            { label: 'Fix all three', description: 'Guard the double load, name the skeleton and move the margin to config/lazy.ts.', covers: [0, 1, 2] },
-            { label: 'Fix the margin only', description: 'Move the 600 px margin to config/lazy.ts.', covers: [2] },
-            { label: 'Leave them', description: 'Nothing changes.' },
-          ],
-        } },
-        advice: {
-          key: 's:t-review-4', state: 'done', startedAt: now - 60_000, at: now - 30_000, activity: null,
-          choice: 'Fix the margin only', confidence: 70, answer: '', reasoning: 'The other two are already being handled.',
-        },
-      } });
-      await openSheetOf(page, mock, 's-review');
-      await page.until('the options', () => document.querySelectorAll('#task-sheet [data-option]').length === 3);
-      const shown = await page.eval(() => {
-        const group = document.querySelector<HTMLElement>('#task-sheet [role="group"][aria-label="Claude\'s options"]')!;
-        const options = [...group.querySelectorAll<HTMLElement>('[data-option]')];
-        return {
-          head: group.firstElementChild!.textContent,
-          covers: options.map((o) => o.querySelector('[data-covers]')?.textContent ?? null),
-          tags: options.map((o) => o.querySelector('[class*="tags"]')!.textContent),
-          note: document.querySelector('#task-sheet [data-findings-note]')?.textContent ?? null,
-        };
-      });
-      assert.deepEqual(shown, {
-        head: "Claude's optionsin the order Claude gave them, not ranked",
-        covers: ['Acts on findings 1, 2 and 3 · 1 and 2 already answered on their own', 'Acts on finding 3', null],
-        tags: ['', "Second opinion's pick · 70%", ''],
-        note: "Claude's options above answer these together, in this session. A button on one finding starts a separate agent for just that one.",
-      });
-      await shot('findings-decision');
-
-      await mock.post('/mock/patch', { id: 's-review', patch: { summary: { decision: { options: [{ label: 'Fix all three' }, { label: 'Leave them' }] } } } });
-      await page.until('the note gone with the coverage', () => !document.querySelector('#task-sheet [data-findings-note]') && !document.querySelector('#task-sheet [data-covers]'));
-    },
-  },
-  {
-    name: 'P8.findings-solve Mark solved on a finding settles its open subtasks, or marks one without subtasks solved, which the toast\'s Undo, ⌘Z and Reopen undo; nothing starts',
-    scenario: 'findings',
-    async run({ page, mock, shot }) {
-      const state = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-finding]')].map((f) => ({
-        n: f.dataset.finding, settled: !!f.closest('[data-settled-findings]'), note: f.querySelector('[class*="rejected"] span')?.textContent ?? null,
-      }));
-      await openSheetOf(page, mock, 's-review');
-      await page.until('the findings', () => document.querySelectorAll('#task-sheet [data-finding]').length === 3);
-      assert.match(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-finding="1"] [data-response="solve"]')!.dataset.explain ?? ''), /its open 2 subtasks solved/);
-      await shot('findings-solve');
-
-      await page.click('#task-sheet [data-finding="1"] [data-response="solve"]');
-      await page.until('#1 settled in its subtasks', () => !!document.querySelector('[data-settled-findings] [data-finding="1"]'));
-      const resolved = await until('both subtasks resolved in the mock\'s log', async () => {
-        const found = (await mock.log()).filter((e) => e.action === 'resolve' && e.status !== null);
-        return found.length === 2 && found;
-      });
-      assert.deepEqual(resolved.map((e) => [e.sessionId, e.body.state]).toSorted(byText), [['s-review-1', 'solved'], ['s-review-2', 'solved']]);
-      assert.equal(await page.eval(() => document.querySelector('[data-settled-findings] [data-finding="1"] [class*="rejected"] span')!.textContent), 'Solved in its 2 subtasks');
-
-      await page.click('#task-sheet [data-finding="3"] [data-response="solve"]');
-      await page.until('#3 marked solved', () => !!document.querySelector('[data-settled-findings] [data-finding="3"]'));
-      const [marked] = await logged(mock, 'the mark', (e) => e.action === 'finding');
-      assert.deepEqual(marked.body, { basis: 't-review-4', finding: 2, kind: 'solve', text: '' });
-      assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet [data-finding="3"] [data-subtask]').length), 0, 'a subtask started');
-      assert.deepEqual(await page.eval(state), [
-        { n: '1', settled: true, note: 'Solved in its 2 subtasks' },
-        { n: '2', settled: true, note: 'Rejected: Covered by the a11y ticket' },
-        { n: '3', settled: true, note: 'Solved' },
-      ]);
-      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-settled-count]')!.textContent), '· all 3 settled');
-
-      const reopened = '#task-sheet [data-finding="3"]:not([data-settled-findings] *) [data-response="solve"]';
-      const toastKey = () => [...document.querySelectorAll('[data-toast][data-kind="undo"]')].find((t) => t.textContent.startsWith('Solved #3 '))?.querySelector('kbd')?.textContent ?? null;
-      assert.equal(await page.until('the Undo toast', toastKey), '⌘Z');
-      await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
-      await page.key('z', { meta: true });
-      await page.until('#3 open again by ⌘Z', (sel: string) => !!document.querySelector(sel), reopened);
-      assert.equal(await page.eval(toastKey), null, 'the toast stayed');
-      await logged(mock, 'the reopen', (e) => e.action === 'finding' && e.body.kind === 'reopen');
-
-      await page.click('#task-sheet [data-finding="3"] [data-response="solve"]');
-      await page.until('#3 marked solved again', () => !!document.querySelector('[data-settled-findings] [data-finding="3"]'));
-      await page.eval(() => { document.querySelector<HTMLDetailsElement>('#task-sheet [data-settled-findings]')!.open = true; });
-      await page.click('#task-sheet [data-finding="3"] [class*="rejected"] button');
-      await page.until('#3 open again', (sel) => !!document.querySelector(sel), reopened);
-    },
-  },
-  {
-    name: 'P8.findings a review lists its findings on the task page: #2 rejected, #1 with its subtask at work; Accept with a note on #3 starts a subtask under it, Reject and Reopen mark only; a subtask names its task above its title and atop its Overview, with the finding, the answer and its sibling, and leads back; the Your turn card lists them in place of the reply; on the Wall a subtask has no tile: its task\'s tile lists none and reads In progress while one works, and its page lists them all; a subtask has no card in the queue either, and its decision is answered on its page, which has no Open its card; Mark solved and Drop settle a subtask and open its task in its place, and the task counts the ones still open',
-    scenario: 'findings',
-    async run({ themes, page, mock, shot }) {
-      const items = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-finding]')].map((f) => ({
-        n: f.dataset.finding, rejected: f.hasAttribute('data-rejected'), settled: !!f.closest('[data-settled-findings]'),
-        subtasks: [...f.querySelectorAll('[data-subtask]')].map((b) => (b as HTMLElement).innerText.replace(/\s+/g, ' ').trim()),
-      }));
-      await openSheetOf(page, mock, 's-review');
-      await page.until('the findings', () => document.querySelectorAll('#task-sheet [data-finding]').length === 3);
-      assert.deepEqual(await page.eval(items), [
-        { n: '1', rejected: false, settled: false, subtasks: ['Fix In progress', 'Second look Decide'] },
-        { n: '3', rejected: false, settled: false, subtasks: [] },
-        { n: '2', rejected: true, settled: true, subtasks: [] },
-      ]);
-      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-settled-count]')!.textContent), '· 2 of 3 open');
-      assert.equal(await page.eval(() => document.querySelector<HTMLDetailsElement>('#task-sheet [data-settled-findings]')!.open), false, 'settled ones start folded');
-      await shot('findings');
-
-      await page.click('#task-sheet [data-finding="3"] button[aria-expanded]');
-      await page.click('#task-sheet [data-finding="3"] textarea');
-      await page.type('Use config/lazy.ts');
-      await page.click('#task-sheet [data-finding="3"] [data-response="accept"]');
-      const [posted] = await logged(mock, 'the accept', (e) => e.action === 'finding');
-      assert.deepEqual(posted.body, { basis: 't-review-4', finding: 2, kind: 'accept', text: 'Use config/lazy.ts' });
-      await page.until('the subtask under #3', () => document.querySelectorAll('#task-sheet [data-finding="3"] [data-subtask]').length === 1);
-      const [started] = await page.until('the toast', toastsOf, 'info');
-      assert.match(started.text, /Started #3 Fix/);
-      await themes(async (scheme) => {
-        const bg = await page.eval(() => getComputedStyle(document.querySelector("[data-toast][data-kind=\"info\"]")!).backgroundColor);
-        assert.ok(luminance(bg) < 0.05, `the toast ${bg} is not dark in ${scheme}`);
-      });
-      assert.equal(await page.eval(() => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-finding="3"] textarea')!.value), '');
-
-      await page.click('#task-sheet [data-finding="1"] [data-response="reject"]');
-      await page.until('#1 rejected', () => document.querySelector('#task-sheet [data-finding="1"]')!.hasAttribute('data-rejected'));
-      await page.click('#task-sheet [data-settled-findings] summary');
-      await page.click('#task-sheet [data-finding="2"] button', 'Reopen');
-      await page.until('#2 open again', () => !document.querySelector('#task-sheet [data-finding="2"]')!.hasAttribute('data-rejected'));
-      assert.deepEqual((await stateOf(mock, 's-review')).findings.items.map((f: { rejected?: unknown }) => !!f.rejected), [true, false, false]);
-
-      await page.click('#task-sheet [data-subtask="s-review-1"]');
-      await page.until('the subtask page', () => location.pathname === '/s/s-review-1/overview' && !!document.querySelector('#task-sheet [aria-label="Subtask of"]'));
-      await shot('subtask');
-      await page.click('#task-sheet header button[aria-label="Session actions"]');
-      assert.deepEqual(await page.until('the subtask menu', menuItems), ['Terminal', 'Open in Finder', 'Open in VS Code', 'Open in Ghostty', 'Quit Claude', 'Mark solved', 'Drop']);
-      await page.key('Escape');
-      await page.until('the menu to close', () => !document.querySelector(':popover-open:not([popover="manual"])'));
-      const text = (sel: string) => page.eval((q) => document.querySelector<HTMLElement>(q)!.innerText.replace(/\s+/g, ' ').trim(), sel);
-      assert.equal(await text('#task-sheet header [data-parent]'), 'Subtask of Review the lazy reviews branch');
-      const origin = await text('#task-sheet [aria-label="Subtask of"]');
-      assert.match(origin, /^Subtask of Review the lazy reviews branch Your turn Back to the task 1 Reviews load twice on a fast scroll src\/reviews\/LazyReviews\.tsx:41 The IntersectionObserver .* Fix “?Guard it with a ref”? Second look Decide Done with it\? Mark solved Drop$/i);
-      await page.click('#task-sheet [aria-label="Subtask of"] [data-subtask="s-review-2"]');
-      await page.until('the sibling', () => location.pathname === '/s/s-review-2/overview');
-      await page.click('#task-sheet header [data-parent] button');
-      await page.until('back on the review', () => location.pathname === '/s/s-review/overview');
-
-      await openQueue(page, mock);
-      await page.click('[data-segment][data-session="s-review"]');
-      await page.until('the review at the front', frontIs, 's-review');
-      assert.equal(await page.eval(() => document.querySelectorAll('[data-card] [data-finding]').length), 3);
-      await page.until('the card to settle', still);
-      await shot('findings-card');
-
-      await page.click('a[href="/wall"]');
-      await page.until('the Wall', () => !!document.querySelector('[data-tile][data-session="s-review"]'));
-      assert.equal(await page.eval(() => document.querySelectorAll('[data-tile] [data-parent], [data-tile][data-session^="s-review-"]').length), 0, 'no subtask has a tile');
-      // The task itself is idle, but its subtask #1 works, so its tile reads In progress and lists no subtasks.
-      assert.deepEqual(await page.eval(() => {
-        const tile = document.querySelector<HTMLElement>('[data-tile][data-session="s-review"]')!;
-        return { attention: tile.dataset.attention, wants: tile.dataset.wants, state: tile.querySelector('header')!.innerText.split('\n')[0], listed: !!tile.querySelector('[data-subtasks], [data-subtask]') };
-      }), { attention: 'working', wants: 'decide', state: 'IN PROGRESS', listed: false });
-      await shot('findings-wall');
-      await page.click('[data-tile][data-session="s-review"]');
-      await page.until('the review', () => location.pathname === '/s/s-review/overview');
-      await page.click('#task-sheet [data-subtask-list] [data-subtask="s-review-2"]');
-      await page.until('the subtask from its task page', () => location.pathname === '/s/s-review-2/overview');
-      assert.deepEqual(await page.until('its decision on its page', () => {
-        const box = document.querySelector<HTMLElement>('#task-sheet [data-queued]');
-        return box && { kicker: box.querySelector('span')!.textContent, toCard: [...box.querySelectorAll('button')].some((b) => b.textContent === 'Open its card'), options: box.querySelectorAll('[data-option]').length > 0 };
-      }), { kicker: 'Decision', toCard: false, options: true });
-      assert.equal(await page.eval(() => document.querySelectorAll('[data-segment][data-session^="s-review-"]').length), 0, 'no subtask has a card in the queue');
-      await page.click('#task-sheet header [data-parent] button');
-      await page.until('the review again', () => location.pathname === '/s/s-review/overview');
-      const listed = await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-subtask-list] [data-subtask]')].map((b) => `${b.dataset.subtask}:${b.dataset.attention}`));
-      assert.equal(listed.length, 4);
-      assert.deepEqual(listed.slice(0, 3), ['s-review-2:decide', 's-review-1:working', 's-review-1-1:idle']);
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-subtask-list] li')].map((l) => l.dataset.depth)), ['0', '0', '1', '0']);
-      assert.ok(await page.eval(() => !!document.querySelector('#task-sheet aside [data-subtask-list]')), 'the subtasks are listed beside the facts');
-      await shot('subtask-list');
-
-      await page.click('#task-sheet [data-subtask-list] [data-subtask="s-review-1-1"]');
-      await page.until('the subtask of a subtask', () => location.pathname === '/s/s-review-1-1/overview');
-      assert.equal(await text('#task-sheet header [data-parent]'), 'Subtask of Review the lazy reviews branch › #1 Fix · Reviews load twice on a fast scroll');
-      assert.match(await text('#task-sheet [aria-label="Subtask of"]'), /^Subtask of #1 Fix · Reviews load twice on a fast scroll In progress Back to the task 1 The guard is not reset on unmount/i);
-      await shot('subtask-nested');
-      await page.click('#task-sheet [data-resolve] button', 'Mark solved');
-      await page.until('its task, the fix, in its place', () => location.pathname === '/s/s-review-1/overview');
-      const [solved] = await page.until('the undo toast', toastsOf, 'undo');
-      assert.match(solved.text, /Solved #1 Explain/);
-      assert.deepEqual((await stateOf(mock, 's-review-1-1')).resolution?.state, 'solved');
-      await page.until('listed solved', () => !!document.querySelector('#task-sheet [data-subtask-list] li[data-resolution="solved"]'));
-      assert.equal(await page.eval(() => document.querySelector<HTMLDetailsElement>('#task-sheet [data-settled-subtasks]')?.open), false, 'a solved subtask folds away');
-      await page.until('the fix\'s finding settled by it', () => document.querySelector('#task-sheet [data-findings] [data-settled-count]')?.textContent === '· all 1 settled');
-      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-finding="1"][data-settled="solved"] [class*="rejected"]')!.textContent), 'Solved in its subtask');
-      await page.click('#task-sheet header [data-parent] button');
-      await page.until('the review from the chain', () => location.pathname === '/s/s-review/overview');
-      await page.until('3 open', () => document.querySelector('#task-sheet header [data-open-count]')?.textContent === '3 of 4 subtasks open');
-      await page.click('#task-sheet [data-subtask-list] [data-subtask="s-review-2"]');
-      await page.until('the second look', () => location.pathname === '/s/s-review-2/overview');
-      await page.click('#task-sheet header button[aria-label="Session actions"]');
-      await page.click(':popover-open button', 'Drop');
-      await page.until('the review in its place', () => location.pathname === '/s/s-review/overview');
-      await page.until('2 open', () => document.querySelector('#task-sheet header [data-open-count]')?.textContent === '2 of 4 subtasks open');
-      assert.equal(await text('#task-sheet [data-open-count]:not(header *)'), '· 2 of 4 open');
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-settled-subtasks] li')].map((l) => `${l.querySelector<HTMLElement>('[data-subtask]')!.dataset.subtask}:${l.dataset.resolution}:${l.dataset.depth}`)), ['s-review-1-1:solved:0', 's-review-2:dropped:0']);
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-subtask-list] > ul li')].map((l) => l.dataset.resolution ?? 'open')), ['open', 'open'], 'the open ones stay above');
-      await page.click('#task-sheet [data-settled-subtasks] summary');
-      await shot('subtasks-settled');
-      const rest = (await mock.get('/api/state')).sessions.filter((s: { parent: unknown; resolution: unknown }) => s.parent && !s.resolution);
-      assert.equal(rest.length, 2);
-      for (const s of rest) await mock.post(`/api/sessions/${s.id}/resolve`, { state: 'solved' });
-      await page.until('all settled', () => document.querySelector('#task-sheet header [data-open-count]')?.textContent === 'All 4 subtasks solved or dropped');
-      assert.match(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet header [data-open-count]')!.dataset.explain!), /^Solved: “.+”\. Dropped: “.+”\.$/);
-      await page.until('#3 settled with its subtask', () => document.querySelector<HTMLElement>('#task-sheet [data-finding="3"]')?.dataset.settled === 'solved');
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-settled-findings] [data-finding]')].map((f) => `${f.dataset.finding}:${f.dataset.settled}`)), ['1:rejected', '3:solved']);
-      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-findings] [data-settled-count]')!.textContent), '· 1 of 3 open');
-      await page.click('#task-sheet [data-settled-findings] summary');
-      await shot('findings-settled');
-
-      await page.click('#task-sheet header button[aria-label="Session actions"]');
-      await page.click(':popover-open button', 'Clear task');
-      const cleared = await page.until('the clear dialog', () => {
-        const d = document.querySelector<HTMLElement>('dialog#delete-worktree[open]');
-        return d && !d.textContent.includes('Checking') && d.innerText;
-      });
-      assert.match(cleared, /Its 4 subtasks go with it, their Claudes too\./);
-      await approveLoss(page);
-      await page.click('dialog#delete-worktree button', 'Clear task');
-      await until('the task and its subtasks gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => s.id.startsWith('s-review')));
-    },
-  },
-  {
-    name: 'P8.clear /clear in a subtask with a name, a parent, a subtask of its own and an artifact keeps it one task: the Wall gains no tile, the open page stays on it with its name, its task, its subtask and its artifact, the Session fact names the new conversation and Earlier conversations the old one; a /resume into a conversation another task ran brings that task back and merges nothing',
-    scenario: 'findings',
+    name: 'P8.clear /clear in a task with a name and an artifact keeps it one task: the Wall gains no tile, the open page stays on it with its name and its artifact, the Session fact names the new conversation and Earlier conversations the old one; a /resume into a conversation another task ran brings that task back and merges nothing',
     async run({ page, mock, shot }) {
       const wallTiles = () => [...document.querySelectorAll<HTMLElement>('[data-tile]')].map((t) => t.dataset.session ?? '').sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       const before = await page.eval(wallTiles);
-      await mock.post('/mock/patch', { id: 's-review-1', patch: { artifacts: [{ id: 'art-guard', title: 'Where the second load starts', at: Date.now() - 60_000 }] } });
+      await mock.post('/mock/patch', { id: 's-reviews', patch: { artifacts: [{ id: 'art-skeleton', title: 'Where the skeleton sits', at: Date.now() - 60_000 }] } });
 
-      await openSheetOf(page, mock, 's-review-1');
-      await page.until('the subtask list', () => !!document.querySelector('#task-sheet [data-subtask-list]'));
-      await mock.post('/mock/clear', { id: 's-review-1', conversation: 'c-fresh' });
+      await openSheetOf(page, mock, 's-reviews');
+      await mock.post('/mock/clear', { id: 's-reviews', conversation: 'c-fresh' });
       await page.until('the new conversation in the facts', () =>
         [...document.querySelectorAll('#task-sheet dt')].find((d) => d.textContent === 'Session')?.nextElementSibling?.querySelector('code')?.textContent === 'c-fresh');
       const page1 = await page.eval(() => {
@@ -464,36 +227,30 @@ export const usageFindings: Check[] = [
         const label = (name: string) => [...sheet.querySelectorAll('h3')].find((h) => h.textContent?.startsWith(name))?.closest('section');
         return {
           path: location.pathname,
-          title: sheet.innerText.includes('#1 Fix · Reviews load twice on a fast scroll'),
-          task: sheet.innerText.includes('Review the lazy reviews branch'),
-          subtasks: sheet.querySelector('[data-subtask-list]')?.textContent?.includes('The guard is not reset on unmount'),
+          title: sheet.innerText.includes('Lazy-load product reviews'),
           artifacts: [...(label('Artifacts')?.querySelectorAll('strong') ?? [])].map((s) => s.textContent),
           earlier: [...(label('Earlier conversations')?.querySelectorAll('li') ?? [])].map((li) => li.querySelector('code')?.textContent),
         };
       });
-      assert.deepEqual(page1, {
-        path: '/s/s-review-1/overview', title: true, task: true, subtasks: true, artifacts: ['Where the second load starts'], earlier: ['s-review-1'],
-      });
+      assert.deepEqual(page1, { path: '/s/s-reviews/overview', title: true, artifacts: ['Where the skeleton sits'], earlier: ['s-reviews'] });
       await shot('cleared-task');
       const state = await mock.get('/api/state');
-      const ids = state.sessions.map((s: { id: string }) => s.id);
-      assert.ok(!ids.includes('c-fresh'), 'the new conversation became a task of its own');
-      assert.equal(state.sessions.find((s: { id: string }) => s.id === 's-review-1-1').parent.id, 's-review-1');
+      assert.ok(!state.sessions.some((s: { id: string }) => s.id === 'c-fresh'), 'the new conversation became a task of its own');
 
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', tiles);
       assert.deepEqual(await page.eval(wallTiles), before);
 
-      await mock.post('/mock/patch', { id: 's-review-2', patch: { status: 'exited', pid: null, archived: true } });
-      await mock.post('/mock/resume', { id: 's-review-1-1', to: 's-review-2' });
+      await mock.post('/mock/patch', { id: 's-stripe', patch: { archived: true } });
+      await mock.post('/mock/resume', { id: 's-anchors', to: 's-stripe' });
       const after = await mock.get('/api/state');
       const pick = (id: string) => {
         const s = after.sessions.find((x: { id: string }) => x.id === id);
         return { conversation: s.conversation, history: s.history.length, status: s.status, archived: s.archived };
       };
-      assert.deepEqual([pick('s-review-2'), pick('s-review-1-1')], [
-        { conversation: 's-review-2', history: 0, status: 'idle', archived: false },
-        { conversation: 's-review-1-1', history: 0, status: 'exited', archived: true },
+      assert.deepEqual([pick('s-stripe'), pick('s-anchors')], [
+        { conversation: 's-stripe', history: 0, status: 'idle', archived: false },
+        { conversation: 's-anchors', history: 0, status: 'exited', archived: true },
       ]);
       assert.equal(after.sessions.length, state.sessions.length);
     },

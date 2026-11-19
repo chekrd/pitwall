@@ -13,11 +13,11 @@ import { answering, closeQuestion, liveTty, type Reply } from '../../server/answ
 import { clearings } from '../../server/clearing.ts';
 import { exchanges, fileMeta } from '../../server/conversations.ts';
 import {
-  actionBodies, bodies, isAction, onDecision, type ActionHandlers, type ActionInput, type Responses, type Route, type RouteInput, type Snapshot, type State,
+  actionBodies, bodies, isAction, type ActionHandlers, type ActionInput, type Responses, type Route, type RouteInput, type Snapshot, type State,
 } from '../../server/contract.ts';
 import type { FullDiff, Upstream } from '../../server/git.ts';
-import type { Session, SubtaskKind } from '../../server/db.ts';
-import { checkDecision, DECLINED, decisionKey, openDecision, Refusal } from '../../server/decision.ts';
+import type { Session } from '../../server/db.ts';
+import { checkDecision, DECLINED, Refusal } from '../../server/decision.ts';
 import { failure, NotPermitted } from '../../server/ghostty.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
@@ -35,7 +35,7 @@ import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
 import { refuseLive } from '../isolate.ts';
-import { addFromTemplate, artifactPage, COMMANDS, DELETE_LOSS, PROJECT_COMMANDS, explanationOf, TEMPLATES, worktreeRootOf, type Template } from './fixtures.ts';
+import { addFromTemplate, artifactPage, COMMANDS, DELETE_LOSS, PROJECT_COMMANDS, TEMPLATES, worktreeRootOf, type Template } from './fixtures.ts';
 import { scenarios, type Flag, type Scenario } from './scenarios.ts';
 
 // The contract of server/app.ts over made-up sessions, without a Claude, tmux, Ghostty or the live board behind it.
@@ -386,7 +386,7 @@ function legacyAnswer(s: Session, reply: Reply, commands = true) {
   const files = checkUploads(reply.files);
   if (!reply.choice && !text && !files.length) throw new Error('empty answer');
   if (commands && !reply.choice && !files.length && isCommand(s, text)) return;
-  checkDecision(s, reply.key, !reply.choice);
+  checkDecision(s, reply.key);
   closeQuestion({ get: find, update }, s.id, reply.key ?? null);
   claudeWorks(s.id);
 }
@@ -397,43 +397,6 @@ function legacyAnswerMenu(s: Session, body: { toolUseId?: string; answers?: Menu
   if (!menu || menu.toolUseId !== body.toolUseId) throw new Error('this question is no longer open');
   menuKeystrokes(menu, body.answers!);
   claudeWorks(s.id);
-}
-
-function legacyAcceptAdvice(s: Session) {
-  const a = s.advice;
-  const decision = openDecision(s);
-  if (a?.state !== 'done' || a.key !== decision?.key) throw new Error('no advice to accept');
-  if (decision.menu) legacyAnswerMenu(s, { toolUseId: decision.menu.toolUseId, answers: a.answers ?? [] });
-  else legacyAnswer(s, { key: a.key, choice: a.choice ?? undefined, text: a.answer }, false);
-}
-
-function elaborate(s: Session) {
-  const d = openDecision(s);
-  if (!d) throw new Error('nothing to decide right now');
-  if (s.explanation?.key === d.key && s.explanation.state !== 'failed') return;
-  update(s.id, { explanation: { key: d.key, state: 'thinking', text: '', at: Date.now() } });
-  later(1200, () => {
-    const current = find(s.id)?.explanation;
-    if (current?.key !== d.key) return;
-    update(s.id, {
-      explanation: flagged(s.id, 'explainFails')
-        ? { ...current, state: 'failed', error: 'the explanation run timed out after 300 s', at: Date.now() }
-        : { ...current, state: 'done', text: explanationOf(d.title), at: Date.now() },
-    });
-  });
-}
-
-function retryAdvice(s: Session) {
-  const d = openDecision(s);
-  if (!d) throw new Error('nothing to decide right now');
-  if (s.advice?.key === d.key && s.advice.state === 'thinking') return;
-  const at = Date.now();
-  update(s.id, { advice: { key: d.key, state: 'thinking', startedAt: at, activity: 'Starting', choice: null, answer: '', confidence: 0, reasoning: '', at } });
-}
-
-function stopAdvice(s: Session) {
-  const a = s.advice;
-  if (a?.state === 'thinking' && a.key === openDecision(s)?.key) update(s.id, { advice: { ...a, state: 'failed', activity: null, error: 'stopped', at: Date.now() } });
 }
 
 async function rename(s: Session, title: string | null | undefined) {
@@ -456,31 +419,7 @@ function removeWorktree(repo: RepoView, path: string) {
   push();
 }
 
-const SUBTASK_LABELS: Record<SubtaskKind, string> = { accept: 'Fix', elaborate: 'Explain', 'second-look': 'Second look', reply: 'Reply' };
-
-// As the server's respond(): Reject, Solve and Reopen mark the finding, any other answer starts a subtask in its worktree.
-function respond(s: Session, body: ActionInput<'finding'>) {
-  const index = body.finding;
-  const f = s.findings?.items[index];
-  if (!s.findings || s.findings.basis !== body.basis || !f) throw new Refusal('these findings were replaced; read them again', 'stale');
-  const kind = body.kind as SubtaskKind | 'reject' | 'solve' | 'reopen';
-  const text = (body.text ?? '').trim();
-  if (kind === 'reject' || kind === 'solve' || kind === 'reopen') {
-    const at = Date.now();
-    const marks = { rejected: kind === 'reject' ? { reason: text, at } : null, solved: kind === 'solve' ? { at } : null };
-    const items = s.findings.items.map((x, i) => (i === index ? { ...x, ...marks } : x));
-    update(s.id, { findings: { ...s.findings, items } });
-    return { id: null };
-  }
-  if (!['accept', 'elaborate', 'second-look', 'reply'].includes(kind)) throw new Error('unknown response');
-  if (kind === 'reply' && !text) throw new Error('write an answer first');
-  const id = startSession(s.repoId, s.worktree, { title: `#${index + 1} ${SUBTASK_LABELS[kind]} · ${f.title}`, prompt: `${f.title}\n\n${text}` });
-  update(id, { parent: { id: s.id, basis: s.findings.basis, finding: index, title: f.title, kind, text } });
-  return { id };
-}
-
 const actions: ActionHandlers<Session> = {
-  finding: respond,
   answer: (s, body) => (args.legacy ? legacyAnswer(s, body) : answerWithDrafts(s, body)),
   park: (s, body) => {
     update(s.id, { parked: addParked(s.parked, body) });
@@ -494,16 +433,14 @@ const actions: ActionHandlers<Session> = {
   'ask-aside': (s, body) => ({ id: asides.ask(s.id, body) }),
   'stop-aside': (s, body) => asides.stop(s.id, body.aside),
   'close-aside': (s, body) => asides.close(s.id, body.aside),
-  dismiss: (s, body) => closeQuestion({ get: find, update }, s.id, body.key ?? null),
+  dismiss: (s, body) => {
+    checkDecision(s, body.key);
+    closeQuestion({ get: find, update }, s.id, body.key ?? null);
+  },
   rename: (s, body) => rename(s, body.title),
   'decline-menu': (s, body) => answers.declineMenu(s.id, body),
   'answer-menu': (s, body) => (args.legacy ? legacyAnswerMenu(s, body) : answers.answerMenu(s.id, body)),
   'answer-round': (s, body) => answers.answerRound(s.id, body),
-  'accept-advice': (s, body) =>
-    args.legacy ? legacyAcceptAdvice(s) : answers.acceptAdvice(s.id, typeof body.adviceAt === 'number' ? body.adviceAt : undefined),
-  'retry-advice': (s) => retryAdvice(s),
-  'stop-advice': (s) => stopAdvice(s),
-  elaborate: (s) => elaborate(s),
   focus: (s) => (s.status === 'exited' ? resume(s) : answers.settled(s.id)),
   finder: () => {},
   vscode: () => {},
@@ -513,26 +450,18 @@ const actions: ActionHandlers<Session> = {
     state.sessions = state.sessions.filter((o) => o !== s);
     push();
   },
-  priority: (s, body) => update(s.id, { priority: body.priority ?? null }),
   archive: (s, body) => {
     update(s.id, archivePatch(s, body.archived ?? true));
     settleArchive(s);
   },
-  resolve: (s, body) => {
-    if (!s.parent) throw new Error('only a subtask is marked solved or dropped');
-    const state = body.state ?? null;
-    update(s.id, { ...archivePatch(s, !!state), resolution: state ? { state, at: Date.now() } : null });
-    settleArchive(s);
-  },
   'delete-worktree': (s, body) => {
-    if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");
     if (body.discard !== true) {
       const loss: { files: number; commits: number; gone?: boolean; checkout?: boolean } = deleteLoss(s);
       if (!loss.gone && !loss.checkout && loss.files + loss.commits > 0) throw new Error('not everything is pushed: approve throwing it away in Clear task');
     }
     const worktree = repoOf(s.repoId)?.worktrees.find((w) => w.path === s.worktree);
     const path = (s.repoId === null || (worktree && !worktree.isMain)) && !sharedWith(s) ? s.worktree : null;
-    const ids = (path ? state.sessions.filter((o) => o.worktree === path || o.worktree.startsWith(`${path}/`)) : [s, ...subtasksOf(s.id)]).map((o) => o.id);
+    const ids = (path ? state.sessions.filter((o) => o.worktree === path || o.worktree.startsWith(`${path}/`)) : [s]).map((o) => o.id);
     const hold = clearHold;
     return clearing.run(path ?? `task:${s.id}`, ids, async () => {
       await hold?.done;
@@ -545,14 +474,11 @@ const actions: ActionHandlers<Session> = {
 const clearing = clearings(() => push());
 
 // As the server: a worktree or task folder goes only when no other task works in it; else only the task goes.
-function sharedWith(s: Session) {
-  const own = new Set([s, ...subtasksOf(s.id)]);
-  return state.sessions.some((o) => !own.has(o) && (o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)));
-}
+const sharedWith = (s: Session) => state.sessions.some((o) => o !== s && (o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)));
 
 // As the server: Ghostty is asked for the tabs in a removed place, and for the tabs of the task's Claudes in one kept.
 function refusedTabs(s: Session, removesPlace: boolean) {
-  const tasks = removesPlace ? state.sessions.filter((o) => o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)) : [s, ...subtasksOf(s.id)];
+  const tasks = removesPlace ? state.sessions.filter((o) => o.worktree === s.worktree || o.worktree.startsWith(`${s.worktree}/`)) : [s];
   const ttys = tasks.flatMap((o) => (o.status !== 'exited' && o.tty ? [o.tty] : []));
   if (!ghosttyRefuses || (!removesPlace && !ttys.length)) return;
   const error = new NotPermitted().message;
@@ -570,8 +496,7 @@ function clearTask(s: Session, removesPlace: boolean) {
     return;
   }
   if (removesPlace && s.repoId !== null) return removeWorktree(mustRepo(s.repoId), s.worktree);
-  const gone = new Set([s, ...subtasksOf(s.id)]);
-  state.sessions = state.sessions.filter((o) => !gone.has(o));
+  state.sessions = state.sessions.filter((o) => o !== s);
   push();
 }
 
@@ -585,7 +510,6 @@ async function sessionAction(id: string, action: string, raw: Buffer) {
   if (!isAction(action)) throw new HttpError(404, 'unknown action');
   const body = input(raw, actionBodies[action]);
   const s = must(id);
-  if (onDecision.has(action)) checkDecision(s, (body as { key?: string | null }).key);
   if (s.starting && action !== 'forget') throw new Error('this task has no Claude yet');
   return (actions[action] as (s: Session, body: unknown) => unknown)(s, body);
 }
@@ -593,15 +517,11 @@ async function sessionAction(id: string, action: string, raw: Buffer) {
 const longLived = (repo: RepoView, branch: string) =>
   ['master', 'main', 'develop', 'trunk', repo.base, repo.base.replace(/^[^/]+\//, '')].includes(branch) || branch.startsWith('release/');
 
-const subtasksOf = (id: string): Session[] => state.sessions.filter((o) => o.parent?.id === id).flatMap((o) => [o, ...subtasksOf(o.id)]);
-
 function deleteLoss(s: Session): WorktreeLoss {
   if (flagged(s.id, 'lossFails')) throw new Error('git status failed: fatal: unable to read the index');
   const repo = repoOf(s.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);
-  if (s.parent) throw new Error("a subtask works in its task's worktree; Quit Claude or Archive it instead");
-  const subtasks = subtasksOf(s.id).length;
-  const shared = { deletesBranch: false, files: 0, commits: 0, checkout: true as const, shared: true as const, subtasks };
+  const shared = { deletesBranch: false, files: 0, commits: 0, checkout: true as const, shared: true as const };
   if (s.repoId === null && sharedWith(s)) return { branch: null, ...shared };
   if (s.repoId === null) {
     const repos = taskWorktrees(s.worktree).map(({ repo: r, worktree: w }, i) => ({
@@ -609,13 +529,13 @@ function deleteLoss(s: Session): WorktreeLoss {
     }));
     const sum = (k: 'files' | 'commits') => repos.reduce((n, r) => n + r[k], 0);
     // The mock's task folders are never removed behind its back, so none is gone.
-    return { branch: s.worktree.split('/').at(-1)!, deletesBranch: repos.some((r) => r.deletesBranch), files: sum('files'), commits: sum('commits'), gone: false, subtasks, repos };
+    return { branch: s.worktree.split('/').at(-1)!, deletesBranch: repos.some((r) => r.deletesBranch), files: sum('files'), commits: sum('commits'), gone: false, repos };
   }
-  if (!repo || !worktree) return { branch: null, deletesBranch: false, files: 0, commits: 0, checkout: true, gone: true, subtasks };
-  if (worktree.isMain) return { branch: worktree.branch, deletesBranch: false, files: 0, commits: 0, checkout: true, subtasks };
+  if (!repo || !worktree) return { branch: null, deletesBranch: false, files: 0, commits: 0, checkout: true, gone: true };
+  if (worktree.isMain) return { branch: worktree.branch, deletesBranch: false, files: 0, commits: 0, checkout: true };
   if (sharedWith(s)) return { branch: worktree.branch, ...shared };
   const deletesBranch = !!worktree.branch && !longLived(repo, worktree.branch);
-  return { branch: worktree.branch, deletesBranch, files: DELETE_LOSS.files, commits: DELETE_LOSS.commits, subtasks };
+  return { branch: worktree.branch, deletesBranch, files: DELETE_LOSS.files, commits: DELETE_LOSS.commits };
 }
 
 // Enough that New task's branch list has to scroll.
@@ -642,9 +562,9 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
   const working = !!o.prompt;
   state.sessions.push({
     id, conversation: id, history: [], repoId, worktree, cwd: worktree, pid: 41_000 + state.sessions.length, tty: '/dev/ttys041', title: o.title || null,
-    firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, rank: null, rankReason: null, priority: null, diffstat: null,
-    lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, waitingFor: null, dismissedAsk: null, round: null, dismissedRound: null, advice: null, prs: [], summary: null, explanation: null,
-    activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [], findings: null, parent: null, resolution: null,
+    firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, diffstat: null,
+    lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, waitingFor: null, dismissedAsk: null, round: null, dismissedRound: null, prs: [],
+    activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [],
     model: o.model || null, effort: o.effort || null, context: null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, starting: null, parked: [], asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,
   });
   push();
@@ -706,26 +626,6 @@ function repoOfWorktree(worktree: string) {
 }
 
 const safeName = (name: string) => name.split(/[\\/]/).at(-1)!.replace(/[^\w.-]+/g, '-').replace(/^[.-]+/, '').slice(-120) || 'file';
-
-function setAdvice(s: Session, body: { state?: 'thinking' | 'done' | 'failed'; choice?: string | null; answer?: string; confidence?: number; answers?: MenuAnswer[]; error?: string }) {
-  const key = decisionKey(s);
-  if (!key) throw new Error(`${s.id} has no open decision`);
-  const at = Date.now();
-  const state = body.state ?? 'done';
-  const choice = body.choice ?? null;
-  update(s.id, {
-    advice: {
-      key, state, startedAt: state === 'thinking' ? at : (s.advice?.startedAt ?? at - 60_000), at,
-      activity: state === 'thinking' ? 'Read the changed files' : null,
-      choice: state === 'done' ? choice : null,
-      answer: body.answer ?? (state === 'done' && !s.menu ? (choice ? `${choice}, because it fits what the task asks for.` : 'Use the smallest change that keeps the tests green.') : ''),
-      confidence: state === 'done' ? (body.confidence ?? 70) : 0,
-      reasoning: state === 'done' ? 'Checked the task, the open question and the code it touches.' : '',
-      ...(body.answers && { answers: body.answers }),
-      ...(state === 'failed' && { error: body.error ?? 'the advisor gave an empty answer' }),
-    },
-  });
-}
 
 function merge(target: Record<string, any>, patch: Record<string, any>) {
   for (const [k, v] of Object.entries(patch)) {
@@ -1139,10 +1039,10 @@ route('POST', '/mock/status-line', ({ body }) => {
   return NONE;
 });
 route('POST', '/mock/add', ({ body }) => {
-  const { template, id, rank, repoId = 1, flags, ...fields } = body;
+  const { template, id, repoId = 1, flags, ...fields } = body;
   if (!TEMPLATES.includes(template)) throw new Error(`unknown template ${template}; there are ${TEMPLATES.join(', ')}`);
   if (!id || find(id)) throw new Error(`pick a new id, not ${id}`);
-  const s = addFromTemplate(mustRepo(repoId), template as Template, { id, title: fields.title, now: Date.now(), rank });
+  const s = addFromTemplate(mustRepo(repoId), template as Template, { id, title: fields.title, now: Date.now() });
   state.sessions.push(merge(s, fields) as Session);
   if (flags) state.flags[id] = flags;
   push();
@@ -1161,7 +1061,7 @@ route('POST', '/mock/resume', ({ body }) => {
   const to = String(body.to);
   const known = taskOf(state.sessions, to);
   if (known === s) throw new Error('the task runs that conversation already');
-  if (known) update(known.id, { ...(known.conversation !== to && handOver(known, to, Date.now())), pid: s.pid, tty: s.tty, status: 'idle', archived: !!known.resolution && known.archived });
+  if (known) update(known.id, { ...(known.conversation !== to && handOver(known, to, Date.now())), pid: s.pid, tty: s.tty, status: 'idle', archived: false });
   else startSession(s.repoId, s.worktree, { id: to, prompt: null });
   update(s.id, { status: 'exited', pid: null, waitingFor: null, menu: null, archived: true });
   return known ?? find(to);
@@ -1178,10 +1078,6 @@ route('POST', '/mock/open-worktree', ({ body }) => {
   }
   push();
   return { path };
-});
-route('POST', '/mock/advice', ({ body }) => {
-  setAdvice(must(body.id), body);
-  return find(body.id)!.advice;
 });
 route('POST', '/mock/fail', ({ body }) => {
   failNext = { error: String(body.error ?? 'mock failure'), ...(body.code && { code: String(body.code) }) };

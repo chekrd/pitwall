@@ -27,8 +27,7 @@ export const restart: Check[] = [
     },
   },
   {
-    name: 'UX.names every control on the Wall, a task\'s Overview, Diff and Conversation, its ⋯ menu and New task with its pickers open is recorded without the task, finding, file, branch, repository or link it names',
-    scenario: 'findings',
+    name: 'UX.names every control on the Wall, a task\'s Overview, Diff and Conversation, its ⋯ menu and New task with its pickers open is recorded without the task, file, branch, repository or link it names',
     async run({ page, mock }) {
       const state = await mock.get('/api/state');
       const content = new Set<string>();
@@ -36,8 +35,7 @@ export const restart: Check[] = [
         if (typeof v === 'string' && v.trim().length >= 4) content.add(v.trim());
       };
       for (const s of state.sessions) {
-        [s.title, s.firstPrompt, s.worktree, s.worktree.split('/').at(-1), s.summary?.text, s.parent?.title].forEach(add);
-        for (const f of s.findings?.items ?? []) [f.title, f.location].forEach(add);
+        [s.title, s.firstPrompt, s.worktree, s.worktree.split('/').at(-1)].forEach(add);
         for (const l of s.links ?? []) [l.url, l.about, l.text, l.context].forEach(add);
         for (const a of s.artifacts ?? []) add(a.title);
       }
@@ -68,7 +66,7 @@ export const restart: Check[] = [
       // In-page navigation keeps the page and its unsent events.
       const go = (path: string) => page.eval((to: string) => void window.navigation.navigate(to), path);
       for (const tab of ['', '/diff', '/conversation']) {
-        await go(`/s/s-review${tab}`);
+        await go(`/s/s-cart${tab}`);
         await page.until('the task page', () => !!document.querySelector('#task-sheet [role="tabpanel"] *'));
         if (tab === '/diff') await page.until('the file list', () => !!document.querySelector('#task-sheet [data-ux="file"]'));
         if (!tab) await page.click('#task-sheet button[aria-label="Session actions"]');
@@ -92,16 +90,15 @@ export const restart: Check[] = [
       }, 20_000);
       const leaks = events.map((e) => String(e.data?.control)).filter((name) => /[/~]/.test(name) || [...content].some((c) => !COMMON.has(c) && name.includes(c)));
       assert.deepEqual([...new Set(leaks)], [], 'no control is recorded by what it names');
-      assert.ok(events.some((e) => e.data?.control === 'finding') && events.some((e) => e.data?.control === 'file') && events.some((e) => e.data?.control === 'repository option'), 'content controls by their kind');
+      assert.ok(events.some((e) => e.data?.control === 'link') && events.some((e) => e.data?.control === 'file') && events.some((e) => e.data?.control === 'repository option'), 'content controls by their kind');
     },
   },
   {
     name: 'UX.reading an action records the Overview sections in view before it, for how long, and the screen time leaves out what passed with no one at the board',
-    scenario: 'findings',
     clock: 'fast',
     async run({ page, mock, wait }) {
-      await page.goto(`${mock.url}/s/s-review`);
-      await page.until('the Overview', () => !!document.querySelector('[data-ux-section="findings"]'));
+      await page.goto(`${mock.url}/s/s-reviews`);
+      await page.until('the Overview', () => !!document.querySelector('[data-ux-section="latest reply"]'));
       await page.pointAt(400, 300);
       await wait(3000);
       await page.click('#task-sheet [role="tab"]', 'Diff');
@@ -111,23 +108,22 @@ export const restart: Check[] = [
       });
       assert.equal(read.data!.screen, 'task/overview');
       assert.equal(read.data!.action, 'click');
-      assert.ok(read.data!.sections.findings >= 2000, `findings were in view for ${read.data!.sections.findings} ms`);
+      assert.ok(read.data!.sections['latest reply'] >= 2000, `the latest reply was in view for ${read.data!.sections['latest reply']} ms`);
       assert.ok(read.data!.sections['message box'] >= 2000, `the message box was in view for ${read.data!.sections['message box']} ms`);
       assert.ok(!('links' in read.data!.sections), 'a section the task does not have is not read');
     },
   },
   {
     name: 'diff-tab the Diff tab marks a worktree with changes by a dot, with no count, and shows no mark when it has none',
-    scenario: 'findings',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/s/s-review`);
+      await page.goto(`${mock.url}/s/s-reviews`);
       const tab = () => {
         const t = [...document.querySelectorAll<HTMLElement>('#task-sheet [role="tab"]')].find((b) => b.innerText.startsWith('Diff'));
         return t ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.dataset.explain, changes: t.dataset.changes ?? null, mark: !!t.querySelector('[aria-label="has changes"]') } : null;
       };
       assert.deepEqual(await page.until('the Diff tab', tab), { text: 'Diff 3', title: 'Has changes against the base branch', changes: 'true', mark: true });
       await shot('diff-tab-changes');
-      await mock.post('/mock/patch', { id: 's-review', patch: { diffstat: { files: 0, insertions: 0, deletions: 0 } } });
+      await mock.post('/mock/patch', { id: 's-reviews', patch: { diffstat: { files: 0, insertions: 0, deletions: 0 } } });
       assert.deepEqual(await page.until('the tab with no changes', () => {
         const t = [...document.querySelectorAll<HTMLElement>('#task-sheet [role="tab"]')].find((b) => b.innerText.startsWith('Diff'));
         return t && !t.querySelector('[aria-label="has changes"]') ? { text: t.innerText.replace(/\s+/g, ' ').trim(), title: t.dataset.explain, changes: t.dataset.changes ?? null } : null;
@@ -186,7 +182,7 @@ export const restart: Check[] = [
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/wall`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
-      type Row = { id: string; status: string; title: string | null; parent: unknown; archived: boolean; activity: { between?: true } | null; interrupted: { cause?: string } | null };
+      type Row = { id: string; status: string; title: string | null; archived: boolean; activity: { between?: true } | null; interrupted: { cause?: string } | null };
       const all = (await mock.get('/api/state')).sessions as Row[];
       const inTurn = all.filter((s) => s.status === 'working' && !s.activity?.between);
       assert.ok(inTurn.length > 1);
@@ -198,7 +194,7 @@ export const restart: Check[] = [
       await shot('pausing');
       assert.equal((await mock.log()).filter((e) => e.path === '/api/pause/now').length, 0, 'no Esc until Stop now');
 
-      const idle = all.find((s) => s.status === 'idle' && !s.archived && !s.parent)!;
+      const idle = all.find((s) => s.status === 'idle' && !s.archived)!;
       await mock.post('/mock/patch', { id: idle.id, patch: { status: 'working', activity: { step: null, since: Date.now() } } });
       await mock.post('/mock/patch', { id: ends.id, patch: { status: 'idle', activity: null } });
       const working = [...inTurn, idle, ...all.filter((s) => s.status === 'working' && s.activity?.between)];
@@ -212,10 +208,10 @@ export const restart: Check[] = [
       assert.deepEqual(state.filter((s) => s.interrupted?.cause === 'pause').map((s) => s.id).sort(), working.map((s) => s.id).sort());
       assert.equal(state.filter((s) => s.status === 'working').length, 0, 'nothing runs any more');
       const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
-      assert.equal(labels.filter((l) => l.endsWith(', Paused')).length, working.filter((s) => !s.parent).length);
+      assert.equal(labels.filter((l) => l.endsWith(', Paused')).length, working.length);
       await shot('paused');
 
-      const first = working.find((s) => s.title && !s.parent)!;
+      const first = working.find((s) => s.title)!;
       await page.click('[data-pause="paused"] button', first.title!);
       await page.click('#task-sheet [data-interrupted="paused"] button', 'Resume');
       const [one] = await logged(mock, 'the resume of one', (e) => e.path === '/api/pause/resume');
@@ -233,18 +229,17 @@ export const restart: Check[] = [
     scenario: 'restarted',
     clock: 'fast',
     async run({ page, mock, shot }) {
-      const before = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; parent: unknown; interrupted: { status: string } | null }[];
+      const before = (await mock.get('/api/state')).sessions as { id: string; status: string; archived: boolean; interrupted: { status: string } | null }[];
       const ended = before.filter((s) => s.interrupted && !s.archived);
-      const subtasks = ended.filter((s) => s.parent).length;
       const midTurn = ended.filter((s) => s.interrupted!.status !== 'idle');
       assert.ok(ended.length > 3 && midTurn.length > 1 && midTurn.length < ended.length, 'the scenario has tasks of every kind');
       await page.goto(`${mock.url}/wall`);
       const banner = await page.until('the recovery banner', () => document.querySelector<HTMLElement>('[data-restart="recover"]')?.innerText ?? null);
-      assert.match(banner, new RegExp(`The Mac restarted and ended ${ended.length - subtasks} tasks and ${subtasks} subtasks with it: .*\\d+ in progress`));
+      assert.match(banner, new RegExp(`The Mac restarted and ended ${ended.length} tasks with it: .*\\d+ in progress`));
       assert.doesNotMatch(banner, /Paused/, 'nothing was paused, so the banner reads as before');
       assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1);
       const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
-      assert.equal(labels.filter((l) => l.endsWith(', Ended by restart')).length, ended.length - subtasks, 'subtasks have no tile of their own');
+      assert.equal(labels.filter((l) => l.endsWith(', Ended by restart')).length, ended.length);
       assert.equal(labels.filter((l) => l.endsWith(', Ended')).length, 2, 'the two that had ended before the restart');
       await shot('restart-recover');
 
@@ -302,23 +297,22 @@ export const restart: Check[] = [
     name: 'R6 after a restart that followed a pause, one banner names the paused tasks and counts the ones the restart ended; one Resume all has the paused ones carry on on the resume prompt and brings the others back as they were, the ones cut short mid-turn still marked',
     scenario: 'restartedPaused',
     async run({ page, mock, shot }) {
-      type Row = { id: string; title: string | null; status: string; archived: boolean; parent: unknown; interrupted: { status: string; cause?: string } | null };
+      type Row = { id: string; title: string | null; status: string; archived: boolean; interrupted: { status: string; cause?: string } | null };
       const before = (await mock.get('/api/state')).sessions as Row[];
       const held = before.filter((s) => s.interrupted?.cause === 'pause');
       const ended = before.filter((s) => s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
       const midTurn = ended.filter((s) => s.interrupted!.status !== 'idle');
-      assert.ok(held.length > 1 && held.some((s) => s.parent) && ended.length > 1 && midTurn.length > 0, 'the scenario has paused tasks, a paused subtask and tasks the restart ended');
+      assert.ok(held.length > 1 && ended.length > 1 && midTurn.length > 0, 'the scenario has paused tasks and tasks the restart ended');
       await page.goto(`${mock.url}/wall`);
       const banner = await page.until('the one banner', () => document.querySelector<HTMLElement>('[data-restart="recover"][data-paused]')?.innerText ?? null);
       assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1, 'the pause has no banner of its own');
-      const tasks = (list: Row[]) => list.filter((s) => !s.parent).length;
-      assert.match(banner, new RegExp(`^The Mac restarted and ended ${tasks(ended)} tasks and 1 subtask with it: .+\\. Paused ${tasks(held)} tasks and 1 subtask: `));
+      assert.match(banner, new RegExp(`^The Mac restarted and ended ${ended.length} tasks with it: .+\\. Paused ${held.length} tasks: `));
       for (const s of held) assert.ok(banner.includes(s.title!), `names ${s.title}`);
       assert.match(banner, /Resume all has each paused one start its background tasks again and carry on, and continues the others where they were\./);
       assert.deepEqual(await page.eval(() => [...document.querySelectorAll('[data-restart="recover"] > button')].map((b) => b.textContent)), ['Resume all', 'Dismiss'], 'one Resume all, one Dismiss');
       const labels = await page.eval(() => [...document.querySelectorAll('[data-tile]')].map((t) => t.getAttribute('aria-label') ?? ''));
-      assert.equal(labels.filter((l) => l.endsWith(', Paused')).length, tasks(held));
-      assert.equal(labels.filter((l) => l.endsWith(', Ended by restart')).length, tasks(ended));
+      assert.equal(labels.filter((l) => l.endsWith(', Paused')).length, held.length);
+      assert.equal(labels.filter((l) => l.endsWith(', Ended by restart')).length, ended.length);
       await shot('restart-after-pause');
 
       await page.click('[data-restart="recover"] button', 'Resume all');
@@ -351,7 +345,7 @@ export const restart: Check[] = [
       assert.equal(state.filter((s) => s.interrupted).length, 0, 'the pause is forgotten too');
 
       await mock.post('/mock/scenario/restartedPausedFails', {});
-      const failing = ((await mock.get('/api/state')).sessions as typeof state).find((s) => s.interrupted?.cause === 'pause' && !('parent' in s && s.parent))!;
+      const failing = ((await mock.get('/api/state')).sessions as typeof state).find((s) => s.interrupted?.cause === 'pause')!;
       await page.goto(`${mock.url}/wall`);
       await page.click('[data-restart="recover"][data-paused] button', 'Resume all');
       const message = await page.until('the toast', () => document.querySelector<HTMLElement>('[data-toast]')?.innerText ?? null);
@@ -399,54 +393,13 @@ export const restart: Check[] = [
     },
   },
   {
-    name: 'R5 subtasks the restart ended show on their root task\'s tile as Ended by restart, until resumed or archived; the banner counts them apart and names each one\'s task',
-    scenario: 'restarted',
-    async run({ page, mock, shot }) {
-      const all = (await mock.get('/api/state')).sessions as { id: string; title: string; parent: { id: string } | null }[];
-      const fix = all.find((s) => s.id === 's-restart-fix')!;
-      const task = all.find((s) => s.id === fix.parent!.id)!;
-      await page.goto(`${mock.url}/wall`);
-      const listed = () => [...document.querySelectorAll('[data-tile] [data-restart-subtask]')].map((li) => ({
-        tile: li.closest('[data-tile]')!.getAttribute('data-session'), id: li.getAttribute('data-restart-subtask'), text: (li as HTMLElement).innerText.replace(/\s+/g, ' '),
-      }));
-      const shown = await page.until('the subtasks on their task\'s tile', () => {
-        const l = [...document.querySelectorAll('[data-tile] [data-restart-subtask]')];
-        return l.length === 2 ? true : null;
-      });
-      assert.ok(shown);
-      assert.deepEqual(await page.eval(listed), [
-        { tile: task.id, id: 's-restart-fix', text: 'ENDED BY RESTART Fix #1 retry backoff' },
-        { tile: task.id, id: 's-restart-look', text: 'ENDED BY RESTART Second look #1.1 backoff cap' },
-      ]);
-      assert.match(await page.eval(() => document.querySelector<HTMLElement>('[data-restart="recover"]:not([data-paused])')!.innerText), / tasks and 2 subtasks with it: /);
-      await shot('restart-subtasks-tile');
-
-      await mock.post('/mock/patch', { id: 's-restart-look', patch: { archived: true } });
-      await page.until('the archived one to leave the tile', () => document.querySelectorAll('[data-restart-subtask]').length === 1);
-      await page.click('[data-tile] [data-restart-subtask] button', 'Fix #1 retry backoff');
-      await page.until('the subtask\'s page', () => location.pathname.startsWith('/s/s-restart-fix'));
-      await page.goto(`${mock.url}/wall`);
-
-      await page.click('[data-restart="recover"] button', 'Resume all');
-      const cut = await page.until('the mid-turn banner', () => {
-        const b = document.querySelector<HTMLElement>('[data-restart="recover"]');
-        return b?.innerText.includes('cut short mid-turn') ? b.innerText : null;
-      });
-      assert.match(cut, /^\d+ tasks and 1 subtask were cut short mid-turn by the restart: /);
-      assert.ok(cut.includes(`Fix #1 retry backoff (subtask of ${task.title})`), cut);
-      await page.until('the tile to drop it once resumed', () => !document.querySelector('[data-restart-subtask]'));
-    },
-  },
-  {
     name: 'R8 archiving a task the restart ended takes it off the banner for good: unarchived later, its conversation resumes and the banner does not come back for it',
     scenario: 'restarted',
     async run({ page, mock }) {
-      const all = (await mock.get('/api/state')).sessions as { id: string; parent: unknown; archived: boolean; interrupted: unknown }[];
-      const ended = all.filter((s) => s.interrupted && !s.archived);
+      const all = (await mock.get('/api/state')).sessions as { id: string; archived: boolean; interrupted: unknown }[];
+      const tasks = all.filter((s) => s.interrupted && !s.archived);
       await page.goto(`${mock.url}/wall`);
       await page.until('the recovery banner', () => !!document.querySelector('[data-restart="recover"]'));
-      for (const s of ended.filter((s) => s.parent)) await mock.post(`/api/sessions/${s.id}/archive`, { archived: true });
-      const tasks = ended.filter((s) => !s.parent);
       for (const s of tasks) {
         await page.click(`[data-tile][data-session="${s.id}"] button[aria-label="Session actions"]`);
         await page.click(':popover-open button', 'Archive');

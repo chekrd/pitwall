@@ -1,7 +1,7 @@
 import type { ClearMark } from '../../server/clearing.ts';
 import type { Session as Row } from '../../server/db.ts';
 
-export type { Advice, Answered, Artifact, CodeRef, Finding, Interrupted, Aside, Link, Findings, Parent, Parked, PrFlow, Priority, Resolution, Question, QuestionOption, SessionStatus, SubtaskKind, Summary } from '../../server/db.ts';
+export type { Answered, Artifact, CodeRef, Interrupted, Aside, Link, Parked, PrFlow, Question, QuestionOption, SessionStatus } from '../../server/db.ts';
 // The mark is optional for the mock's --legacy server, which predates it.
 export type Session = Row & Partial<ClearMark>;
 export type { FullDiff, Upstream } from '../../server/git.ts';

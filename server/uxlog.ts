@@ -101,24 +101,21 @@ export function uxStore(db: DatabaseSync) {
   };
 }
 
-const kindOf = (key: string) => (key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : key.startsWith('r:') ? 'round' : 'turn');
+const kindOf = (key: string) => (key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : 'round');
 
 const loadOf = (all: Session[]) => ({
   open: all.filter((s) => openDecision(s)).length,
   working: all.filter((s) => s.status === 'working' && !s.archived).length,
 });
 
-// How a board answer answered: the option's index, not its label; whether the reply was the second opinion as it
-// came, edited from it, or the developer's own; the opinion's confidence.
+// How a board answer answered: the option's index, not its label.
 export function boardAnswer(s: Session, action: string, body: Data, now = Date.now()): Data | null {
   const d = openDecision(s);
   if (!d) return null;
-  const advice = s.advice?.state === 'done' && s.advice.key === d.key ? s.advice : null;
-  const base = { task: s.id, decision: d.key, kind: kindOf(d.key), waitMs: now - d.askedAt, confidence: advice?.confidence ?? null };
+  const base = { task: s.id, decision: d.key, kind: kindOf(d.key), waitMs: now - d.askedAt };
   const indexOf = (label: unknown) => (typeof label === 'string' ? d.options.findIndex((o) => o.label === label) : null);
   if (action === 'dismiss') return { ...base, how: 'dismiss' };
   if (action === 'decline-menu') return { ...base, how: 'decline' };
-  if (action === 'accept-advice') return { ...base, how: 'advice', option: indexOf(advice?.choice), followed: 'as-is' };
   if (action === 'answer-menu') {
     const picks = ((body.answers ?? []) as MenuAnswer[]).map((a, i) => ({
       picked: a.labels.map((l) => d.menu?.questions[i]?.options.findIndex((o) => o.label === l) ?? -1),
@@ -137,9 +134,7 @@ export function boardAnswer(s: Session, action: string, body: Data, now = Date.n
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   const files = Array.isArray(body.files) ? body.files.length : 0;
   const how = body.choice ? (text ? 'option-and-text' : 'option') : 'own-text';
-  const said = advice ? advice.answer.trim() : '';
-  const followed = !advice ? null : text && text === said ? 'as-is' : text && said && text.startsWith(said.slice(0, 40)) ? 'edited' : 'ignored';
-  return { ...base, how, option: indexOf(body.choice), files, followed };
+  return { ...base, how, option: indexOf(body.choice), files };
 }
 
 // Watches the board's sessions for decisions opening and closing and tasks starting and ending. A decision that
@@ -176,7 +171,7 @@ export function boardTracker(record: (name: string, data: Data) => void, now = (
       }
       for (const s of all) {
         const was = tasks.get(s.id);
-        if (!was && primed) record('task-start', { task: s.id, parent: !!s.parent, load });
+        if (!was && primed) record('task-start', { task: s.id, load });
         if (was && !was.archived && s.archived) record('task-end', { task: s.id, how: 'archived', lifeMs: now() - s.createdAt, prs: s.prs?.length ?? 0 });
         tasks.set(s.id, s);
       }

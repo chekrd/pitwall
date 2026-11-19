@@ -66,9 +66,8 @@ function CapsuleView({ capsule: c, repos, fresh }: { capsule: Capsule; repos: Re
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const glyph = <StateMark state={!c.send ? 'working' : c.send.state === 'held' ? 'sending' : attentionOf(s)} />;
   const clock = !c.send && s.activity && <Clock since={s.activity.since} />;
-  const know = s.summary?.learnings?.[0];
   const answered = answeredOf(c);
-  const summary = s.summary?.text ?? s.firstPrompt;
+  const prompt = s.firstPrompt;
 
   // Not over a dialog that opened while the hover delay ran.
   const show = () => {
@@ -113,7 +112,6 @@ function CapsuleView({ capsule: c, repos, fresh }: { capsule: Capsule; repos: Re
           <span className={styles.head}>
             <strong className={styles.name}>{name}</strong>
             <PrDots prs={s.prs} status={s.status} />
-            {know && <span className={styles.know} data-know aria-hidden />}
           </span>
           {c.send ? <span className={styles.line}><Line capsule={c} /></span> : <code className={styles.line}><Line capsule={c} /></code>}
         </span>
@@ -134,9 +132,8 @@ function CapsuleView({ capsule: c, repos, fresh }: { capsule: Capsule; repos: Re
           {clock}
         </span>
         <PrChips prs={s.prs} status={s.status} />
-        {know && <p className={styles.worth}>Worth knowing: {know}</p>}
         {answered && <p className={styles.answered}>{answered}</p>}
-        {summary && <p className={styles.summary}>{summary}</p>}
+        {prompt && <p className={styles.prompt}>{prompt}</p>}
       </div>
     </div>
   );

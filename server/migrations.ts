@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { SESSIONS_DIR } from './config.ts';
+import { DATA_DIR, SESSIONS_DIR } from './config.ts';
 
 type Migration = (db: DatabaseSync) => void;
 
@@ -109,6 +110,15 @@ export const migrations: Migration[] = [
   // 10: how much of the context window each task's conversation fills.
   (db) => {
     db.exec('ALTER TABLE sessions ADD COLUMN context INTEGER');
+  },
+  // 11: the model runs per task are gone: second opinions, summaries, explanations, findings with their subtasks, and
+  // the ranking with the priority it weighed. A subtask's row stays as a task of its own. The second opinions' scratch
+  // copies lived in the state folder's advisor/; with it gone, git lists those worktrees as prunable, which the board skips.
+  (db) => {
+    for (const column of ['advice', 'summary', 'explanation', 'findings', 'parent', 'resolution', 'rank', 'rank_reason', 'priority']) {
+      db.exec(`ALTER TABLE sessions DROP COLUMN ${column}`);
+    }
+    rmSync(join(DATA_DIR, 'advisor'), { recursive: true, force: true });
   },
 ];
 

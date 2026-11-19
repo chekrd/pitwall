@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sleep, until } from '../cdp.ts';
-import { actions, card, cartNotSent, frontIs, HELD_MS, logged, matches, openNewTask, openQueue, openSheetOf, pastePng, pngOnDisk, POSTED_MS, ready, replyIn, replyOnCart, sent, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
+import { actions, cartNotSent, frontIs, HELD_MS, logged, matches, openNewTask, openQueue, openSheetOf, pastePng, pngOnDisk, POSTED_MS, ready, replyIn, replyOnCart, sent, settled, sheetOpen, tiles, toastsOf, type Check } from '../helpers.ts';
 
 export const clientShell: Check[] = [
   {
@@ -266,7 +266,7 @@ export const clientShell: Check[] = [
       });
       await page.until('s-group back at the front', frontIs, 's-group');
       await logged(mock, 'the send', sent, POSTED_MS);
-      const cartOnly = async () => matches((await actions(mock)).map((e) => [e.action, e.sessionId]), [['accept-advice', 's-cart']]);
+      const cartOnly = async () => matches((await actions(mock)).map((e) => [e.action, e.sessionId]), [['answer', 's-cart']]);
       await holds('the answer Z took back to stay back', HELD_MS, cartOnly);
 
       await ready(page, 's-group');
@@ -307,26 +307,6 @@ export const clientShell: Check[] = [
       assert.deepEqual([sent.body.choice, sent.body.text, sent.body.files], ['Keep the account cart', 'see the screenshot', undefined]);
       const drafts = await page.eval(() => JSON.parse(sessionStorage.getItem('pitwall:drafts') ?? '[]') as [string, { text: string; files: { path: string }[] }][]);
       assert.deepEqual(drafts, [['s-cart', { text: '', files: [{ name: 'shot.png', path: '/uploads/late/shot.png' }] }]]);
-    },
-  },
-  {
-    name: 'client-5 a second opinion that finishes on the choice ⏎ was frozen on guards the card again, so 1 pressed at once sends nothing; after the guard 1 accepts it',
-    clock: 'fast',
-    scenario: 'freeze',
-    async run({ holds, page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      assert.equal((await page.eval(card))?.primary, 'Send “Merge both carts”');
-      const advice = await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Merge both carts', answer: 'Merge both carts, and also drop the stock cap so nothing is trimmed.' });
-      await page.until('the suggestion under option 1', () => !!document.querySelector('[data-card] [data-option="1"]')?.parentElement?.querySelector('[data-suggestion]'));
-      assert.deepEqual(await page.eval(() => [document.querySelector('[data-card] [data-primary]')?.firstElementChild?.textContent, !!document.querySelector('[data-card] footer[data-guarding]')]),
-        ['Send “Merge both carts”', true]);
-      await page.key('1');
-      await holds('1 to send nothing the moment the advice came', 300, async () => (await page.eval(toastsOf, 'undo')) === null);
-      await ready(page, 's-cart');
-      await page.key('1');
-      const [sent] = await logged(mock, 'the accept', (e) => e.action === 'accept-advice', POSTED_MS);
-      assert.deepEqual([sent.sessionId, sent.body.adviceAt], ['s-cart', advice.at]);
     },
   },
   {

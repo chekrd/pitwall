@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { decisionKey } from '../../server/decision.ts';
-import { freeze, startPicks, togglePick } from './deck.ts';
-import { queue, useQueue } from './queue.ts';
+import { startPicks, togglePick } from './deck.ts';
+import { queue } from './queue.ts';
 import type { Menu, MenuAnswer, Session } from './types.ts';
 
 // State that belongs to one decision: a new decision on the same card starts it afresh.
@@ -12,22 +12,15 @@ export function useKeyed<T>(key: string | null, initial: () => T): [T, (value: T
   return [current.value, (value: T) => setState({ key, value })];
 }
 
-// What a decision's card and its task page share: the choice frozen when the decision first showed, which a later
-// second opinion does not move, and a menu's picks, which belong to that one menu, so a menu that replaces it in the
-// same snapshot starts with its own.
+// What a decision's card and its task page share: a menu's picks, which belong to that one menu, so a menu that
+// replaces it in the same snapshot starts with its own.
 export function useDecision(session: Session, menu: Menu | null) {
-  const q = useQueue();
   const key = decisionKey(session);
-  const frozen = key ? (q.frozen.get(key) ?? freeze(session)) : null;
-  const [picks, showPicks] = useKeyed<MenuAnswer[]>(key, () => startPicks(key ? queue.picksOf(key) : null, frozen));
+  const [picks, showPicks] = useKeyed<MenuAnswer[]>(key, () => startPicks(key ? queue.picksOf(key) : null, menu));
   const setPicks = (value: MenuAnswer[]) => {
     showPicks(value);
     if (key) queue.pick(key, value);
   };
-
-  useEffect(() => {
-    if (key && frozen) queue.freeze(key, frozen);
-  }, [key, frozen]);
 
   // The compiler reads what a callback uses during render, so a `menu!.questions` there would throw without a menu.
   const questions = menu?.questions ?? [];
@@ -36,5 +29,5 @@ export function useDecision(session: Session, menu: Menu | null) {
   const toggle = (question: number, label: string) => setPicks(togglePick(picks, question, label, questions[question]?.multiSelect === true));
   // An own answer to a question replaces its picks.
   const answerOwn = (question: number, other: string) => setPicks(picks.map((p, i) => (i === question ? { labels: other ? [] : p.labels, other } : p)));
-  return { key, frozen, picks, setPicks, toggle, answerOwn, questions, lone };
+  return { key, picks, setPicks, toggle, answerOwn, questions, lone };
 }

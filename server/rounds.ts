@@ -76,7 +76,7 @@ export function roundReply(round: Round, answers: RoundAnswers) {
   return `My answers to your questions:\n\n${lines.join('\n\n')}`;
 }
 
-// The round as plain text, for the models that rank and summarize it.
+// The round as plain text, as its decision's details.
 export const roundText = (round: Round) =>
   round.questions.map((q) =>
     `${q.id} — ${q.title}: ${q.body}` +

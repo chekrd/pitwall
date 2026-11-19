@@ -43,8 +43,10 @@ export const board: Check[] = [
       await openQueue(page, mock);
       await page.key('ArrowRight');
       await ready(page, 's-hooks');
-      await page.key('6');
-      await page.until('Disable the endpoint unpicked', () => document.querySelector('[data-card] [data-option="6"]')?.getAttribute('aria-pressed') === 'false');
+      await page.key('1');
+      await page.key('4');
+      await page.until('Exponential and Email the account owner picked', () =>
+        ['1', '4'].every((n) => document.querySelector(`[data-card] [data-option="${n}"]`)?.getAttribute('aria-pressed') === 'true'));
       await shot('task-menu');
       await page.click('[data-card] [data-primary]');
       const toast = await until('the error toast', () => page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-toast][data-kind="error"]')].map((t) => t.innerText.trim()).join('\n')), POSTED_MS);

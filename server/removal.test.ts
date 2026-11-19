@@ -57,9 +57,8 @@ beforeEach(() => {
 
 const running = (conversation: string, pid: number, cwd: string) => live.set(conversation, { pid, cwd, status: 'idle', waitingFor: null });
 
-function task(id: string, repoId: number | null, worktree: string, pid: number | null, parent?: string) {
+function task(id: string, repoId: number | null, worktree: string, pid: number | null) {
   sessions.insert({ id, repoId, worktree, cwd: worktree, pid, tty: pid ? `/dev/ttys${pid}` : null, title: id, firstPrompt: 'do it', status: pid ? 'idle' : 'exited' });
-  if (parent) sessions.update(id, { parent: { id: parent, basis: 'b', finding: 0, title: 't', kind: 'accept', text: 'x' } });
 }
 
 async function repoWithWorktree() {
@@ -76,12 +75,11 @@ test('Clear task leaves a worktree another task works in, stopping only its own 
   const { main, id, worktree } = await repoWithWorktree();
   task('first', id, worktree, 9101);
   task('second', id, worktree, 9102);
-  task('first-sub', id, worktree, null, 'first');
   running('first', 9101, worktree);
   running('second', 9102, worktree);
 
   const loss = await deleteWorktreeLoss('second');
-  assert.deepEqual(loss, { branch: 'feature', deletesBranch: false, files: 0, commits: 0, checkout: true, subtasks: 0, shared: true });
+  assert.deepEqual(loss, { branch: 'feature', deletesBranch: false, files: 0, commits: 0, checkout: true, shared: true });
   await deleteWorktree('second');
 
   assert.ok(existsSync(worktree), 'the worktree stays');
@@ -89,16 +87,15 @@ test('Clear task leaves a worktree another task works in, stopping only its own 
   assert.deepEqual(signalled, [9102]);
   assert.deepEqual(closed, [{ dir: null, ttys: ['/dev/ttys9102'] }]);
   assert.equal(sessions.get('second'), undefined);
-  assert.ok(sessions.get('first') && sessions.get('first-sub'), "the other task and its subtask stay");
+  assert.ok(sessions.get('first'), 'the other task stays');
 
-  // Once it is the only task there, with its subtask, the worktree and its branch go.
+  // Once it is the only task there, the worktree and its branch go.
   assert.equal((await deleteWorktreeLoss('first')).shared, undefined);
   await deleteWorktree('first', { discard: true });
   assert.ok(!existsSync(worktree));
   assert.equal(git(main, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/feature'), '');
   assert.deepEqual(signalled, [9102, 9101]);
   assert.equal(sessions.get('first'), undefined);
-  assert.equal(sessions.get('first-sub'), undefined);
 });
 
 test('an archived task in the worktree keeps it too', async () => {

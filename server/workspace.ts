@@ -2,7 +2,6 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { liveConversations, listConversations, type Conversation } from './conversations.ts';
 import { repos, roots, sessions, type Repo } from './db.ts';
-import { SCRATCH_DIR } from './config.ts';
 import { detectBase, listWorktrees, type Worktree } from './git.ts';
 import { findRepos } from './scan.ts';
 
@@ -60,7 +59,7 @@ export async function refreshWorkspace({ scan = false } = {}) {
       defaultWorktreeRoot: repo.worktreeRoot ?? join(dirname(repo.path), 'worktrees'),
     };
     try {
-      const worktrees = await Promise.all((await listWorktrees(repo.path)).filter((w) => !w.path.startsWith(`${SCRATCH_DIR}/`)).map(async (w) => ({
+      const worktrees = await Promise.all((await listWorktrees(repo.path)).map(async (w) => ({
         ...w,
         conversations: await listConversations(w.path, live),
       })));
@@ -103,14 +102,5 @@ export function taskFolderOf(path: string) {
 
 export const taskWorktrees = (taskFolder: string) =>
   cache.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && dirname(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
-
-// Where a task works, for the prompts of the models that read about it.
-export function placeOf(s: { repoId: number | null; worktree: string }) {
-  if (s.repoId !== null) return `the git worktree ${s.worktree} (repository ${repoView(s.repoId)?.name ?? 'unknown'}, base branch ${repoView(s.repoId)?.base ?? 'unknown'})`;
-  const opened = taskWorktrees(s.worktree).map(({ repo, worktree }) => `${repo.name} at ${worktree.path} (base branch ${repo.base})`);
-  return `the task folder ${s.worktree}, which holds a git worktree for each repository the task changes (${opened.join('; ') || 'none yet'}), beside the main checkouts in ${dirname(dirname(s.worktree))}`;
-}
-
-export const taskRepoNames = (taskFolder: string) => taskWorktrees(taskFolder).map(({ repo }) => repo.name).join(', ') || 'no repository yet';
 
 export const snapshot = () => ({ home: homedir(), roots: roots.all(), repos: cache, folders: folders(), sessions: sessions.all() });

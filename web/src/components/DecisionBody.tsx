@@ -1,17 +1,12 @@
-import type { Ref } from 'react';
-import type { Frozen } from '../deck.ts';
 import type { Request } from '../outbox.ts';
-import { useStore } from '../store.ts';
-import type { Advice, Session } from '../types.ts';
-import { coverageOf, type DecisionView } from '../util.ts';
+import type { Session } from '../types.ts';
+import type { DecisionView } from '../util.ts';
 import styles from './Card.module.css';
 import { Composer } from './Composer.tsx';
 import { Markdown } from './Markdown.tsx';
 import { Options } from './Options.tsx';
 import parts from './Parts.module.css';
 import { Column, Headline } from './Parts.tsx';
-import { SecondOpinion } from './SecondOpinion.tsx';
-import { WhyPanel } from './WhyPanel.tsx';
 
 export interface ComposerHooks {
   focus: number;
@@ -23,40 +18,24 @@ export interface ComposerHooks {
 interface DecisionBodyProps {
   session: Session;
   decision: DecisionView;
-  kind: 'ask' | 'turn';
-  advice: Advice | null;
-  frozen: Frozen | null;
-  accepting: boolean;
   hidden: boolean;
   onDetails: () => void;
-  whyOpen: boolean;
-  whyRef: Ref<HTMLElement>;
-  onCloseWhy: () => void;
   onPick: (label: string) => void;
-  onAccept: () => void;
-  onEdit: () => void;
   // The reply box while it is open.
   composer: ComposerHooks | null;
 }
 
-// An ask_human question or an end-of-turn choice: the problem and Claude's details on the left, the second opinion,
-// the options and the reply box on the right. An end-of-turn choice shows Claude's whole last message as its context.
+// An ask_human question: the question and Claude's details on the left, the options and the reply box on the right.
 export function DecisionBody(p: DecisionBodyProps) {
   const { session, decision } = p;
-  const { sessions } = useStore();
-  const done = p.advice?.state === 'done' ? p.advice : null;
-  const title = p.kind === 'ask' ? "Claude's details" : 'Context';
   return (
     <div className={styles.cols}>
       <Column side="left">
         <Headline text={decision.problem} />
-        {decision.brief && (p.kind === 'ask'
-          ? <p className={styles.lead}>{decision.brief}</p>
-          : <p className={`${styles.lead} ${styles.oneLine}`} data-explain={decision.brief}>{decision.brief}</p>)}
         {decision.context && (
-          <section className={styles.details} aria-label={title}>
+          <section className={styles.details} aria-label="Claude's details">
             <div className={styles.detailsHead}>
-              <h3 className={parts.label}>{title}</h3>
+              <h3 className={parts.label}>Claude's details</h3>
               <button type="button" className={parts.tiny} aria-expanded={!p.hidden} onClick={p.onDetails}>
                 {p.hidden ? 'Show' : 'Hide'} <kbd>Space</kbd>
               </button>
@@ -64,21 +43,9 @@ export function DecisionBody(p: DecisionBodyProps) {
             {!p.hidden && <div className={parts.body}><Markdown source={decision.context} /></div>}
           </section>
         )}
-        {p.whyOpen && <WhyPanel ref={p.whyRef} session={session} decision={decision.key} onClose={p.onCloseWhy} />}
       </Column>
       <Column side="right">
-        <SecondOpinion session={session} advice={p.advice} />
-        <Options
-          options={decision.options}
-          advice={done}
-          frozen={p.frozen}
-          composing={!!p.composer}
-          accepting={p.accepting}
-          onPick={p.onPick}
-          onAccept={p.onAccept}
-          onEdit={p.onEdit}
-          coverage={coverageOf(session, sessions, decision.key)}
-        />
+        <Options options={decision.options} onPick={p.onPick} />
         {p.composer && (
           <Composer
             session={session}

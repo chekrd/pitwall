@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { actions, card, frontIs, HELD_MS, logged, openFromWall, openNewTask, openQueue, pastePng, POSTED_MS, reachable, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, unguarded, type Check } from '../helpers.ts';
+import { actions, card, frontIs, HELD_MS, logged, openFromWall, openNewTask, openQueue, pastePng, POSTED_MS, reachable, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, type Check } from '../helpers.ts';
 
 export const replies: Check[] = [
   {
@@ -16,13 +16,13 @@ export const replies: Check[] = [
       await mock.post('/mock/ui-entry', { src: '/assets/next.js' });
       await holds('the page not to reload with a send held', 2000, () => page.eval(() => (window as unknown as { e2eProbe?: number }).e2eProbe === 1));
       const loadedAt = await until('the page to reload', () => page.eval(() => ((window as unknown as { e2eProbe?: number }).e2eProbe === undefined && document.readyState === 'complete' ? performance.timeOrigin : 0)), 7000 - (Date.now() - pressed));
-      const [sent] = await logged(mock, 'the held answer', (e) => e.action === 'accept-advice');
+      const [sent] = await logged(mock, 'the held answer', (e) => e.action === 'answer');
       assert.equal(sent.status, 204);
       assert.ok(sent.at < loadedAt, `the answer went out ${sent.at - loadedAt} ms after the reload`);
     },
   },
   {
-    name: 'P5.2.21 In your queue: O on s-cart opens Overview with In your queue · Decision, the problem, its options with the second opinion on Merge both carts, a reply box, Dismiss and Open its card; Open its card closes the sheet with s-cart at the front, also from over the Wall; an option pressed on the page is held with Undo and goes out with its key',
+    name: 'P5.2.21 In your queue: O on s-cart opens Overview with In your queue · Decision, the question, its options, a reply box, Dismiss and Open its card; Open its card closes the sheet with s-cart at the front, also from over the Wall; an option pressed on the page is held with Undo and goes out with its key',
     clock: 'fast',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
@@ -34,15 +34,14 @@ export const replies: Check[] = [
         return q && {
           text: [...q.querySelectorAll(':scope > span, :scope > h3')].map((c) => c.textContent),
           options: [...q.querySelectorAll('[data-option]')].map((o) => o.textContent ?? ''),
-          suggested: q.querySelector('[data-suggestion]')?.textContent?.includes('CHK-412') ?? false,
           reply: !!q.querySelector('textarea'),
           actions: [...q.querySelectorAll(':scope > div:last-child button')].map((b) => b.textContent),
         };
       };
       const shown = await page.until('the queue box', box);
-      assert.deepEqual(shown.text, ['In your queue · Decision', 'What should happen to a guest cart when the shopper logs in?']);
+      assert.deepEqual(shown.text, ['In your queue · Decision', 'Guest cart or account cart when a shopper logs in?']);
       for (const label of ['Merge both carts', 'Keep the account cart']) assert.ok(shown.options.some((o) => o.includes(label)), `${label} in ${shown.options.join(', ')}`);
-      assert.deepEqual([shown.suggested, shown.reply, shown.actions], [true, true, ['Dismiss', 'Open its card']]);
+      assert.deepEqual([shown.reply, shown.actions], [true, ['Dismiss', 'Open its card']]);
       await page.until('the sheet to settle', settled);
       await shot('sheet-in-your-queue');
       await page.click('#task-sheet [data-queued] button', 'Open its card');
@@ -74,26 +73,19 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P5.2.21b In your queue: a menu that replaces another in one snapshot starts with its own picks on the task page, as on the card, and the choice each first showed is frozen',
-    async run({ page, mock }) {
+    name: 'P5.2.21b In your queue: a menu that replaces another in one snapshot starts with its own picks on the task page, as on the card',
+    async run({ holds, page, mock }) {
       const pressed = () => [...document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]')].map((b) => b.textContent ?? '');
-      const frozen = (key: string) => {
-        try {
-          return (JSON.parse(sessionStorage.getItem('pitwall:frozen') ?? '[]') as [string, unknown][]).some(([k]) => k === key);
-        } catch {
-          return false;
-        }
-      };
       await page.goto(`${mock.url}/s/s-hooks/overview`);
-      await page.until('the second opinion\'s picks', () => document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]').length === 3);
+      await page.until('the menu, nothing picked', () => document.querySelectorAll('#task-sheet [data-queued] [data-option]').length === 6);
+      assert.deepEqual(await page.eval(pressed), []);
       await page.click('#task-sheet [data-queued] [data-option]', 'Linear, 6 tries');
       await page.until('Linear picked', () => [...document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]')].some((b) => b.textContent?.includes('Linear, 6 tries')));
-      await page.until('the menu frozen', frozen, 'm:toolu_01Hooks');
 
       const { menu } = await stateOf(mock, 's-hooks');
       await mock.post('/mock/patch', { id: 's-hooks', patch: { menu: { ...menu, toolUseId: 'toolu_02Hooks', at: Date.now() } } });
-      await page.until('the new menu frozen', frozen, 'm:toolu_02Hooks');
-      assert.deepEqual(await page.eval(pressed), [], 'the picks made on the menu before carried over');
+      await page.until('the new menu', () => document.querySelector('#task-sheet [data-queued] [data-option][aria-pressed="true"]') === null);
+      await holds('the picks made on the menu before not to carry over', 500, async () => (await page.eval(pressed)).length === 0);
     },
   },
   {
@@ -327,7 +319,7 @@ export const replies: Check[] = [
       const opened = Date.now();
       const [focus] = await logged(mock, 'the terminal request', (e) => e.action === 'focus');
       const sent = await actions(mock);
-      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['accept-advice', 's-cart', 204], ['focus', 's-cart', 204]]);
+      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['answer', 's-cart', 204], ['focus', 's-cart', 204]]);
       assert.ok(sent[0].at - opened < 1000 && focus.at - opened < 3000, `posted ${sent[0].at - opened} ms and focused ${focus.at - opened} ms after Terminal`);
     },
   },
@@ -338,6 +330,8 @@ export const replies: Check[] = [
       await openQueue(page, mock);
       await page.key('ArrowRight');
       await ready(page, 's-hooks');
+      await page.key('4');
+      await page.key('6');
       await page.click('[data-card] input[aria-label="Your own answer: Backoff"]');
       await page.type('Every 10 min, 6 tries');
       await page.key('Enter');
@@ -350,14 +344,10 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P5.2.25 a reload loses nothing: the draft in a card\'s reply box, its attachment and the frozen choice come back',
-    scenario: 'freeze',
+    name: 'P5.2.25 a reload loses nothing: the draft in a card\'s reply box and its attachment come back, with ⏎ still on Claude\'s recommended option',
     async run({ page, mock, shot }) {
       await openQueue(page, mock);
       await ready(page, 's-cart');
-      await mock.post('/mock/advice', { id: 's-cart', state: 'done', choice: 'Ask the shopper', confidence: 71 });
-      await page.until('the late second opinion on option 3', () => !!document.querySelector('[data-card] [data-option="3"]')?.parentElement?.innerText.includes("Second opinion's pick · 71%"));
-      await page.until('the guard it restarted to end', unguarded);
       await page.key('w');
       await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
       await page.type('only if stock allows');
@@ -367,8 +357,8 @@ export const replies: Check[] = [
       await page.until('the card of s-cart', frontIs, 's-cart');
       const kept = await page.until('the reply box', replyIn, '[data-card]');
       assert.deepEqual({ ...kept, focused: undefined }, { value: 'only if stock allows', files: ['ready shot.png'], focused: undefined });
-      const frozen = await page.eval(() => [...document.querySelectorAll('[data-card] [data-frozen] [data-option]')].map((o) => (o as HTMLElement).dataset.option));
-      assert.deepEqual([frozen, (await page.eval(card))!.primary], [['1'], 'Send “Merge both carts” + your note']);
+      const chosen = await page.eval(() => [...document.querySelectorAll('[data-card] [data-enter] [data-option]')].map((o) => (o as HTMLElement).dataset.option));
+      assert.deepEqual([chosen, (await page.eval(card))!.primary], [['1'], 'Send “Merge both carts” + your note']);
       await page.until('the card to settle', still);
       await shot('queue-after-reload');
     },

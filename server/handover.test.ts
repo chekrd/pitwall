@@ -23,15 +23,13 @@ test('the task a Claude left is the live one on its pid whose conversation is no
 });
 
 test('a hand-over keeps the old conversation as history and drops only what its transcript said', () => {
-  const summary = { text: 'Parser done.', progress: ['Parser'], learnings: ['The lexer is shared.'], findings: 2, basis: 't1', at: 1 };
-  const s = { conversation: 'a', history: [], lastMessage: 'Done with the parser.', summary };
+  const s = { conversation: 'a', history: [], lastMessage: 'Done with the parser.' };
   const patch = handOver(s, 'a2', 5);
   assert.deepEqual(patch.history, [{ id: 'a', lastMessage: 'Done with the parser.', until: 5 }]);
   assert.equal(patch.conversation, 'a2');
   assert.deepEqual([patch.lastMessage, patch.lastTurn, patch.question, patch.menu], [null, null, null, null]);
-  assert.deepEqual(patch.summary, { ...summary, text: '', progress: [], learnings: [] });
-  for (const kept of ['title', 'firstPrompt', 'artifacts', 'links', 'findings', 'parent']) assert.ok(!(kept in patch), kept);
-  const back = handOver({ conversation: 'a2', history: patch.history, lastMessage: null, summary: null }, 'a', 9);
+  for (const kept of ['title', 'firstPrompt', 'artifacts', 'links', 'parked', 'asides']) assert.ok(!(kept in patch), kept);
+  const back = handOver({ conversation: 'a2', history: patch.history, lastMessage: null }, 'a', 9);
   assert.deepEqual(back.history, [{ id: 'a2', lastMessage: null, until: 9 }]);
 });
 
@@ -49,7 +47,7 @@ function sync(tasks: ReturnType<typeof task>[], live: Map<string, number>, clear
       }
       s = left;
     }
-    if (s.conversation !== conversation) Object.assign(s, handOver({ ...s, lastMessage: null, summary: null }, conversation, 0));
+    if (s.conversation !== conversation) Object.assign(s, handOver({ ...s, lastMessage: null }, conversation, 0));
     s.pid = pid;
   }
 }

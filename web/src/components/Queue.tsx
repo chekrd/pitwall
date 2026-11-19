@@ -17,10 +17,10 @@ import { labelOf, stoppedOnError } from './Status.tsx';
 function peekText(s: Session) {
   const kind = kindOf(s);
   if (kind === 'menu') return s.menu?.questions.map((q) => q.question).join(' · ') ?? '';
-  if (kind === 'ask' || kind === 'turn') return decisionOf(s)?.problem ?? '';
+  if (kind === 'ask') return decisionOf(s)?.problem ?? '';
   if (kind === 'round') return roundTitle(s.round!);
   if (kind === 'prompt') return promptOf(s).headline;
-  return s.summary?.text ?? '';
+  return 'Claude finished its turn';
 }
 
 // Another card, or another decision on it: what must not replace a field the reader is typing in.

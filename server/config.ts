@@ -9,13 +9,11 @@ export const ORIGIN = `http://${HOST}:${PORT}`;
 export const ROOT = join(import.meta.dirname, '..');
 export const DATA_DIR = join(homedir(), 'Library', 'Application Support', 'pitwall');
 export const SESSIONS_DIR = join(DATA_DIR, 'sessions');
-export const SCRATCH_DIR = join(DATA_DIR, 'advisor');
 export const DB_PATH = join(DATA_DIR, 'state.db');
 // Written by the status line script; see the README.
 export const USAGE_FILE = join(DATA_DIR, 'usage.json');
 export const UPLOADS_DIR = uploadsDir(homedir());
 
-export const RUBRIC_FILE = join(ROOT, 'config', 'priority-rubric.md');
 export const WEB_DIST = join(ROOT, 'web', 'dist');
 
 export const MCP_SERVER_NAME = 'pitwall';

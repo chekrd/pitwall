@@ -91,7 +91,7 @@ export const layout: Check[] = [
       await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await openNewTask(page);
       await page.type('Add retries');
-      await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 1 });
+      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
       await page.until('the arrival in the meter', () => !!document.querySelector('[data-segment][data-session="s-new"]'));
       await page.until('the card and the dock', () => !!document.querySelector('[data-card]') && !!document.querySelector('[data-dock]'));
       assert.deepEqual(await page.eval(() => [document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')?.value, document.activeElement === document.querySelector('dialog#new-task textarea')]), ['Add retries', true]);
@@ -295,7 +295,7 @@ export const layout: Check[] = [
     },
   },
   {
-    name: 'P7.contrast-queue every text on the queue, its dock, hover card, peeks, meter chips and toasts reads at 4.5:1 or more: an ask with its reply box, command list and Elaborate, a menu, an end-of-turn choice with its failed Elaborate and a running and a failed second opinion, Needs focus, Your turn, a send held, a refusal and a card that leaves',
+    name: 'P7.contrast-queue every text on the queue, its dock, hover card, peeks, meter chips and toasts reads at 4.5:1 or more: an ask with its reply box and command list, a menu, another ask, Needs focus, Your turn, a send held, a refusal and a card that leaves',
     expectedErrors: [/status of 400/],
     async run({ themes, page, mock }) {
       const fails: string[] = [];
@@ -316,10 +316,6 @@ export const layout: Check[] = [
       await audit('reply box');
       await page.key('Escape');
       await page.key('Escape');
-      await page.key('y');
-      await page.until('the explanation', () => !!document.querySelector('[data-card] [data-elaborate="done"]'));
-      await audit('Elaborate');
-      await page.key('y');
       await page.hover('[data-capsule][data-session="s-invoice"] button');
       await page.until('the hover card', hoverCard, 's-invoice');
       await audit('hover card');
@@ -329,15 +325,7 @@ export const layout: Check[] = [
       await audit('menu');
       await page.key('ArrowRight');
       await ready(page, 's-group');
-      await page.key('y');
-      await page.until('the failed explanation', () => !!document.querySelector('[data-card] [data-elaborate="failed"]'));
-      await audit('end of turn, Elaborate failed');
-      await mock.post('/mock/advice', { id: 's-group', state: 'thinking' });
-      await page.until('the running second opinion', () => !!document.querySelector('[data-card] [data-advice="running"]'));
-      await audit('second opinion running');
-      await mock.post('/mock/advice', { id: 's-group', state: 'failed' });
-      await page.until('the failed second opinion', () => !!document.querySelector('[data-card] [data-advice="failed"]'));
-      await audit('second opinion failed');
+      await audit('another ask');
       await page.key('ArrowRight');
       await ready(page, 's-astro');
       await audit('Needs focus');
@@ -357,7 +345,7 @@ export const layout: Check[] = [
       await page.click('[data-segment][data-session="s-cart"]');
       await page.until('the card marked Not sent', () => !!document.querySelector('[data-card] [data-not-sent]'));
       await audit('Not sent on the card');
-      await mock.post('/mock/add', { template: 'ask', id: 's-new', rank: 9 });
+      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
       await page.until('Just in', () => !!document.querySelector('[data-justin]'));
       await mock.post('/mock/patch', { id: 's-cart', patch: { question: null, status: 'working', activity: { step: 'Edit src/cart/mergeCarts.ts', since: Date.now() } } });
       await page.until('s-cart off the queue', () => !document.querySelector('[data-segment][data-session="s-cart"]'));
@@ -488,6 +476,8 @@ export const layout: Check[] = [
       assert.equal(await page.eval(() => [...document.querySelectorAll('[data-capsule][data-session="s-cart"] button')].some((b) => b.textContent === 'Undo')), true);
 
       await ready(page, 's-hooks');
+      await page.key('1');
+      await page.key('4');
       await page.key('Enter');
       const pressed = Date.now();
       await page.until('s-group at the front', frontIs, 's-group');

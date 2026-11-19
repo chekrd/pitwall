@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { setImmediate as settle } from 'node:timers/promises';
 import { answeredOf, confirmed, dockOf, lineOf } from './dock.ts';
 import { createOutbox, type Request } from './outbox.ts';
-import { question, session, turn } from './testing.ts';
+import { question, session } from './testing.ts';
 
 const HOLD_MS = 5000;
 const NOW = 1_000_000;
@@ -12,7 +12,7 @@ const working = (id: string, createdAt: number, step: string | null = 'Edit a.ts
   session(id, { status: 'working', createdAt, activity: { step, since: NOW - 60_000 } });
 
 const cart = session('cart', { question: question('q1'), createdAt: 1 });
-const group = session('group', { summary: turn('t1'), createdAt: 2 });
+const group = session('group', { question: { ...question('q2'), title: 'Ship it?' }, createdAt: 2 });
 const reviews = session('reviews', { createdAt: 3 });
 const invoice = working('invoice', 30);
 const search = working('search', 10);
@@ -25,7 +25,7 @@ const sessions = [cart, group, reviews, invoice, search, thumbs, ended, shelved,
 const answer = (key: string, choice: string): Request => ({ action: 'answer', body: { key, choice }, label: choice });
 const note = (text: string): Request => ({ action: 'answer', body: { key: null, text }, label: text });
 const command = (text: string): Request => ({ action: 'answer', body: { key: null, text }, label: text, command: true });
-const dismiss: Request = { action: 'dismiss', body: { key: 's:t1' }, label: 'Ship it?' };
+const dismiss: Request = { action: 'dismiss', body: { key: 'q:q2' }, label: 'Ship it?' };
 
 // An outbox on mocked timers whose posts wait until the test settles them.
 function outbox(t: TestContext) {
@@ -49,7 +49,7 @@ test('a send puts its session first, newest first, through held, sending, waitin
   const { box, posts, tick } = outbox(t);
   box.hold(cart, answer('q:q1', 'Keep'), null);
   tick(1000);
-  box.hold(group, answer('s:t1', 'Ship'), null);
+  box.hold(group, answer('q:q2', 'Ship'), null);
   box.hold(reviews, command('/compact'), null);
   assert.deepEqual(shown(dockOf(sessions, box.items(), NOW)), ['group held', 'cart held', 'search working', 'thumbs working', 'invoice working']);
 
@@ -113,7 +113,7 @@ test('the second line: the step or Starting, a countdown that never reads more t
 test('a sent item the snapshot confirms, or that 15 s drop, turns back into its session; an undone or failed one does not', async (t) => {
   const { box, posts, tick } = outbox(t);
   box.hold(cart, answer('q:q1', 'Keep'), null);
-  box.hold(group, answer('s:t1', 'Ship'), null);
+  box.hold(group, answer('q:q2', 'Ship'), null);
   const held = box.items();
   box.undo();
   assert.deepEqual(confirmed(held, box.items()), []);
@@ -125,7 +125,7 @@ test('a sent item the snapshot confirms, or that 15 s drop, turns back into its 
   box.confirm([{ ...cart, status: 'working', question: null }]);
   assert.deepEqual(confirmed(sent, box.items()), ['cart']);
 
-  box.hold(group, answer('s:t1', 'Ship'), null);
+  box.hold(group, answer('q:q2', 'Ship'), null);
   tick(5000);
   posts[1].ok();
   await settle();
