@@ -158,7 +158,7 @@ export function openNewTask(preset?: { repoId: number; name: string; prompt: str
   dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
 }
 
-// A task that failed to start goes back to the form as it was sent, its card making way.
+// A task that failed to start goes back to the form as it was sent, its tile making way.
 export function editFailedTask(session: Session) {
   const { files, ...request } = session.starting!.request;
   openNewTask(request);

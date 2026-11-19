@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { actions, card, frontIs, HELD_MS, logged, openFromWall, openNewTask, openQueue, pastePng, POSTED_MS, reachable, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, type Check } from '../helpers.ts';
+import { actions, decision, decisionOf, HELD_MS, logged, noDecision, openDecision, openFromWall, openNewTask, pastePng, POSTED_MS, reachable, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, type Check } from '../helpers.ts';
+
+const toWall = '#task-sheet header button[aria-label="Back to the Wall"]';
 
 export const replies: Check[] = [
   {
     name: 'P5.2.20 the reload gate: a new build announced while a send is held does not reload the page until it went out, and then it does',
     clock: 'fast',
     async run({ holds, page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock);
       await page.eval(() => void ((window as unknown as { e2eProbe?: number }).e2eProbe = 1));
-      await page.key('1');
+      await page.click('[data-decision] [data-option="1"]');
       const pressed = Date.now();
       await page.until('the undo toast', toastsOf, 'undo');
       await mock.post('/mock/ui-entry', { src: '/assets/next.js' });
@@ -22,30 +23,26 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P5.2.21 In your queue: O on s-cart opens Overview with In your queue · Decision, the question, its options, a reply box, Dismiss and Open its card; Open its card closes the sheet with s-cart at the front, also from over the Wall; an option pressed on the page is held with Undo and goes out with its key',
+    name: 'P5.2.21 the decision on Overview: s-cart\'s page shows its kind, category and age, the question, its options, a reply box, the main button and Dismiss, with no word of a queue; a task that starts asking while its page is open shows the decision there; a menu reads Asked in the terminal; an option pressed is held with Undo and goes out with its key',
     clock: 'fast',
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.key('o');
-      await page.until('the sheet', () => location.pathname === '/s/s-cart/overview' && !!document.querySelector('#task-sheet'));
+      await openDecision(page, mock);
       const box = () => {
-        const q = document.querySelector<HTMLElement>('#task-sheet [data-queued]');
+        const q = document.querySelector<HTMLElement>('#task-sheet [data-decision]');
         return q && {
-          text: [...q.querySelectorAll(':scope > span, :scope > h3')].map((c) => c.textContent),
+          text: [q.querySelector(':scope > span')?.textContent, q.querySelector('h3')?.textContent],
           options: [...q.querySelectorAll('[data-option]')].map((o) => o.textContent ?? ''),
           reply: !!q.querySelector('textarea'),
           actions: [...q.querySelectorAll(':scope > div:last-child button')].map((b) => b.textContent),
         };
       };
-      const shown = await page.until('the queue box', box);
-      assert.deepEqual(shown.text, ['In your queue · Decision', 'Guest cart or account cart when a shopper logs in?']);
+      const shown = await page.until('the decision', box);
+      assert.deepEqual(shown.text, ['Decision · product decision · asked 10m ago', 'Guest cart or account cart when a shopper logs in?']);
       for (const label of ['Merge both carts', 'Keep the account cart']) assert.ok(shown.options.some((o) => o.includes(label)), `${label} in ${shown.options.join(', ')}`);
-      assert.deepEqual([shown.reply, shown.actions], [true, ['Dismiss', 'Open its card']]);
+      assert.deepEqual([shown.reply, shown.actions], [true, ['Send “Merge both carts”↵', 'Dismiss']]);
+      assert.doesNotMatch((await page.eval(decision))!.text, /queue|its card/i);
       await page.until('the sheet to settle', settled);
-      await shot('sheet-in-your-queue');
-      await page.click('#task-sheet [data-queued] button', 'Open its card');
-      await page.until('the queue with s-cart at the front', () => !document.querySelector('#task-sheet') && location.pathname === '/' && document.querySelector<HTMLElement>('[data-card]')?.dataset.session === 's-cart');
+      await shot('sheet-decision');
 
       // A task that starts asking while its page is open over the Wall.
       await openFromWall(page, mock, 's-invoice');
@@ -53,38 +50,37 @@ export const replies: Check[] = [
         id: 's-invoice',
         patch: { status: 'idle', activity: null, question: { toolUseId: 'toolu_inv', category: 'plan-problem', askedAt: Date.now(), title: 'Round half cents to even?', details: '', options: [{ label: 'Yes' }, { label: 'No' }] } },
       });
-      assert.deepEqual((await page.until('the queue box', box))?.text.slice(0, 2), ['In your queue · Decision', 'Round half cents to even?']);
-      await page.click('#task-sheet [data-queued] button', 'Open its card');
-      await page.until('the queue with s-invoice at the front', () => !document.querySelector('#task-sheet') && location.pathname === '/' && document.querySelector<HTMLElement>('[data-card]')?.dataset.session === 's-invoice');
-      await page.eval(() => history.back());
-      await page.until('the Wall again on Back', () => location.pathname === '/wall' && !document.querySelector('#task-sheet'));
+      const asked = await page.until('the decision', box);
+      assert.ok(asked.text[0]?.startsWith('Decision · plan-problem · asked'), asked.text[0] ?? '');
+      assert.equal(asked.text[1], 'Round half cents to even?');
+      await page.click(toWall);
+      await page.until('the Wall on Back', () => location.pathname === '/' && !document.querySelector('#task-sheet'));
 
       await page.goto(`${mock.url}/s/s-hooks/overview`);
-      assert.deepEqual((await page.until('the queue box', box))?.text.slice(0, 1), ['In your queue · Asked in the terminal']);
+      assert.match((await page.until('the decision', box))?.text[0] ?? '', /^Asked in the terminal · asked/);
       assert.ok((await page.eval(box))!.options.length > 1, 'the menu\'s options');
 
-      await page.goto(`${mock.url}/s/s-cart/overview`);
-      await page.until('the queue box', box);
-      await page.click('#task-sheet [data-queued] [data-option]', 'Keep the account cart');
+      await openDecision(page, mock);
+      await page.click('#task-sheet [data-decision] [data-option]', 'Keep the account cart');
       await page.until('the undo toast', toastsOf, 'undo');
-      await page.until('the box gone while it is held', () => !document.querySelector('#task-sheet [data-queued]'));
+      await page.until('the decision gone while it is held', noDecision, 's-cart');
       const [answer] = await logged(mock, 'the answer', (e) => e.action === 'answer', POSTED_MS);
       assert.deepEqual([answer.sessionId, answer.body], ['s-cart', { key: 'q:toolu_01Cart', choice: 'Keep the account cart' }]);
     },
   },
   {
-    name: 'P5.2.21b In your queue: a menu that replaces another in one snapshot starts with its own picks on the task page, as on the card',
+    name: 'P5.2.21b a menu that replaces another in one snapshot starts with its own picks on the task page',
     async run({ holds, page, mock }) {
-      const pressed = () => [...document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]')].map((b) => b.textContent ?? '');
+      const pressed = () => [...document.querySelectorAll('#task-sheet [data-decision] [data-option][aria-pressed="true"]')].map((b) => b.textContent ?? '');
       await page.goto(`${mock.url}/s/s-hooks/overview`);
-      await page.until('the menu, nothing picked', () => document.querySelectorAll('#task-sheet [data-queued] [data-option]').length === 6);
+      await page.until('the menu, nothing picked', () => document.querySelectorAll('#task-sheet [data-decision] [data-option]').length === 6);
       assert.deepEqual(await page.eval(pressed), []);
-      await page.click('#task-sheet [data-queued] [data-option]', 'Linear, 6 tries');
-      await page.until('Linear picked', () => [...document.querySelectorAll('#task-sheet [data-queued] [data-option][aria-pressed="true"]')].some((b) => b.textContent?.includes('Linear, 6 tries')));
+      await page.click('#task-sheet [data-decision] [data-option]', 'Linear, 6 tries');
+      await page.until('Linear picked', () => [...document.querySelectorAll('#task-sheet [data-decision] [data-option][aria-pressed="true"]')].some((b) => b.textContent?.includes('Linear, 6 tries')));
 
       const { menu } = await stateOf(mock, 's-hooks');
       await mock.post('/mock/patch', { id: 's-hooks', patch: { menu: { ...menu, toolUseId: 'toolu_02Hooks', at: Date.now() } } });
-      await page.until('the new menu', () => document.querySelector('#task-sheet [data-queued] [data-option][aria-pressed="true"]') === null);
+      await page.until('the new menu', () => document.querySelector('#task-sheet [data-decision] [data-option][aria-pressed="true"]') === null);
       await holds('the picks made on the menu before not to carry over', 500, async () => (await page.eval(pressed)).length === 0);
     },
   },
@@ -118,11 +114,11 @@ export const replies: Check[] = [
         id: 's-invoice',
         patch: { status: 'idle', activity: null, question: { toolUseId: 'toolu_inv', category: 'plan-problem', askedAt: Date.now(), title: 'Round half cents to even?', details: '', options: [{ label: 'Yes' }, { label: 'No' }] } },
       });
-      await page.until('the decision', () => !!document.querySelector('#task-sheet [data-queued] h3'));
+      await page.until('the decision', () => !!document.querySelector('#task-sheet [data-decision] h3'));
       await page.type(' half up');
       assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLTextAreaElement>('#task-sheet textarea[data-draft]')].map((t) => [t.dataset.mark ?? null, t.value, t === document.activeElement])), [['first', 'Round half up', true]]);
       await page.eval(() => document.getElementById('task-sheet')!.focus());
-      await page.until('the decision\'s own box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-queued] textarea[data-draft]')?.value === 'Round half up');
+      await page.until('the decision\'s own box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet [data-decision] textarea[data-draft]')?.value === 'Round half up');
       assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet textarea[data-draft]').length), 1, 'Message Claude gone once left');
     },
   },
@@ -194,7 +190,7 @@ export const replies: Check[] = [
         clipboardData.setData('text/plain', ' every');
         return !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
       }, selector, at);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Fix cent');
@@ -215,7 +211,7 @@ export const replies: Check[] = [
     name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word, on the model and effort picked in it, which the next report starts on',
     async run({ page, mock, shot }) {
       const open = () => !!document.querySelector('#bug-report:modal') && document.activeElement === document.querySelector('#bug-report textarea');
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.key('b');
       await page.until('Bug report, its comment focused', open);
@@ -277,7 +273,8 @@ export const replies: Check[] = [
   {
     name: 'P4.20 Bug report with Pitwall out of reach: the report, the comment and the prompt it would have started are saved as a download, and an error toast says where',
     async run({ page, mock }) {
-      await openQueue(page, mock);
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await page.eval(() => {
         const marks = window as unknown as { e2eFetch: typeof fetch; e2eSaved: Promise<{ name: string; text: string }> };
         marks.e2eFetch = fetch;
@@ -290,14 +287,14 @@ export const replies: Check[] = [
       });
       await page.key('b');
       await page.until('Bug report', () => document.activeElement === document.querySelector('#bug-report textarea'));
-      await page.type('The card never came back');
+      await page.type('The decision never came back');
       await page.key('Enter');
       const saved = await page.eval(() => (window as unknown as { e2eSaved: Promise<{ name: string; text: string }> }).e2eSaved);
       assert.match(saved.name, /^bug-\d{10}\.json$/);
       const report = JSON.parse(saved.text);
-      assert.equal(report.comment, 'The card never came back');
+      assert.equal(report.comment, 'The decision never came back');
       assert.match(report.error, /could not be reached/);
-      assert.ok(report.prompt.includes('```\nThe card never came back\n```'));
+      assert.ok(report.prompt.includes('```\nThe decision never came back\n```'));
       assert.ok(report.prompt.includes(`this file (${saved.name} in Downloads)`));
       assert.ok(report.events.length > 0);
       const [error] = await page.until('the error toast', toastsOf, 'error');
@@ -308,11 +305,10 @@ export const replies: Check[] = [
   {
     name: 'P5.2.23 Terminal posts a send held on its session at once, before it asks for the terminal',
     async run({ page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock);
       await page.key('Enter');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await page.key('v');
+      await page.until('the decision to go', noDecision, 's-cart');
+      await page.click(toWall);
       await page.until('the Wall', tiles);
       await page.click('[data-tile][data-session="s-cart"] button[aria-label="Session actions"]');
       await page.click(':popover-open button', 'Terminal');
@@ -327,15 +323,13 @@ export const replies: Check[] = [
     name: 'P5.2.24 Enter in a menu\'s own answer, with every question answered, holds answer-menu with that answer',
     clock: 'fast',
     async run({ page, mock }) {
-      await openQueue(page, mock);
-      await page.key('ArrowRight');
-      await ready(page, 's-hooks');
-      await page.key('4');
-      await page.key('6');
-      await page.click('[data-card] input[aria-label="Your own answer: Backoff"]');
+      await openDecision(page, mock, 's-hooks');
+      await page.click('[data-decision] [data-option="4"]');
+      await page.click('[data-decision] [data-option="6"]');
+      await page.click('[data-decision] input[aria-label="Your own answer: Backoff"]');
       await page.type('Every 10 min, 6 tries');
       await page.key('Enter');
-      await page.until('s-group at the front', frontIs, 's-group');
+      await page.until('the decision to go', noDecision, 's-hooks');
       assert.match((await page.until('the undo toast', toastsOf, 'undo'))[0].text, /^Sending: “Backoff: Every 10 min, 6 tries · Give up: Email the account owner, Disable the endpoint”/);
       const [sent] = await logged(mock, 'the menu answer', (e) => e.action === 'answer-menu', POSTED_MS);
       assert.deepEqual([sent.status, sent.body], [204, {
@@ -344,68 +338,64 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P5.2.25 a reload loses nothing: the draft in a card\'s reply box and its attachment come back, with ⏎ still on Claude\'s recommended option',
+    name: 'P5.2.25 a reload loses nothing: the draft in a decision\'s reply box and its attachment come back, with ⏎ still on Claude\'s recommended option',
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock);
       await page.key('w');
-      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
+      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-decision] textarea'));
       await page.type('only if stock allows');
-      await page.eval(pastePng, '[data-card] textarea');
-      await page.until('the picture uploaded', () => !!document.querySelector('[data-card] [data-state="ready"]'));
-      await page.goto(`${mock.url}/`);
-      await page.until('the card of s-cart', frontIs, 's-cart');
-      const kept = await page.until('the reply box', replyIn, '[data-card]');
+      await page.eval(pastePng, '[data-decision] textarea');
+      await page.until('the picture uploaded', () => !!document.querySelector('[data-decision] [data-state="ready"]'));
+      await page.goto(`${mock.url}/s/s-cart/overview`);
+      await page.until('the decision of s-cart', decisionOf, 's-cart');
+      const kept = await page.until('the reply box', replyIn, '[data-decision]');
       assert.deepEqual({ ...kept, focused: undefined }, { value: 'only if stock allows', files: ['ready shot.png'], focused: undefined });
-      const chosen = await page.eval(() => [...document.querySelectorAll('[data-card] [data-enter] [data-option]')].map((o) => (o as HTMLElement).dataset.option));
-      assert.deepEqual([chosen, (await page.eval(card))!.primary], [['1'], 'Send “Merge both carts” + your note']);
-      await page.until('the card to settle', still);
-      await shot('queue-after-reload');
+      const chosen = await page.eval(() => [...document.querySelectorAll('[data-decision] [data-enter] [data-option]')].map((o) => (o as HTMLElement).dataset.option));
+      assert.deepEqual([chosen, (await page.eval(decision))!.primary], [['1'], 'Send “Merge both carts” + your note']);
+      await page.until('the page to settle', still);
+      await shot('decision-after-reload');
     },
   },
   {
-    name: 'P5.2.26 narrow window: with a send held, the queue has no sideways scroll, and both its primary and the undo toast stay in reach',
+    name: 'P5.2.26 narrow window: with a send held from a decision\'s page, nothing scrolls sideways, and the main button before it, the undo toast and Next decision after it stay in reach',
     narrow: true,
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.until('the primary in reach', reachable, '[data-primary]', '');
+      await openDecision(page, mock);
+      await page.until('the main button in reach', reachable, '[data-decision] [data-primary]', '');
       await page.key('Enter');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
+      await page.until('the decision to go', noDecision, 's-cart');
       await page.until('the undo toast in reach', reachable, '[data-toast][data-kind="undo"]', 'Sending');
       assert.deepEqual(await page.eval(sidewaysScroll), []);
-      await page.until('the next primary in reach', reachable, '[data-primary]', '');
+      await page.until('Next decision in reach', reachable, '[data-next-after] button', 'Next decision');
       await shot('narrow-held');
     },
   },
   {
-    name: 'P5.2.n16 commands skip the early check: /compact held on s-cart goes out although a new question replaced the card\'s decision meanwhile',
+    name: 'P5.2.n16 commands skip the early check: /compact held on s-cart\'s decision goes out although a new question replaced the decision meanwhile',
     clock: 'fast',
     async run({ page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock);
       await page.key('w');
-      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
+      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-decision] textarea'));
       await page.type('/compact');
-      await page.until('the command list', () => [...document.querySelectorAll('[data-card] [role="option"] code')].some((c) => c.textContent === '/compact'));
+      await page.until('the command list', () => [...document.querySelectorAll('[data-decision] [role="option"] code')].some((c) => c.textContent === '/compact'));
       await page.key('Enter');
       await page.until('the undo toast', toastsOf, 'undo');
       await mock.post('/mock/patch', { id: 's-cart', patch: { question: { toolUseId: 'toolu_02', title: 'Merge the carts for app logins too?', options: [{ label: 'Yes' }, { label: 'No' }] } } });
-      // The card keeps its decision while focus is in its reply box.
-      await page.click('[data-card] h1');
-      await page.until('the new decision on the card', () => document.querySelector<HTMLElement>('[data-card]')?.dataset.key === 'q:toolu_02');
+      // The page keeps the decision as it was while focus is in its reply box.
+      await page.click('[data-decision] h3');
+      await page.until('the new decision on the page', () => document.querySelector<HTMLElement>('[data-decision]')?.dataset.key === 'q:toolu_02');
       const [sent] = await logged(mock, 'the command', (e) => e.action === 'answer', POSTED_MS);
       assert.deepEqual([sent.status, sent.body], [204, { key: 'q:toolu_01Cart', text: '/compact' }]);
       assert.equal(await page.eval(toastsOf, 'error'), null);
     },
   },
   {
-    name: 'P5.2.undo-sheet the toast\'s Undo takes back a message sent from a sheet over the queue: the text is back in its reply box, nothing goes out, and the card being read stays, with no word that anything stopped waiting',
+    name: 'P5.2.undo-sheet the toast\'s Undo takes back a message sent from a task\'s page: the text is back in its reply box, nothing goes out, and no word says anything stopped waiting',
     clock: 'fast',
     async run({ holds, page, mock }) {
-      await openQueue(page, mock);
       await page.goto(`${mock.url}/s/s-invoice/overview`);
-      await page.until('the sheet over the queue', () => !!document.querySelector('#task-sheet') && document.documentElement.dataset.view === 'queue');
+      await page.until('the sheet', sheetOpen);
       await page.click('#task-sheet textarea');
       await page.type('Also round the tax lines');
       await page.key('Enter');
@@ -413,21 +403,21 @@ export const replies: Check[] = [
       await page.click('[data-toast][data-kind="undo"] button', 'Undo');
       await page.until('the message back in the reply box', () => document.querySelector<HTMLTextAreaElement>('#task-sheet textarea')?.value === 'Also round the tax lines');
       await holds('no toast', 1000, async () => (await page.eval(toastsOf, 'info')) === null && (await page.eval(toastsOf, 'undo')) === null);
-      await page.click('#task-sheet button[aria-label^="Back to"]');
-      await page.until('the card of s-cart', frontIs, 's-cart');
+      await page.click(toWall);
+      await page.until('the Wall', () => location.pathname === '/' && !document.querySelector('#task-sheet'));
       await holds('nothing to go out', HELD_MS - 1000, async () => !(await actions(mock)).length);
     },
   },
   {
-    name: 'P5.2.esc-undo Esc takes back a held send: an option sent from the card brings s-cart back, and a message sent from the sheet goes back into its empty reply box; nothing goes out',
+    name: 'P5.2.esc-undo Esc takes back a held send: an option pressed on s-cart\'s decision brings the decision back on its page, and a message sent from Message Claude goes back into its empty reply box; nothing goes out',
     clock: 'fast',
     async run({ holds, page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.click('[data-card] [data-option="2"]');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
+      await openDecision(page, mock);
+      await page.click('[data-decision] [data-option="2"]');
+      await page.until('the decision to go', noDecision, 's-cart');
       await page.key('Escape');
-      await page.until('s-cart back at the front', frontIs, 's-cart');
+      await page.until('the decision back', decisionOf, 's-cart');
+      assert.equal(await page.eval(() => location.pathname), '/s/s-cart/overview', 'Esc took the send back rather than closing the page');
 
       await page.goto(`${mock.url}/s/s-invoice/overview`);
       await page.until('the sheet', () => !!document.querySelector('#task-sheet'));
@@ -444,11 +434,11 @@ export const replies: Check[] = [
   {
     name: 'P5.2.sending a held send shows its task as Sending, not Decide: on its Wall tile and on its page; Esc there takes it back and Decide returns',
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.click('[data-card] [data-option="2"]');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await page.key('v');
+      await openDecision(page, mock);
+      await page.click('[data-decision] [data-option="2"]');
+      await page.until('the decision to go', noDecision, 's-cart');
+      await page.until('its page says Sending', () => document.querySelector('#task-sheet header [data-attention]')?.textContent === 'Sending');
+      await page.click(toWall);
       await page.until('the Wall', tiles);
       const held = await page.eval(() => {
         const t = document.querySelector<HTMLElement>('[data-tile][data-session="s-cart"]')!;

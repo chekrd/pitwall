@@ -18,11 +18,11 @@ const page = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'test';
 let queued: UxEvent[] = [];
 
 // How busy the board is, which each event carries, and the task names to keep out of what it records.
-let board = { tasks: 0, deck: 0 };
+let board = { tasks: 0, waiting: 0 };
 let names: string[] = [];
 
-export function setBoard(next: { tasks: number; deck: number; names: string[] }) {
-  board = { tasks: next.tasks, deck: next.deck };
+export function setBoard(next: { tasks: number; waiting: number; names: string[] }) {
+  board = { tasks: next.tasks, waiting: next.waiting };
   names = [...new Set(next.names)].filter((n) => n.length >= 3 && !COMMON.has(n));
 }
 
@@ -83,16 +83,16 @@ export function controlName(el: Element) {
 export const screenOf = (pathname: string) => {
   const task = /^\/s\/[^/]+(?:\/([^/]+))?/.exec(pathname);
   if (task) return `task/${task[1] ?? 'overview'}`;
-  return pathname === '/wall' ? 'wall' : 'queue';
+  return 'wall';
 };
 
 function areaOf(el: Element) {
   if (el.closest('[data-toast]')) return 'toast';
   const dialog = el.closest('dialog[id]');
-  const base = dialog?.id === 'task-sheet' ? screenOf(location.pathname)
-    : dialog ? dialog.id
-      : el.closest('[popover]') ? 'popover'
-        : el.closest('.views') ? (document.documentElement.dataset.view ?? 'view') : 'topbar';
+  const base = dialog ? dialog.id
+    : el.closest('[popover]') ? 'popover'
+      : el.closest('#task-sheet') ? screenOf(location.pathname)
+        : el.closest('.views') ? 'wall' : 'topbar';
   const kind = el.closest<HTMLElement>('[data-kind]')?.dataset.kind;
   return kind ? `${base}/${kind}` : base;
 }

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import { approveLoss, logged, menuItems, openFromWall, openNewTask, openQueue, openSheetOf, ready, tiles, whole, type Check } from '../helpers.ts';
+import { approveLoss, logged, menuItems, openDecision, openFromWall, openNewTask, openSheetOf, tiles, whole, type Check } from '../helpers.ts';
 
 export const usageFindings: Check[] = [
   {
-    name: 'usage the top bar shows the 5-hour and weekly limits on the queue and the Wall, each with its share, its level, its reset time and a mark where an even pace would have it, the weekday too when it is not today; a new reading shows at once, a passed reset shows 0 % and no reading shows –',
+    name: 'usage the top bar shows the 5-hour and weekly limits on a task page and the Wall, each with its share, its level, its reset time and a mark where an even pace would have it, the weekday too when it is not today; a new reading shows at once, a passed reset shows 0 % and no reading shows –',
     async run({ page, mock, shot }) {
       const usage = () => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-window]')].map((w) => ({
         window: w.dataset.window, text: w.innerText.replace(/\s+/g, ' ').trim(), level: w.dataset.level ?? null, title: w.dataset.explain ?? "",
       }));
-      await openQueue(page, mock);
+      await openDecision(page, mock);
       const queue = await page.eval(usage);
       assert.deepEqual(queue.map((w) => ({ window: w.window, level: w.level })), [{ window: '5h', level: 'low' }, { window: '7d', level: 'mid' }]);
       assert.match(queue[0].text, /^5h 34% ↻ (?:\w+ )?\d\d:\d\d$/);
@@ -27,7 +27,7 @@ export const usageFindings: Check[] = [
       assert.equal(await page.eval(whole, 'header [data-usage]'), true, 'the usage limits do not show whole');
       await shot('usage');
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the Wall', () => !!document.querySelector('[data-tile]'));
       assert.deepEqual((await page.eval(usage)).map((w) => w.text.split(' ↻')[0]), ['5h 34%', '7d 61%']);
 
@@ -45,7 +45,7 @@ export const usageFindings: Check[] = [
       assert.equal(await page.eval(() => document.querySelectorAll('header [data-usage] [data-pace]').length), 1, 'a passed reset marks no even pace');
 
       await mock.post('/mock/usage', { usage: null });
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the Wall', () => !!document.querySelector('[data-tile]'));
       const none = await page.eval(usage);
       assert.deepEqual(none.map((w) => [w.text, w.level]), [['5h –', null], ['7d –', null]]);
@@ -55,7 +55,7 @@ export const usageFindings: Check[] = [
   {
     name: 'usage a status line copy without the 5-hour window, as Claude Code writes from a session whose last-seen 5-hour reset has passed, keeps the 5-hour reading the board had instead of showing –',
     async run({ page, mock }) {
-      await openQueue(page, mock);
+      await openDecision(page, mock);
       const now = Math.floor(Date.now() / 1000);
       const shown = () => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-window]')].map((w) => w.innerText.replace(/\s+/g, ' ').trim().split(' ↻')[0]);
       await mock.post('/mock/status-line', { at: Date.now(), rate_limits: { five_hour: { used_percentage: 23, resets_at: now + 7200 }, seven_day: { used_percentage: 12, resets_at: now + 86_400 } } });
@@ -68,7 +68,7 @@ export const usageFindings: Check[] = [
   {
     name: 'drift a banner says which Claude Code version changed which file Pitwall reads, Fix it opens New task on Pitwall with a prompt to update it, and the banner leaves when the drift is gone',
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
+      await openDecision(page, mock);
       assert.equal(await page.eval(() => !!document.querySelector('[data-drift]')), false, 'a banner shows without drift');
       await mock.post('/mock/drift', { drift: [{ problem: 'session files report an unknown status "thinking"', version: '9.9.9', at: Date.now() }] });
       const text = await page.until('the drift banner', () => document.querySelector<HTMLElement>('[data-drift]')?.innerText.replace(/\s+/g, ' ').trim() || null);
@@ -100,7 +100,7 @@ export const usageFindings: Check[] = [
     name: 'usage.narrow the top bar shows both limits as shares with their reset times and without their bars, whole, beside the actions',
     narrow: true,
     async run({ page, mock }) {
-      await openQueue(page, mock);
+      await openDecision(page, mock);
       const shown = await page.eval(() => [...document.querySelectorAll<HTMLElement>('header [data-usage] [data-window]')].map((w) => w.innerText.replace(/\s+/g, ' ').trim()));
       assert.deepEqual(shown.map((t) => t.split(' ↻')[0]), ['5h 34%', '7d 61%']);
       assert.ok(shown.every((t) => / ↻ /.test(t)), 'a reset time is missing');
@@ -112,7 +112,7 @@ export const usageFindings: Check[] = [
     name: 'task-page a task opened from the Wall is a page of its own: it fills the window under the top bar, which still shows the usage limits, and the Wall under it is hidden and inert; Esc goes back to the Wall where it was scrolled to',
     scenario: 'volume',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       const id = await page.eval(() => {
         const tile = [...document.querySelectorAll<HTMLElement>('[data-tile][data-attention="working"]')].findLast((t) => !t.closest('details'));
@@ -138,22 +138,22 @@ export const usageFindings: Check[] = [
       assert.equal(await page.eval(whole, '#task-sheet button[aria-label="Back to the Wall"]'), true);
       await shot('task-page');
       await page.key('Escape');
-      await page.until('the Wall again', () => location.pathname === '/wall' && !document.querySelector('#task-sheet'));
+      await page.until('the Wall again', () => location.pathname === '/' && !document.querySelector('#task-sheet'));
       assert.equal(await page.eval(() => document.querySelector('main')!.scrollTop), scrolled, 'the Wall lost its scroll');
     },
   },
   {
-    name: 'task-page.queue the card\'s task name links to the task\'s page; the back button names the queue and brings the same card back',
+    name: 'task-page.wall a tile\'s task name links to the task\'s page; the back button names the Wall and brings it back',
     async run({ page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      const link = await page.eval(() => document.querySelector<HTMLAnchorElement>('[data-card] [data-open-task]')?.getAttribute('href'));
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
+      const link = await page.eval(() => document.querySelector<HTMLAnchorElement>('[data-tile][data-session="s-cart"] a')?.getAttribute('href'));
       assert.equal(link, '/s/s-cart/overview');
-      await page.click('[data-card] [data-open-task]');
+      await page.click('[data-tile][data-session="s-cart"] a');
       await page.until('the task page of s-cart', () => location.pathname === '/s/s-cart/overview' && !!document.querySelector('#task-sheet [role="tablist"]'));
-      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet button[aria-label="Back to the queue"]')?.innerText.replace(/\s+/g, ' ').trim()), 'Queue Esc');
-      await page.click('#task-sheet button[aria-label="Back to the queue"]');
-      await page.until('the queue with s-cart', () => location.pathname === '/' && !document.querySelector('#task-sheet') && document.querySelector<HTMLElement>('[data-card]')?.dataset.session === 's-cart');
+      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet button[aria-label="Back to the Wall"]')?.innerText.replace(/\s+/g, ' ').trim()), 'Wall Esc');
+      await page.click('#task-sheet button[aria-label="Back to the Wall"]');
+      await page.until('the Wall', () => location.pathname === '/' && !document.querySelector('#task-sheet') && !!document.querySelector('[data-tile][data-session="s-cart"]'));
     },
   },
   {
@@ -186,7 +186,7 @@ export const usageFindings: Check[] = [
       };
       // Once with the system in each scheme.
       await themes(async (prefers) => {
-        await openQueue(page, mock);
+        await openDecision(page, mock);
         const system = await page.eval(now);
         assert.deepEqual({ ...system, ground: undefined }, { theme: 'system', scheme: 'light dark', ground: undefined, checked: 'system', label: 'Theme: System' });
         const other = prefers === 'dark' ? 'light' : 'dark';
@@ -197,7 +197,7 @@ export const usageFindings: Check[] = [
         assert.notEqual(forced.ground, system.ground, 'the page did not recolour');
         await shot(`theme-${other}`);
 
-        await page.goto(`${mock.url}/wall`);
+        await page.goto(`${mock.url}/`);
         await page.until('the tiles', tiles);
         assert.deepEqual((await page.eval(now)).theme, other, 'the theme did not outlast a reload');
 
@@ -213,7 +213,7 @@ export const usageFindings: Check[] = [
     name: 'P8.clear /clear in a task with a name and an artifact keeps it one task: the Wall gains no tile, the open page stays on it with its name and its artifact, the Session fact names the new conversation and Earlier conversations the old one; a /resume into a conversation another task ran brings that task back and merges nothing',
     async run({ page, mock, shot }) {
       const wallTiles = () => [...document.querySelectorAll<HTMLElement>('[data-tile]')].map((t) => t.dataset.session ?? '').sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       const before = await page.eval(wallTiles);
       await mock.post('/mock/patch', { id: 's-reviews', patch: { artifacts: [{ id: 'art-skeleton', title: 'Where the skeleton sits', at: Date.now() - 60_000 }] } });
@@ -237,7 +237,7 @@ export const usageFindings: Check[] = [
       const state = await mock.get('/api/state');
       assert.ok(!state.sessions.some((s: { id: string }) => s.id === 'c-fresh'), 'the new conversation became a task of its own');
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       assert.deepEqual(await page.eval(wallTiles), before);
 
@@ -259,7 +259,7 @@ export const usageFindings: Check[] = [
     name: 'M1 New task across a folder of repos: the picker lists the folder first, which hides the worktree options and says where Claude starts; ⌘↵ starts it in an empty task folder; the worktrees Claude opens show in the facts, each PR it opens shows as its own chip named by its repository and linked, the Diff groups them by repository, the tile names the repositories it works in and their branch, and Clear task names each worktree and its loss and clears them all',
     async run({ page, mock, shot }) {
       const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Rename the cart API on both sides');
@@ -329,7 +329,7 @@ export const usageFindings: Check[] = [
       assert.ok(files.some((f) => f.startsWith('storefront/')) && files.some((f) => f.startsWith('billing-api/')), files.join(', '));
       assert.ok(files.every((f) => f.startsWith('storefront/') || f.startsWith('billing-api/')), files.join(', '));
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       const where = await page.until('its tile', (task: string) => document.querySelector(`[data-tile][data-session="${task}"] [class*="where"]`)?.textContent, id);
       assert.equal(where, 'storefront, billing-api · cart-api');
       await page.click(`[data-tile][data-session="${id}"] button[aria-label="Session actions"]`);

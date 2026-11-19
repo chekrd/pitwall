@@ -3,13 +3,13 @@ import type { SyntheticEvent } from 'react';
 // The `popover` attribute of each open popover.
 export const openPopovers = () => [...document.querySelectorAll<HTMLElement>(':popover-open')].map((p) => p.popover ?? 'auto');
 
-// The ⋯ menu and New task's repository picker are the light-dismiss (auto) layers; toasts and hover cards are manual
+// The ⋯ menu and New task's repository picker are the light-dismiss (auto) layers; toasts and tooltips are manual
 // or hint popovers.
 export const menuOpen = () => openPopovers().includes('auto');
 
 // C draws a transparent catcher under the ⋯ menu and under New task's repository picker, so a press beside either
 // closes only it. Here the press closes the layer by light dismiss, and its click is swallowed, which would press
-// whatever lies where C's catcher is: an option of the card, a tile, Terminal. Inside a layer, on its own toggle and on
+// whatever lies where C's catcher is: an option of a decision, a tile, Terminal. Inside a layer, on its own toggle and on
 // the toasts above it, a press works as usual. Its mousedown goes through: a cancelled one makes the light dismiss of a
 // dialog around the layer uncancellable, so keepUnderLayer could not keep the dialog open.
 let caught = false;

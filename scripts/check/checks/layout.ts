@@ -1,106 +1,147 @@
 import assert from 'node:assert/strict';
-import { sleep } from '../cdp.ts';
-import { actions, animations, approveLoss, dealt, docked, dockState, frontIs, HELD_MS, hoverCard, logged, lowContrast, matches, menuItems, narrowCard, newTaskOnRepo, noteAnimations, openNewTask, openQueue, pickerOpen, pillAt, primaryAtEnds, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf, typeInPrompt, unguarded, watchDeals, type Check } from '../helpers.ts';
+import { sleep, until } from '../cdp.ts';
+import {
+  actions, animations, approveLoss, decision, decisionOf, HELD_MS, logged, lowContrast, matches, menuItems, newTaskOnRepo, noDecision, noteAnimations, openDecision,
+  openFromWall, openNewTask, openSheetOf, pickerOpen, pillAt, POSTED_MS, reachable, ready, replyIn, settled, sheetOpen, sidewaysScroll, stateOf, still, tiles, toastsOf,
+  typeInPrompt, unguarded, withoutBoard, type Check,
+} from '../helpers.ts';
+
+// The top bar's Next decision as it reads.
+const nextInBar = () => document.querySelector<HTMLElement>('header [data-next-decision]')?.innerText.replace(/\s+/g, ' ').trim() ?? null;
 
 export const layout: Check[] = [
   {
-    name: 'P7.leave-deals Quit Claude and Delete worktree from the card\'s ⋯ deal the card out sideways, as Archive does; the card after it comes up, with no word that anything stopped waiting',
+    name: 'P6.menu-outside a click on the top bar while the task\'s ⋯ menu is open closes only the menu; after a click inside the task closed the menu, Esc still goes back to the Wall; the task is a page, so a click on the top bar with no menu open leaves it open',
+    async run({ holds, page, mock, shot }) {
+      const layers = () => ({ menu: !!document.querySelector('[popover="auto"]:popover-open'), sheet: !!document.querySelector('#task-sheet'), path: location.pathname });
+      const stays = async () => matches(await page.eval(layers), { menu: false, sheet: true, path: '/s/s-invoice/overview' });
+      const menu = async () => {
+        await page.click('#task-sheet button[aria-label="Session actions"]');
+        await page.until('the ⋯ menu', () => !!document.querySelector('[popover="auto"]:popover-open'));
+      };
+      await openFromWall(page, mock, 's-invoice');
+      await page.until('the sheet to settle', settled);
+      await menu();
+      await page.pointAt(12, 12, true);
+      await page.until('the menu to close', () => !document.querySelector('[popover="auto"]:popover-open'));
+      await holds('the sheet to stay', 400, stays);
+      await shot('sheet-after-menu-outside');
+
+      await menu();
+      await page.click('#task-sheet header [data-attention]');
+      await page.until('the menu to close', () => !document.querySelector('[popover="auto"]:popover-open'));
+      await holds('the sheet to stay', 400, stays);
+      await page.key('Escape');
+      await page.until('Esc to close the sheet', () => !document.querySelector('#task-sheet') && location.pathname === '/');
+
+      await page.click('[data-tile][data-session="s-invoice"] a');
+      await page.until('the sheet again', sheetOpen);
+      await page.until('the sheet to settle', settled);
+      await page.pointAt(12, 12, true);
+      await holds('the sheet to stay', 400, stays);
+    },
+  },
+  {
+    name: 'P6.repos-connecting Repos says Connecting… until the first snapshot, and its empty state once the board says there are no repositories',
+    scenario: 'norepos',
+    expectedErrors: [/WebSocket/],
+    async run({ page, mock, shot }) {
+      const repos = () => document.querySelector<HTMLDialogElement>('dialog#workspace')?.open && document.querySelector<HTMLElement>('dialog#workspace')!.innerText;
+      await withoutBoard(page, async (url) => {
+        await page.goto(`${url}/`);
+        await page.click('[data-repos]');
+        const text = await page.until('Repos', repos);
+        assert.match(text, /Connecting…/);
+        assert.doesNotMatch(text, /Add a repository or a folder of repositories to begin/);
+        await page.until('the dialog to settle', settled);
+        await shot('repos-connecting');
+      });
+      await page.goto(`${mock.url}/`);
+      await page.until('the live pill', () => !!document.querySelector('[data-link="live"]'));
+      await page.click('[data-repos]');
+      const text = await page.until('Repos', repos);
+      assert.match(text, /Add a repository or a folder of repositories to begin\./);
+      assert.doesNotMatch(text, /Connecting…/);
+    },
+  },
+  {
+    name: 'P7.leave Quit Claude and Clear task from a task page\'s ⋯ take the task out of what waits at once: Next decision stops counting it, and nothing says that anything stopped waiting',
     async run({ holds, page, mock }) {
       const confirmable = () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#delete-worktree');
         return !!d?.open && !d.innerText.includes('Checking');
       };
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.eval(watchDeals);
-      await page.click('[data-card] button[aria-label="Session actions"]');
+      await openDecision(page, mock, 's-cart');
+      assert.equal(await page.eval(nextInBar), 'Next decision 2 D');
+      await page.click('#task-sheet header button[aria-label="Session actions"]');
       await page.until('the menu', menuItems);
       await page.click(':popover-open button', 'Quit Claude');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      assert.deepEqual(await page.eval(dealt), ['side']);
+      await page.until('the decision to go', noDecision, 's-cart');
       const [quit] = await logged(mock, 'the quit', (e) => e.action === 'quit');
       assert.deepEqual([quit.sessionId, quit.status], ['s-cart', 204]);
 
-      await ready(page, 's-hooks');
-      await page.click('[data-card] button[aria-label="Session actions"]');
+      await openDecision(page, mock, 's-hooks');
+      assert.equal(await page.eval(nextInBar), 'Next decision 1 D', 'the ended s-cart still counts');
+      await page.click('#task-sheet header button[aria-label="Session actions"]');
       await page.until('the menu', menuItems);
       await page.click(':popover-open button', 'Clear task');
       await page.until('the delete dialog', confirmable);
       await approveLoss(page);
       await page.click('dialog#delete-worktree button', 'Clear task');
-      await page.until('s-group at the front', frontIs, 's-group');
-      assert.deepEqual(await page.eval(dealt), ['side', 'side']);
+      await page.until('the Wall', () => location.pathname === '/' && !document.querySelector('#task-sheet'));
       const [deleted] = await logged(mock, 'the deletion', (e) => e.method === 'POST' && e.action === 'delete-worktree');
       assert.deepEqual([deleted.sessionId, deleted.status], ['s-hooks', 204]);
-      await holds('s-cart and s-hooks to stay gone, with no toast', 600, async () => matches([
-        await page.eval(() => !!document.querySelector('[data-session="s-cart"]:is([data-segment], [data-peek]), [data-session="s-hooks"]:is([data-segment], [data-peek])')),
+      await holds('s-cart and s-hooks out of what waits, with no toast', 600, async () => matches([
+        await page.eval(nextInBar),
+        await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-tile][data-attention="decide"]')].map((t) => t.dataset.session)),
         await page.eval(toastsOf, 'info'), await page.eval(toastsOf, 'error'),
-      ], [false, null, null]));
+      ], ['Next decision 1 D', ['s-group'], null, null]));
     },
   },
   {
-    name: 'P7.archive-stays an archive shows at once and stays: a snapshot pushed before the server has stored it does not bring the card back for a moment',
+    name: 'P7.archive-stays an archive from a tile\'s ⋯ shows at once and stays: a snapshot pushed before the server has stored it does not bring the tile back among the live ones for a moment',
     async run({ holds, page, mock }) {
-      await openQueue(page, mock);
-      await page.click('[data-segment][data-session="s-reviews"]');
-      await ready(page, 's-reviews');
+      const live = '[data-tile][data-session="s-reviews"]:not([data-archived])';
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await mock.post('/mock/delay', { ms: 1500 });
-      await page.key('x');
-      const shownAnywhere = () => !!document.querySelector('[data-session="s-reviews"]:is([data-segment], [data-peek], [data-card])');
-      await page.until('s-reviews to leave', () => !document.querySelector('[data-session="s-reviews"]:is([data-segment], [data-peek], [data-card])'));
-      await page.eval(() => {
+      await page.click(`${live} button[aria-label="Session actions"]`);
+      await page.until('the menu', menuItems);
+      await page.click(':popover-open button', 'Archive');
+      await page.until('s-reviews to leave the live tiles', (sel: string) => !document.querySelector(sel), live);
+      await page.eval((sel: string) => {
         const w = window as unknown as { e2eBack: boolean };
         w.e2eBack = false;
         new MutationObserver(() => {
-          if (document.querySelector('[data-session="s-reviews"]:is([data-segment], [data-peek], [data-card])')) w.e2eBack = true;
+          if (document.querySelector(sel)) w.e2eBack = true;
         }).observe(document.body, { subtree: true, childList: true, attributes: true });
-      });
+      }, live);
       await mock.post('/mock/patch', { id: 's-invoice', patch: { activity: { step: 'Bash: pnpm test invoices --run --reporter=dot' } } });
-      await page.until('that snapshot', () => !!document.querySelector('[data-capsule][data-session="s-invoice"]')?.textContent?.includes('--reporter=dot'));
+      await page.until('that snapshot', () => !!document.querySelector('[data-tile][data-session="s-invoice"]')?.textContent?.includes('--reporter=dot'));
       const [archived] = await logged(mock, 'the archive', (e) => e.action === 'archive', 4000);
       assert.deepEqual([archived.sessionId, archived.status], ['s-reviews', 204]);
-      await holds('s-reviews to stay archived', 300, async () => matches([await page.eval(() => (window as unknown as { e2eBack: boolean }).e2eBack), await page.eval(shownAnywhere)], [false, false]));
+      await holds('s-reviews to stay archived', 300, async () => matches([await page.eval(() => (window as unknown as { e2eBack: boolean }).e2eBack), await page.eval((sel: string) => !!document.querySelector(sel), live)], [false, false]));
       assert.equal((await stateOf(mock, 's-reviews')).archived, true);
     },
   },
   {
-    name: 'P7.skip-ends-wait a click on Skip that ends a wait for typing brings up the card that waited and skips nothing; the next click skips',
-    async run({ holds, page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.key('w');
-      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
-      await page.type('Let me think');
-      await mock.post('/mock/patch', { id: 's-cart', patch: { question: null, status: 'working', activity: { step: 'Edit src/cart/mergeCarts.ts', since: Date.now() } } });
-      await page.until('s-cart to leave the deck', () => !document.querySelector('[data-segment][data-session="s-cart"]'));
-      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('[data-card]')?.dataset.session), 's-cart', 'the card did not wait for the typing');
-      await page.eval(watchDeals);
-      await page.click('main button[aria-label="Skip to the next card"]');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await holds('the click to skip nothing', 700, async () => matches([await page.eval(() => document.querySelector<HTMLElement>('[data-card]')?.dataset.session), await page.eval(dealt)], ['s-hooks', []]));
-      await page.click('main button[aria-label="Skip to the next card"]');
-      await page.until('s-group at the front', frontIs, 's-group');
-      assert.deepEqual(await page.eval(dealt), ['back']);
-    },
-  },
-  {
-    name: 'P7.dock-waits typing in New task over the empty queue: a card that arrives meanwhile brings the queue and the dock under the dialog, and the prompt keeps focus and text',
+    name: 'P7.arrival-waits typing in New task over the Wall at rest: a decision that arrives meanwhile shows its tile and Next decision under the dialog, and the prompt keeps focus and text',
     scenario: 'zero',
     async run({ page, mock }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the empty queue', () => document.querySelector('main h1')?.textContent === 'All caught up.');
+      await page.until('the Wall at rest', () => document.querySelector('main h1')?.textContent === 'All caught up.');
       await openNewTask(page);
       await page.type('Add retries');
       await mock.post('/mock/add', { template: 'ask', id: 's-new' });
-      await page.until('the arrival in the meter', () => !!document.querySelector('[data-segment][data-session="s-new"]'));
-      await page.until('the card and the dock', () => !!document.querySelector('[data-card]') && !!document.querySelector('[data-dock]'));
+      await page.until('the tile and Next decision', () => !!document.querySelector('[data-tile][data-session="s-new"]') && !!document.querySelector('header [data-next-decision]'));
       assert.deepEqual(await page.eval(() => [document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')?.value, document.activeElement === document.querySelector('dialog#new-task textarea')]), ['Add retries', true]);
     },
   },
   {
-    name: 'P7.new-task-fade Esc closes New task over the queue and takes focus out of its prompt at once, so a key typed while the dialog fades out does not land in it',
+    name: 'P7.new-task-fade Esc closes New task over the Wall and takes focus out of its prompt at once, so a key typed while the dialog fades out does not land in it',
     async run({ page, mock }) {
-      await openQueue(page, mock);
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await page.key('n');
       await page.until('New task, its repository focused', newTaskOnRepo);
       await typeInPrompt(page);
@@ -118,7 +159,8 @@ export const layout: Check[] = [
   {
     name: 'P7.picker-outside a click beside New task while its repository picker is open closes only the picker; the next click beside it closes the dialog',
     async run({ holds, page, mock }) {
-      await openQueue(page, mock);
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await page.key('n');
       await page.until('New task', () => !!document.querySelector('#new-task:modal'));
       await page.until('the dialog to settle', settled);
@@ -153,53 +195,54 @@ export const layout: Check[] = [
     },
   },
   {
-    name: 'P7.reply-hint with the reply box and its command list open, the hint line under the box shows whole, above the card\'s faded edge and the footer',
+    name: 'P7.reply-hint with the decision\'s reply box and its command list open, the hint line under the box shows whole in the task page',
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock);
       await page.key('w');
-      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
+      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-decision] textarea'));
       await page.type('/re');
-      await page.until('the command list', () => document.querySelectorAll('[data-card] [role="option"]').length > 0);
+      await page.until('the command list', () => document.querySelectorAll('[data-decision] [role="option"]').length > 0);
       await page.until('the command list to settle', settled);
-      const at = await page.eval(() => {
-        const hint = [...document.querySelectorAll('[data-card] section p')].find((p) => p.textContent?.startsWith('Enter sends'))!.getBoundingClientRect();
-        const scroll = document.querySelector('[data-card] [data-scroll]')!.getBoundingClientRect();
-        const foot = document.querySelector('[data-card] footer')!.getBoundingClientRect();
-        return { hint: Math.round(hint.bottom), fade: Math.round(scroll.bottom - 22), foot: Math.round(foot.top) };
+      await page.eval(() => document.querySelector('[data-decision] textarea')!.closest('section')!.scrollIntoView({ block: 'nearest' }));
+      await page.until('the hint line whole', () => {
+        const p = [...document.querySelectorAll<HTMLElement>('[data-decision] section p')].find((x) => x.textContent?.startsWith('Enter sends'));
+        if (!p) return false;
+        const r = p.getBoundingClientRect();
+        const panel = document.querySelector('#task-sheet [role="tabpanel"]')!.getBoundingClientRect();
+        return r.height > 0 && r.top >= panel.top && r.bottom <= Math.min(panel.bottom, innerHeight) + 1;
       });
-      assert.ok(at.hint <= at.fade && at.hint <= at.foot, `the hint line ends at ${at.hint}, the fade starts at ${at.fade} and the footer at ${at.foot}`);
-      await shot('queue-composer');
+      await shot('task-composer-commands');
     },
   },
   {
-    name: 'P7.phone-card narrow window: every kind of card is one column with one peek, its footer takes at most two rows, and the primary shows at the top and the bottom of the page; the reply box scrolls into view above the footer',
+    name: 'P7.phone-task narrow window: the task page of every kind of task waiting is one column with no sideways scroll, a menu\'s questions one under the other, and a decision\'s main button in reach; W brings the reply box whole into view with its hint line',
     narrow: true,
     async run({ page, mock, shot }) {
-      await openQueue(page, mock);
+      const stacked = () => {
+        const rs = [...document.querySelectorAll('[data-decision] section[role="group"]')].map((e) => e.getBoundingClientRect());
+        return rs.every((r, i) => i === 0 || (Math.abs(r.left - rs[0].left) < 1 && r.top >= rs[i - 1].bottom - 1));
+      };
       for (const id of ['s-cart', 's-hooks', 's-group', 's-astro', 's-reviews']) {
-        await page.until(`the card of ${id}`, frontIs, id);
-        await page.until('the card to settle', still);
-        const shape = await page.eval(narrowCard);
-        assert.deepEqual({ ...shape, footRows: shape.footRows <= 2 }, { stacked: true, peeks: ['1'], sliver: false, footRows: true }, `${id}: ${JSON.stringify(shape)}`);
-        assert.deepEqual(await page.eval(primaryAtEnds), { top: true, bottom: true, scrolls: true }, id);
+        await openSheetOf(page, mock, id);
+        await page.until('its Overview', () => !!document.querySelector('#task-sheet [role="tabpanel"] section'));
+        await page.until('the page to settle', still);
         assert.deepEqual(await page.eval(sidewaysScroll), [], id);
+        if (await page.eval(decision)) {
+          assert.equal(await page.eval(stacked), true, `${id}: the menu's questions stand side by side`);
+          await page.until(`${id}: the main button in reach`, reachable, '[data-decision] [data-primary]', '');
+        }
         if (id === 's-cart') await shot('phone-ask');
         if (id === 's-hooks') await shot('phone-menu');
         if (id === 's-reviews') await shot('phone-your-turn');
-        await page.key('ArrowRight');
       }
-      await page.until('s-anchors at the front', frontIs, 's-anchors');
-      await page.click('[data-segment][data-session="s-cart"]');
-      await ready(page, 's-cart');
-      await page.click('[data-card] footer button', 'Write my own');
-      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
+      await openDecision(page, mock, 's-cart');
+      await page.key('w');
+      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-decision] textarea'));
       await page.until('the reply box to settle', settled);
       const reply = await page.eval(() => {
-        const hint = [...document.querySelectorAll('[data-card] section p')].find((p) => p.textContent?.startsWith('Enter sends'))!.getBoundingClientRect();
-        const box = document.querySelector('[data-card] textarea')!.getBoundingClientRect();
-        const foot = document.querySelector('[data-card] footer')!.getBoundingClientRect();
-        return { box: box.top >= 0 && box.bottom <= foot.top, hint: hint.bottom <= foot.top };
+        const hint = [...document.querySelectorAll('[data-decision] section p')].find((p) => p.textContent?.startsWith('Enter sends'))!.getBoundingClientRect();
+        const box = document.querySelector('[data-decision] textarea')!.getBoundingClientRect();
+        return { box: box.top >= 0 && box.bottom <= innerHeight, hint: hint.bottom <= innerHeight };
       });
       assert.deepEqual(reply, { box: true, hint: true });
       assert.deepEqual(await page.eval(sidewaysScroll), []);
@@ -216,7 +259,7 @@ export const layout: Check[] = [
       };
       const sideways = async (where: string, byDesign?: RegExp) =>
         assert.deepEqual((await page.eval(sidewaysScroll)).filter((s) => !byDesign?.test(s)), [], where);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await sideways('the Wall');
       await shot('phone-wall');
@@ -241,7 +284,8 @@ export const layout: Check[] = [
       await shot('phone-delete');
       await page.key('Escape');
 
-      await openQueue(page, mock);
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await page.key('n');
       await page.until('New task', () => !!document.querySelector('#new-task:modal'));
       await page.until('the dialog to settle', settled);
@@ -266,28 +310,28 @@ export const layout: Check[] = [
     },
   },
   {
-    name: 'P7.reduced-motion with reduced motion a card change runs no animation longer than 10 ms: skip, previous, a peek, an answer, its Undo and the answer again until its capsule rings',
+    name: 'P7.reduced-motion with reduced motion going from decision to decision runs no animation longer than 10 ms: Next decision, D, an answer, its Undo and the answer again with the way on to the next',
     clock: 'fast',
     motion: 'reduce',
     async run({ page, mock }) {
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
+      await page.until('the page to settle', still);
       await page.eval(noteAnimations);
-      await page.key('ArrowRight');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await page.key('ArrowLeft');
-      await page.until('s-cart at the front', frontIs, 's-cart');
-      await page.click('[data-peek="1"] > span');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await page.key('ArrowLeft');
+      await page.click('header [data-next-decision]');
+      await ready(page, 's-cart');
+      await page.key('d');
+      await ready(page, 's-hooks');
+      await page.key('Escape');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet'));
+      await page.click('header [data-next-decision]');
       await ready(page, 's-cart');
       await page.key('Enter');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
+      await page.until('the decision to go', noDecision, 's-cart');
       await page.key('z');
       await ready(page, 's-cart');
       await page.key('Enter');
-      await page.until('the answered capsule ringing', () => !!document.querySelector('[data-capsule][data-session="s-cart"][data-fresh]'));
-      // Frames for the ring's animations, if any, to be noted.
+      await page.until('the way on', () => !!document.querySelector('#task-sheet [data-next-after]'));
       await sleep(300);
       const all = await page.eval(animations);
       assert.ok(all.length > 0, 'no animation was noted');
@@ -295,11 +339,11 @@ export const layout: Check[] = [
     },
   },
   {
-    name: 'P7.contrast-queue every text on the queue, its dock, hover card, peeks, meter chips and toasts reads at 4.5:1 or more: an ask with its reply box and command list, a menu, another ask, Needs focus, Your turn, a send held, a refusal and a card that leaves',
+    name: 'P7.contrast-decisions every text on a task page with a decision and in the top bar reads at 4.5:1 or more: an ask with Next decision, its reply box and command list, a menu, another ask, Needs focus, Your turn, a send held, a refusal marked Not sent and the way on to the next decision',
     expectedErrors: [/status of 400/],
     async run({ themes, page, mock }) {
       const fails: string[] = [];
-      // A card that just came up shows its primary dimmed for 0.9 s; each step is read once that is over.
+      // A decision that just came up shows its main button dimmed for 0.9 s; each step is read once that is over.
       const audit = async (where: string) => {
         await page.until('the guard to end', unguarded);
         await page.until('the page to settle', still);
@@ -307,49 +351,33 @@ export const layout: Check[] = [
           fails.push(...(await page.eval(lowContrast, 4.5)).map((f) => `${where} (${scheme}): ${f}`));
         });
       };
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock, 's-cart');
       await audit('ask');
       await page.key('w');
       await page.type('/re');
-      await page.until('the command list', () => document.querySelectorAll('[data-card] [role="option"]').length > 0);
+      await page.until('the command list', () => document.querySelectorAll('[data-decision] [role="option"]').length > 0);
       await audit('reply box');
       await page.key('Escape');
-      await page.key('Escape');
-      await page.hover('[data-capsule][data-session="s-invoice"] button');
-      await page.until('the hover card', hoverCard, 's-invoice');
-      await audit('hover card');
-      await page.pointAt(720, 300);
-      await page.key('ArrowRight');
-      await ready(page, 's-hooks');
+      await page.key('Backspace');
+      await page.key('Backspace');
+      await page.key('Backspace');
+      await openDecision(page, mock, 's-hooks');
       await audit('menu');
-      await page.key('ArrowRight');
-      await ready(page, 's-group');
+      await openDecision(page, mock, 's-group');
       await audit('another ask');
-      await page.key('ArrowRight');
-      await ready(page, 's-astro');
-      await audit('Needs focus');
-      await page.key('ArrowRight');
-      await ready(page, 's-reviews');
-      await audit('Your turn');
-      await page.click('[data-segment][data-session="s-cart"]');
-      await ready(page, 's-cart');
-      await page.click('[data-card] h1');
+      for (const id of ['s-astro', 's-reviews']) {
+        await openSheetOf(page, mock, id);
+        await page.until('its Overview', () => !!document.querySelector('#task-sheet [role="tabpanel"] section'));
+        await audit(id === 's-astro' ? 'Needs focus' : 'Your turn');
+      }
+      await openDecision(page, mock, 's-cart');
       await mock.post('/mock/fail', { error: 'this question is no longer open', code: 'stale' });
       await page.key('Enter');
       await page.until('the undo toast', toastsOf, 'undo');
-      await audit('a send held');
+      await audit('a send held, with the way on');
       await page.until('the refusal', toastsOf, 'error');
-      await page.until('the Not sent peek', () => document.querySelector('[data-peek="1"]')?.textContent?.includes('Not sent'));
+      await page.until('the decision marked Not sent', () => !!document.querySelector('[data-decision] [data-not-sent]'));
       await audit('refused');
-      await page.click('[data-segment][data-session="s-cart"]');
-      await page.until('the card marked Not sent', () => !!document.querySelector('[data-card] [data-not-sent]'));
-      await audit('Not sent on the card');
-      await mock.post('/mock/add', { template: 'ask', id: 's-new' });
-      await page.until('Just in', () => !!document.querySelector('[data-justin]'));
-      await mock.post('/mock/patch', { id: 's-cart', patch: { question: null, status: 'working', activity: { step: 'Edit src/cart/mergeCarts.ts', since: Date.now() } } });
-      await page.until('s-cart off the queue', () => !document.querySelector('[data-segment][data-session="s-cart"]'));
-      await audit('Just in, s-cart gone');
       assert.deepEqual(fails, []);
     },
   },
@@ -363,7 +391,7 @@ export const layout: Check[] = [
           fails.push(...(await page.eval(lowContrast, 4.5)).map((f) => `${where} (${scheme}): ${f}`));
         });
       };
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.click('details summary', 'Archived');
       await page.until('the archived tile', () => document.querySelector('[data-tile][data-archived]')?.checkVisibility());
@@ -397,7 +425,8 @@ export const layout: Check[] = [
           fails.push(...(await page.eval(lowContrast, 4.5)).map((f) => `${where} (${scheme}): ${f}`));
         });
       };
-      await openQueue(page, mock);
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await page.key('n');
       await page.until('New task', () => !!document.querySelector('#new-task:modal'));
       await page.type('Add retries to the webhook worker');
@@ -423,7 +452,7 @@ export const layout: Check[] = [
       await audit('Keys');
       await page.key('Escape');
 
-      await page.click('[data-card] button[aria-label="Session actions"]');
+      await page.click('[data-tile][data-session="s-cart"] button[aria-label="Session actions"]');
       await page.click(':popover-open button', 'Clear task');
       await page.until('the delete dialog', () => !!document.querySelector('dialog#delete-worktree li'));
       await audit('Delete worktree');
@@ -460,90 +489,71 @@ export const layout: Check[] = [
     },
   },
   {
-    name: 'P7.send-capsules a send puts its capsule first, Sending in N s with Undo; two sends give two capsules, and each Undo takes back its own: the card comes back to the front with what its send took from the reply box; after the POST the capsule reads Sent, then turns into the working capsule with a fresh ring for about 2.6 s',
+    name: 'P7.send-undo two sends from two task pages each hold a toast of their own, and each Undo takes back its own: s-cart\'s option with its note comes back on its page with the note in the reply box, while s-hooks\'s menu answer goes out 5 s after its press, once',
     async run({ holds, page, mock, shot }) {
-      const capsules = async () => ((await page.eval(dockState))?.capsules ?? []).map((c) => ({ session: c.session, state: c.state, line: c.line }));
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock, 's-cart');
       await page.key('w');
-      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
+      await page.until('the reply box, focused', () => document.activeElement?.matches('[data-decision] textarea'));
       await page.type('only if stock allows');
-      await page.click('[data-card] [data-option="2"]');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      const [first] = await capsules();
-      assert.deepEqual({ ...first, line: undefined }, { session: 's-cart', state: 'held', line: undefined });
-      assert.match(first.line ?? '', /^Sending in [1-5] s$/);
-      assert.equal(await page.eval(() => [...document.querySelectorAll('[data-capsule][data-session="s-cart"] button')].some((b) => b.textContent === 'Undo')), true);
-
+      await page.click('[data-decision] [data-option="2"]');
+      await page.until('the decision to go', noDecision, 's-cart');
+      await page.click('#task-sheet [data-next-after] button');
       await ready(page, 's-hooks');
-      await page.key('1');
-      await page.key('4');
+      await page.click('[data-decision] [data-option="1"]');
+      await page.click('[data-decision] [data-option="4"]');
+      await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.key('Enter');
       const pressed = Date.now();
-      await page.until('s-group at the front', frontIs, 's-group');
-      const two = await capsules();
-      assert.deepEqual(two.slice(0, 2).map((c) => [c.session, c.state]), [['s-hooks', 'held'], ['s-cart', 'held']]);
-      await shot('dock-sends');
-
-      await page.click('[data-capsule][data-session="s-cart"] button', 'Undo');
-      await page.until('s-cart back at the front', frontIs, 's-cart');
-      assert.deepEqual({ ...(await page.eval(replyIn, '[data-card]')), focused: undefined }, { value: 'only if stock allows', files: [], focused: undefined });
-      assert.deepEqual((await capsules()).filter((c) => c.state !== 'working').map((c) => [c.session, c.state]), [['s-hooks', 'held']]);
-
-      // The answer goes out 5 s after the press and the mock then types the menu, which can outlast a 5 s wait that
-      // starts this soon after the press, as it does when no deal or Undo runs an animation.
-      await holds('the send to wait its 5 s', Math.max(0, 4000 - (Date.now() - pressed)), async () => matches((await capsules()).filter((c) => c.session === 's-hooks').map((c) => c.state), ['held']));
-      await page.until('Sent on the capsule', () => {
-        const c = document.querySelector<HTMLElement>('[data-capsule][data-session="s-hooks"]');
-        return c?.dataset.state === 'sent' && c.innerText.includes('Sent');
+      await page.until('the decision to go', noDecision, 's-hooks');
+      const held = await page.until('two undo toasts', () => {
+        const t = [...document.querySelectorAll<HTMLElement>('[data-toast][data-kind="undo"]')].map((x) => x.innerText.split('\n')[0]);
+        return t.length === 2 && t;
       });
+      assert.ok(held.some((t) => t.startsWith('Sending: “Keep the account cart”')), held.join(' | '));
+      assert.ok(held.some((t) => t.startsWith('Sending: “Backoff: Exponential, 5 tries')), held.join(' | '));
+      await shot('two-sends');
+      await page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-toast][data-kind="undo"]')].find((t) => t.innerText.includes('Keep the account cart'))!.querySelector<HTMLButtonElement>('button')!.click());
+      // In the page, as a load would send what is held.
+      await page.eval(() => void navigation.navigate('/s/s-cart/overview'));
+      await page.until('s-cart\'s decision back', decisionOf, 's-cart');
+      assert.deepEqual({ ...(await page.eval(replyIn, '[data-decision]')), focused: undefined }, { value: 'only if stock allows', files: [], focused: undefined });
+      await holds('the menu answer to wait its 5 s', Math.max(0, 4000 - (Date.now() - pressed)), async () => !(await actions(mock)).length);
+      await until('the menu answer', async () => (await actions(mock)).length > 0, POSTED_MS);
       assert.ok(Date.now() - pressed >= 4500, 'the send went out before its 5 s');
-      await page.until('the working capsule, fresh', () => {
-        const c = document.querySelector<HTMLElement>('[data-capsule][data-session="s-hooks"]');
-        return c?.dataset.state === 'working' && c.hasAttribute('data-fresh');
-      });
-      const ringed = Date.now();
-      await page.until('the ring to end', () => !document.querySelector('[data-capsule][data-session="s-hooks"][data-fresh]'));
-      const ring = Date.now() - ringed;
-      assert.ok(ring > 1800 && ring < 3400, `the ring lasted ${ring} ms`);
-      const sent = await actions(mock);
-      assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['answer-menu', 's-hooks', 204]]);
+      assert.deepEqual((await actions(mock)).map((e) => [e.action, e.sessionId, e.status]), [['answer-menu', 's-hooks', 204]]);
     },
   },
   {
-    name: 'P7.keyboard with no pointer at all: ⏎ answers and Z takes it back, → skips and ← goes back; O opens Overview, 2 the Diff, J a file, Esc all files and Esc the queue; V the Wall, N New task, typing and Esc; ? Keys and Esc',
+    name: 'P7.keyboard with no pointer at all: D opens the next decision, ⏎ answers and Z takes it back, D goes on; 3 the Diff, J a file, Esc all files and Esc the Wall; N New task, typing and Esc; ? Keys and Esc',
     clock: 'fast',
     async run({ holds, page, mock }) {
       await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
       await page.eval(() => {
         const w = window as unknown as { e2ePointer: number };
         w.e2ePointer = 0;
         for (const type of ['pointerdown', 'mousedown']) addEventListener(type, () => w.e2ePointer++, true);
       });
+      await page.until('Next decision', nextInBar);
+      await page.key('d');
       await ready(page, 's-cart');
       await page.key('Enter');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
+      await page.until('the decision to go', noDecision, 's-cart');
       await page.key('z');
-      await page.until('s-cart back at the front', frontIs, 's-cart');
-      await page.key('ArrowRight');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
-      await page.key('ArrowLeft');
-      await page.until('s-cart at the front', frontIs, 's-cart');
-
-      await page.key('o');
-      await page.until('Overview of s-cart', () => location.pathname === '/s/s-cart/overview' && !!document.querySelector('#task-sheet [data-queued]'));
+      await ready(page, 's-cart');
+      await page.key('d');
+      await ready(page, 's-hooks');
       await page.key('3');
-      await page.until('the Diff', () => location.pathname === '/s/s-cart/diff' && document.querySelectorAll('section[data-file] diffs-container').length === 12);
+      await page.until('the Diff', () => location.pathname === '/s/s-hooks/diff' && document.querySelectorAll('section[data-file] diffs-container').length > 0);
+      const files = await page.eval(() => document.querySelectorAll('section[data-file]').length);
       await page.key('j');
       await page.until('one file, whole', () => document.querySelectorAll('section[data-file]').length === 1 && !!document.querySelector('[data-theme="dark"] > div')?.textContent?.includes('← All files'));
       await page.key('Escape');
-      await page.until('all files again', () => document.querySelectorAll('section[data-file]').length === 12);
+      await page.until('all files again', (n: number) => document.querySelectorAll('section[data-file]').length === n, files);
       assert.equal(await page.eval(sheetOpen), true);
       await page.key('Escape');
-      await page.until('the queue', () => location.pathname === '/' && !document.querySelector('#task-sheet') && !!document.querySelector('[data-card]'));
+      await page.until('the Wall', () => location.pathname === '/' && !document.querySelector('#task-sheet') && document.querySelectorAll('[data-tile]').length > 0);
 
-      await page.key('v');
-      await page.until('the Wall', () => location.pathname === '/wall' && document.querySelectorAll('[data-tile]').length > 0);
       await page.key('n');
       await page.until('New task, its repository focused', newTaskOnRepo);
       for (let i = 0; i < 10 && !(await page.eval(() => document.activeElement?.matches('dialog#new-task textarea'))); i++) await page.key('Tab');
@@ -562,12 +572,12 @@ export const layout: Check[] = [
     },
   },
   {
-    name: 'P7.contrast-volume with 45 cards waiting every text on the queue reads at 4.5:1 or more too: the meter\'s bars with their counts, and a dock of sixteen capsules',
+    name: 'P7.contrast-volume with 45 tasks waiting every text on the Wall and the top bar\'s Next decision reads at 4.5:1 or more too',
     scenario: 'volume45',
     async run({ themes, page, mock }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the bars', () => document.querySelectorAll('[data-bar]').length === 3);
-      await page.until('the dock', docked, 16);
+      await page.until('the tiles', () => document.querySelectorAll('[data-tile][data-attention="decide"]').length === 30);
+      assert.equal(await page.eval(nextInBar), 'Next decision 30 D');
       await page.until('the page to settle', still);
       await themes(async (scheme) => assert.deepEqual(await page.eval(lowContrast, 4.5), [], scheme));
     },

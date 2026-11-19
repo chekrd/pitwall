@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sleep, type Page } from '../cdp.ts';
-import { logged, matches, openNewTask, openQueue, openSheetOf, pickRepo, sheetOpen, stateOf, tiles, typeInPrompt, type Check } from '../helpers.ts';
+import { logged, matches, openDecision, openNewTask, openSheetOf, pickRepo, sheetOpen, stateOf, tiles, typeInPrompt, unguarded, type Check } from '../helpers.ts';
 
 // Opens a draft under lines 89–91 of server/git.ts in s-invoice's Diff, picked with the + beside a line number.
 async function openLineDraft(page: Page, url: string) {
@@ -32,7 +32,7 @@ export const schedulesLater: Check[] = [
     name: 'S1 New task can repeat: Repeat under More offers weekdays at 09:00, needs a prompt, and the button reads Schedule; ⌘↵ posts the schedule, says so in a toast and lists it under Scheduled on the Wall, folded like Archived until opened, the link under the heading opening it, with its next run; Run now opens a task named by the date whose facts name the schedule; Pause and Resume, and Delete with Undo',
     async run({ page, mock, shot }) {
       const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       assert.equal(await page.eval(() => !!document.querySelector('[data-schedules]')), false, 'no Scheduled list without a schedule');
       await openNewTask(page);
@@ -101,7 +101,7 @@ export const schedulesLater: Check[] = [
       await openNewTask(page);
       assert.equal(await page.eval(startOf), 0, 'New task opens on Now, after a schedule and after Once was left picked');
       await page.click('dialog#new-task [data-when] label', 'Repeat');
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-schedules] summary', 'Scheduled (1)');
       await page.until('the schedule after a reload', () => !!document.querySelector('[data-schedule="nightly-review"]'));
       await openNewTask(page);
@@ -118,7 +118,7 @@ export const schedulesLater: Check[] = [
       });
       assert.match(facts.Schedule ?? '', /^nightly-review, started with Run now today at \d\d:\d\d$/);
       await page.click('#task-sheet button[aria-label^="Back to"]');
-      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       await page.until('the last run', () => document.querySelector('[data-schedule="nightly-review"] [data-last="ran"]')?.textContent?.startsWith('Ran today at'));
 
       await page.click('[data-schedule="nightly-review"] button', 'Pause');
@@ -146,7 +146,7 @@ export const schedulesLater: Check[] = [
         name: 'after-lunch', when: { at: due },
         task: { kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Bump the dependencies', model: '', effort: '' },
       });
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-schedules] summary', 'Scheduled (1)');
       await page.until('the schedule', () => /^Next (today|tomorrow) at/.test(document.querySelector('[data-schedule="after-lunch"] [data-next]')?.textContent ?? ''));
       const before = (await mock.get('/api/state')).sessions.length;
@@ -178,7 +178,7 @@ export const schedulesLater: Check[] = [
         name: 'weekly-dependency-bump', when: { time: '07:30', days: [1] },
         task: { kind: 'repo', repoId: 1, existingBranch: true, branch: 'main', path: '', prompt: 'Bump the dependencies and open a PR when the checks pass', model: '', effort: '' },
       });
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-schedules] summary', 'Scheduled (1)');
       await page.until('the schedule', () => !!document.querySelector('[data-schedule="weekly-dependency-bump"]'));
       const fit = await page.eval(() => {
@@ -193,7 +193,7 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: "L1 Later keeps messages written while Claude works on the task's Overview: Keep for later under Message Claude keeps one, the card counts them; the ones set to Send when it's my turn go out one per turn, the first when this turn ends and the next when the turn it started ends, a reply after that end holds them back, and Send now sends one held with its Undo",
+    name: "L1 Later keeps messages written while Claude works on the task's Overview: Keep for later under Message Claude keeps one, and the drafts kept show on the task's Overview; the ones set to Send when it's my turn go out one per turn, the first when this turn ends and the next when the turn it started ends, a reply after that end holds them back, and Send now sends one held with its Undo",
     clock: 'fast',
     async run({ holds, page, mock, shot }) {
       type Snap = { sessions: { id: string; parked: { id: string; text: string; auto: boolean }[]; answered: { text: string } | null }[] };
@@ -204,9 +204,7 @@ export const schedulesLater: Check[] = [
       };
       const kept = (id: string, text: string) => ({ id, text, auto: false, armedAt: null, at: Date.now() });
       await mock.post('/mock/patch', { id: 's-cart', patch: { parked: [kept('k1', 'One'), kept('k2', 'Two')] } });
-      await openQueue(page, mock);
-      assert.equal(await page.eval(() => document.querySelector('[data-card][data-session="s-cart"] [data-later-count]')?.textContent), 'Later 2');
-      await page.click('[data-card][data-session="s-cart"] [data-later-count]');
+      await openSheetOf(page, mock, 's-cart');
       await page.until("s-cart's drafts on its Overview", () => document.querySelectorAll('#task-sheet [data-later] li[data-parked]').length === 2);
 
       await mock.post('/mock/patch', { id: 's-invoice', patch: { status: 'working', lastTurn: 't-later', summary: null, answered: null, activity: { step: 'Bash: pnpm test', since: Date.now() } } });
@@ -376,11 +374,12 @@ export const schedulesLater: Check[] = [
       await page.until('the draft under Later', () => !!document.querySelector('#task-sheet [data-later] li[data-parked]'));
       assert.equal(await page.eval(sendNowOn), false, 'Send now is off while the question is open');
 
-      await page.click('#task-sheet [data-queued] button', 'Decline');
+      await page.until('the guard to end', unguarded);
+      await page.click('#task-sheet [data-decision] button', 'Decline');
       await page.until('the hold toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => t.textContent?.startsWith('Declining “Which retry schedule')));
       await sleep(3000);
       await page.until('Send now on again once the question is gone', sendNowOn);
-      assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-queued]')), false, 'the question left the page');
+      assert.equal(await page.eval(() => !!document.querySelector('#task-sheet [data-decision]')), false, 'the question left the page');
       const declined = (await mock.log()).filter((e) => e.sessionId === 's-hooks' && e.action === 'decline-menu');
       assert.deepEqual(declined.map((e) => e.body), [{ toolUseId: 'toolu_01Hooks' }]);
       const after = await hooks();
@@ -444,7 +443,7 @@ export const schedulesLater: Check[] = [
       await page.key('Tab');
       await page.until('a tip on keyboard focus', () => document.getElementById('tooltip')?.matches(':popover-open') && document.getElementById('tooltip')!.textContent.startsWith('Changes the draft'));
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       await page.hover('[data-explain]:is(header *, nav *)');
       const top = await page.until('a tip in the top bar', tip);
@@ -452,17 +451,17 @@ export const schedulesLater: Check[] = [
     },
   },
   {
-    name: 'L3 every button and link on the queue, the Wall and a task page has a name of its own, so moving the hover hints into tooltips took none away',
+    name: 'L3 every button and link on the Wall, a decision\'s task page and another task page has a name of its own, so moving the hover hints into tooltips took none away',
     async run({ page, mock }) {
       const unnamed = () => [...document.querySelectorAll<HTMLElement>('button, a[href], [role="button"], [role="tab"], summary')]
         .filter((e) => e.checkVisibility() && !e.closest('[inert], [aria-hidden="true"]'))
         .filter((e) => !(e.getAttribute('aria-label')?.trim() || e.getAttribute('aria-labelledby') || e.innerText.trim() || e.querySelector('img[alt]:not([alt=""])')))
         .map((e) => e.outerHTML.slice(0, 200));
-      await openQueue(page, mock);
-      assert.deepEqual(await page.eval(unnamed), [], 'the queue');
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       assert.deepEqual(await page.eval(unnamed), [], 'the Wall');
+      await openDecision(page, mock);
+      assert.deepEqual(await page.eval(unnamed), [], 'a decision\'s task page');
       await openSheetOf(page, mock, 's-invoice');
       assert.deepEqual(await page.eval(unnamed), [], 'a task page');
     },

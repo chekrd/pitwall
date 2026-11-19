@@ -1,4 +1,4 @@
--- How long decisions waited for you (asked → closed) and how long you took once the card showed, by kind and where answered
+-- How long decisions waited for you (asked → closed) and how long you took once its task page showed it, by kind and where answered
 WITH w AS (
   SELECT kind, via, wait_ms, ROW_NUMBER() OVER (PARTITION BY kind, via ORDER BY wait_ms) AS n, COUNT(*) OVER (PARTITION BY kind, via) AS total
   FROM decisions WHERE wait_ms IS NOT NULL

@@ -2,11 +2,10 @@ import type { Check } from '../helpers.ts';
 import { board } from './board.ts';
 import { builds } from './builds.ts';
 import { clientShell } from './clientShell.ts';
+import { decisions } from './decisions.ts';
 import { dialogs } from './dialogs.ts';
-import { dock } from './dock.ts';
 import { layout } from './layout.ts';
 import { newTask } from './newTask.ts';
-import { queueCard } from './queueCard.ts';
 import { replies } from './replies.ts';
 import { restart } from './restart.ts';
 import { rounds } from './rounds.ts';
@@ -23,10 +22,9 @@ export const checks: Check[] = [
   ...taskPage,
   ...newTask,
   ...dialogs,
-  ...queueCard,
+  ...decisions,
   ...sends,
   ...replies,
-  ...dock,
   ...layout,
   ...clientShell,
   ...usageFindings,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { decisionKey } from '../../../server/decision.ts';
 import { until } from '../cdp.ts';
-import { listen, loads, logged, named, navigation, openNewTask, openQueue, POSTED_MS, ready, received, tiles, withOwnBuild, type Check, type Probe } from '../helpers.ts';
+import { listen, loads, logged, named, navigation, openDecision, openNewTask, POSTED_MS, received, tiles, withOwnBuild, type Check, type Probe } from '../helpers.ts';
 
 export const builds: Check[] = [
   {
@@ -37,18 +37,17 @@ export const builds: Check[] = [
     },
   },
   {
-    name: 'P1a.compat-dismiss the card dismisses a question: it closes, the tile leaves Decide, and nothing counts as answered',
+    name: 'P1a.compat-dismiss the task page dismisses a question: it closes, the tile leaves Decide, and nothing counts as answered',
     clock: 'fast',
     async run({ page, mock, shot }) {
       const { legacy } = await mock.get('/mock');
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
-      await page.click('[data-card] footer button', 'Dismiss');
+      await openDecision(page, mock);
+      await page.click('[data-decision] button', 'Dismiss');
       const [dismissed] = await logged(mock, 'the dismissal', (e) => e.action === 'dismiss', POSTED_MS);
       assert.deepEqual([dismissed.sessionId, dismissed.status, dismissed.body.key], ['s-cart', 204, 'q:toolu_01Cart']);
       const s = (await mock.get('/api/state')).sessions.find((s: { id: string }) => s.id === 's-cart');
       assert.deepEqual([s.question, s.dismissedAsk, s.status, s.answered], [null, 'toolu_01Cart', 'idle', legacy ? undefined : null]);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the s-cart tile to leave Decide', () =>
         document.querySelector('[data-tile][data-session="s-cart"]')?.getAttribute('data-attention') === 'idle');
       await shot('dismissed');
@@ -156,7 +155,7 @@ export const builds: Check[] = [
     },
   },
   {
-    name: 'P3.reload-gate a new build reloads the board when nothing is focused; New task holds it until it closes, on the Wall as over the queue, even with nothing focused in it; the page\'s own entry never reloads it, nor a build it already reloaded for',
+    name: 'P3.reload-gate a new build reloads the board when nothing is focused; New task holds it until it closes, on the Wall as over a task page, even with nothing focused in it; the page\'s own entry never reloads it, nor a build it already reloaded for',
     async run({ holds, page, mock, shot }) {
       const mark = () => page.eval(() => void ((window as unknown as { probe?: number }).probe = 1));
       const marked = () => page.eval(() => (window as unknown as { probe?: number }).probe === 1);
@@ -164,7 +163,7 @@ export const builds: Check[] = [
       const reloaded = (what: string) => page.until(`the page to reload ${what}`, () => (window as unknown as { probe?: number }).probe === undefined && document.readyState === 'complete');
       const stays = (what: string) => holds(`the page not to reload ${what}`, 3000, marked);
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       await mark();
       await newBuild(1);
@@ -177,7 +176,7 @@ export const builds: Check[] = [
       await mock.post('/mock/ui-entry', { src: `${mock.url}${own}` });
       await stays('for its own entry');
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Ship it after lunch');
@@ -192,7 +191,8 @@ export const builds: Check[] = [
       await page.key('Escape');
       await reloaded('once New task closed on the Wall');
 
-      await page.goto(`${mock.url}/`);
+      await page.goto(`${mock.url}/s/s-astro/overview`);
+      await page.until('the task page', () => !!document.querySelector('#task-sheet'));
       await page.click('button', 'New task');
       await page.until('the New task dialog', () => !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open);
       const blurred = await page.eval(() => {
@@ -209,7 +209,7 @@ export const builds: Check[] = [
 
       // The mock serves the same entry whatever it announces, so each reload above came back to it, as when the
       // server reads some other script as the entry.
-      await page.until('the card', () => !!document.querySelector('[data-card]'));
+      await page.until('the task page', () => !!document.querySelector('#task-sheet'));
       await mark();
       await newBuild(3);
       await stays('again for a build that brought it back to its own entry');
@@ -219,7 +219,7 @@ export const builds: Check[] = [
     name: 'P3.reload-offline a new build waits for the server: New task closing while the server cannot be reached does not reload the board, and it reloads once the server is back and names that build',
     expectedErrors: [/WebSocket/, /ERR_CONNECTION/, /ERR_EMPTY_RESPONSE/, /ERR_SOCKET_NOT_CONNECTED/],
     async run({ holds, page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Ship it after lunch');

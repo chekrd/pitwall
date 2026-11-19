@@ -19,8 +19,8 @@ import { TaskName } from './TaskName.tsx';
 import styles from './TaskSheet.module.css';
 import { toast } from './Toasts.tsx';
 
-// The task's own page follows the route: a task URL opens it over the whole view, and Esc, the back button or Back
-// return to the view it was opened from.
+// The task's own page follows the route: a task URL opens it over the Wall, and Esc, the back button or Back return
+// to the Wall.
 export function TaskSheet({ route }: { route: Route }) {
   const { sessions, repos, link } = useStore();
   const page = useRef<HTMLElement>(null);
@@ -55,7 +55,7 @@ export function TaskSheet({ route }: { route: Route }) {
   return (
     <section id={SHEET_DIALOG} ref={page} tabIndex={-1} className={styles.page} data-session={id} aria-label={name}>
       {link === 'connecting' && <p className={styles.connecting}>Connecting…</p>}
-      {session && <Body key={session.id} session={session} name={name} repos={repos} tab={sheet.tab} item={sheet.item} back={route.view} />}
+      {session && <Body key={session.id} session={session} name={name} repos={repos} tab={sheet.tab} item={sheet.item} />}
     </section>
   );
 }
@@ -66,10 +66,9 @@ interface BodyProps {
   repos: RepoView[];
   tab: Tab;
   item: string | null;
-  back: Route['view'];
 }
 
-function Body({ session, name, repos, tab, item, back }: BodyProps) {
+function Body({ session, name, repos, tab, item }: BodyProps) {
   const { repo, worktree, branch } = locate(repos, session);
   const attention = shownOf(session, useBusy());
   const stat = session.diffstat;
@@ -84,9 +83,9 @@ function Body({ session, name, repos, tab, item, back }: BodyProps) {
   return (
     <>
       <header className={styles.head}>
-        <button type="button" className={styles.close} aria-label={back === 'wall' ? 'Back to the Wall' : 'Back to the queue'} onClick={closeSheet}>
+        <button type="button" className={styles.close} aria-label="Back to the Wall" onClick={closeSheet}>
           <Icon name="arrow-left" size={18} />
-          <span>{back === 'wall' ? 'Wall' : 'Queue'}</span>
+          <span>Wall</span>
           <kbd>Esc</kbd>
         </button>
         <div className={styles.heading}>

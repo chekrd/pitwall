@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { api, upload } from '../api.ts';
-import { typed } from '../deck.ts';
+import { typed } from '../answers.ts';
 import type { Request } from '../outbox.ts';
 import { holding, undo } from '../sends.ts';
 import { useStore } from '../store.ts';
@@ -47,7 +47,7 @@ function stored(): [string, Draft][] {
   }
 }
 
-// A draft and its attachments belong to the session, not to the card on screen, and a reload keeps the text and the
+// A draft and its attachments belong to the session, not to the reply box on screen, and a reload keeps the text and the
 // files that finished uploading.
 let drafts = new Map<string, Draft>(stored());
 const subscribers = new Set<() => void>();
@@ -184,7 +184,7 @@ addEventListener('paste', (e) => {
   }
   if (target?.closest('input, [contenteditable]:not([contenteditable="false"])')) return;
   const boxes = [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-draft]')].filter(onScreen);
-  const task = focusedBox && `[data-card][data-session="${CSS.escape(focusedBox)}"], #task-sheet[data-session="${CSS.escape(focusedBox)}"]`;
+  const task = focusedBox && `#task-sheet[data-session="${CSS.escape(focusedBox)}"]`;
   const id = (task && [...document.querySelectorAll(task)].some(onScreen) ? focusedBox : null) ?? (boxes.length === 1 ? boxes[0].dataset.draft! : null);
   const text = e.clipboardData?.getData('text/plain') ?? '';
   const list = files(e);
@@ -274,7 +274,7 @@ export function AttachButton({ id, refocus }: { id: string; refocus: () => void 
 
 export interface ComposerProps {
   session: Session;
-  // The key of the decision the card shows, which Enter answers; null for a plain message.
+  // The key of the decision the page shows, which Enter answers; null for a plain message.
   decision: string | null;
   label: string;
   placeholder: string;

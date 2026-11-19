@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { openDecision } from '../../../server/decision.ts';
 import { roundTitle } from '../../../server/rounds.ts';
-import { promptOf } from '../deck.ts';
+import { promptOf } from '../answers.ts';
 import { openSheet, sessionPath } from '../router.ts';
 import type { RepoView, Session } from '../types.ts';
 import { useBusy } from '../sends.ts';
@@ -23,8 +23,8 @@ function textOf(s: Session, attention: Attention) {
   return s.firstPrompt || 'Starting…';
 }
 
-// The whole tile opens the task's page, also for one waiting in the queue, whose page leads to its card; through a
-// click on the article rather than a link stretched over it, which would sit above every label and hide its tooltip.
+// The whole tile opens the task's page, where a decision is answered, through a click on the article rather than a
+// link stretched over it, which would sit above every label and hide its tooltip.
 export function WallTile({ session, repos }: { session: Session; repos: RepoView[] }) {
   const { place, worktree, branch } = locate(repos, session);
   const name = sessionLabel(session, branch);

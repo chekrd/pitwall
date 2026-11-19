@@ -11,8 +11,8 @@ interface Storage {
   setItem(key: string, value: string): void;
 }
 
-// The answers given so far to each round of questions, by decision. They are a draft, as a reply box's text is, shared
-// by the round's card and its task page. A round takes a while to answer, so they outlive the window, in localStorage.
+// The answers given so far to each round of questions, by decision. They are a draft, as a reply box's text is. A round
+// takes a while to answer, so they outlive the window, in localStorage.
 export function createRoundAnswers(storage: Storage | null) {
   let all = new Map<string, RoundAnswers>();
   try {

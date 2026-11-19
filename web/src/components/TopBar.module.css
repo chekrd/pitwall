@@ -23,7 +23,7 @@
     img { margin: -2px 0 -2px -3px; }
   }
 
-  /* Narrower windows need the room for the meter, so the name stays only for screen readers. */
+  /* Narrower windows need the room for the usage limits, so the name stays only for screen readers. */
   @media (max-width: 1599px) {
     .name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
@@ -64,6 +64,34 @@
 
   .middle { min-width: 0; display: flex; justify-content: center; }
 
+  .next {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 8px 0 14px;
+    border: 1px solid var(--accent-line);
+    border-radius: 11px;
+    background: var(--accent-tint);
+    color: var(--accent-ink);
+    font-size: 13.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    &:hover { border-color: var(--accent-ink); }
+  }
+
+  .count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+  }
+
   .usage { display: flex; padding-right: 6px; }
 
   .theme { display: flex; margin: 0 -10px; }
@@ -83,31 +111,6 @@
     font-size: 13px;
     &:hover { background: var(--hover); color: var(--text); }
     &[aria-pressed="true"] { background: var(--prompt-tint); color: var(--prompt); }
-  }
-
-  .toggle {
-    display: inline-flex;
-    gap: 2px;
-    padding: 3px;
-    border: 1px solid var(--line);
-    border-radius: 11px;
-    background: var(--raised);
-    a {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      height: 30px;
-      padding: 0 12px;
-      border-radius: 8px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 650;
-      text-decoration: none;
-      &:hover { color: var(--text); }
-      &[aria-current="page"] { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
-      &[aria-disabled] { opacity: 0.5; cursor: default; }
-      &[aria-disabled]:hover { color: var(--muted); }
-    }
   }
 
   .newTask {
@@ -139,8 +142,8 @@
     .middle { grid-area: middle; justify-content: flex-start; }
     .usage { grid-area: usage; padding-right: 0; }
     .theme { grid-area: theme; justify-content: flex-end; margin: 0; }
-    .label, .linkText { display: none; }
-    .ghost, .toggle a, .newTask { padding: 0 9px; }
+    .label, .linkText, .next kbd { display: none; }
+    .ghost, .newTask { padding: 0 9px; }
     /* A phone-sized window leaves no room for them beside the reload pill; Pause's banner still shows, and B still files a bug. */
     .pause, .bug { display: none; }
   }

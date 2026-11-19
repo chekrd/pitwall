@@ -3,8 +3,8 @@ import { sessionAction } from './api.ts';
 import { keptBack, keptDraft, putBack, release, takeDraft, type Draft, type KeptDraft } from './components/Composer.tsx';
 import { dismissToast, toast } from './components/Toasts.tsx';
 import { active, createOutbox, NO_ANSWER_MS, type Item, type Outgoing, type Request } from './outbox.ts';
-import { queue } from './queue.ts';
-import { openSheet, showQueue } from './router.ts';
+import { decisionKey } from '../../server/decision.ts';
+import { openSheet } from './router.ts';
 import type { Session } from './types.ts';
 import { track } from './ux.ts';
 
@@ -29,8 +29,6 @@ export interface Restore {
   name: string;
   // What the send took from the reply box.
   draft: Draft | null;
-  // Sent from its card, which left the queue with it.
-  dealt: boolean;
 }
 
 const subscribers = new Set<() => void>();
@@ -82,12 +80,25 @@ function heldText(i: Item<Restore>) {
   return `Sending: ${quote(i.label)}`;
 }
 
-// A card whose send failed waits right after the card being read; Show brings it to the front, or opens the task when
-// it no longer waits.
-function show(id: string) {
-  if (!queue.state().order.includes(id)) return openSheet(id, 'overview');
-  queue.jump(id);
-  showQueue();
+// A send the server refused, by task, with the decision the task had then: its page says so while that decision
+// is still the open one, or until the next send to it.
+export interface NotSent {
+  message: string;
+  key: string | null;
+}
+
+let notSent = new Map<string, NotSent>();
+
+function refused(id: string, message: string, key: string | null) {
+  notSent = new Map(notSent).set(id, { message, key });
+  for (const fn of subscribers) fn();
+}
+
+function forget(id: string) {
+  if (!notSent.has(id)) return;
+  notSent = new Map(notSent);
+  notSent.delete(id);
+  for (const fn of subscribers) fn();
 }
 
 const stillLater = (n: number) => (n ? `. ${n === 1 ? 'The draft is' : 'The drafts are'} still under Later.` : '');
@@ -99,7 +110,7 @@ function announce(i: Item<Restore>) {
     return toast('undo', heldText(i), { session, until: i.dueAt, lasts: HOLD_MS + 2000, action: { label: 'Undo', kbd: 'Esc', run: () => undo(i.id) } });
   }
   if (i.state === 'waiting') return toast('info', `Waiting for Pitwall to send ${quote(i.label)} to ${name}`, { session, lasts: NO_ANSWER_MS });
-  if (i.state === 'failed') return toast('error', `Not sent to ${name}: ${i.error}${stillLater(i.body.drafts?.length ?? 0)}`, { session, action: { label: 'Show', run: () => show(session) } });
+  if (i.state === 'failed') return toast('error', `Not sent to ${name}: ${i.error}${stillLater(i.body.drafts?.length ?? 0)}`, { session, action: { label: 'Show', run: () => openSheet(session, 'overview') } });
   if (i.state === 'answered') return toast('info', `Already answered elsewhere; nothing was sent to ${name}`, { session });
   return null;
 }
@@ -110,8 +121,8 @@ const told = new Map<string, { item: Item<Restore>; toast: number | null }>();
 const givenBack = new Set<string>();
 
 // Tells each change of an item's state once: the hold with its Undo, a wait for the server, a refusal, an answer from
-// elsewhere. A refused card comes back after the card being read, and the reply box gets back what the send took. An
-// item gone for good lets go of the pictures it took along.
+// elsewhere. A refused send is marked on its task's page, and the reply box gets back what the send took. An item gone
+// for good lets go of the pictures it took along.
 function review() {
   const items = sends.items();
   for (const i of items) {
@@ -124,7 +135,7 @@ function review() {
     if (i.restore.draft) putBack(i.sessionId, i.restore.draft);
     if (i.state === 'failed') {
       track('send-failed', { action: i.action });
-      queue.notSent(i.sessionId, i.error ?? 'the send failed');
+      refused(i.sessionId, i.error ?? 'the send failed', i.key);
     }
     queueMicrotask(() => sends.take(i.id));
   }
@@ -138,33 +149,27 @@ function review() {
 
 // Holds an answering request for 5 s. What it takes along from the reply box leaves the box, and comes back if the
 // send is taken back or refused; with `box` off it takes nothing from it.
-export function hold(s: Session, request: Request, name: string, { dealt = false, box = true } = {}) {
+export function hold(s: Session, request: Request, name: string, { box = true } = {}) {
   const { text, files } = request.body;
   const draft = box && request.action === 'answer' && (text !== undefined || !!files?.length) ? takeDraft(s.id, files ?? []) : null;
   track('send', {
-    task: s.id, decision: request.body.key ?? undefined, action: request.action, command: !!request.command, option: request.body.choice !== undefined, ownText: !!text?.trim(), files: files?.length ?? 0, dealt,
+    task: s.id, decision: request.body.key ?? undefined, action: request.action, command: !!request.command, option: request.body.choice !== undefined, ownText: !!text?.trim(), files: files?.length ?? 0,
   });
-  return sends.hold(s, request, { name, draft, dealt });
+  forget(s.id);
+  return sends.hold(s, request, { name, draft });
 }
 
 export const holding = () => sends.items().some((i) => i.state === 'held');
 
-// Takes back a held send, the newest without an id, at once, so its timer cannot post it while the card comes back.
-// A card dealt out with it comes back to the front, and the reply box gets back what the send took from it. Z waits
-// for a deal under way, whose send is the newest.
+// Takes back a held send, the newest without an id, at once, so its timer cannot post it meanwhile. The reply box
+// gets back what the send took from it.
 export function undo(id?: string) {
-  if (id === undefined) return queue.afterDeal(() => takeBack());
-  takeBack(id);
-}
-
-function takeBack(id?: string) {
   const item = sends.items().findLast((i) => i.state === 'held' && (id === undefined || i.id === id));
   if (!item) return;
   givenBack.add(item.id);
   track('undo', { task: item.sessionId, decision: item.body.key ?? undefined, action: item.action, afterMs: HOLD_MS - (item.dueAt - Date.now()) });
   sends.undo(item.id);
   if (item.restore.draft) putBack(item.sessionId, item.restore.draft);
-  if (item.restore.dealt) queue.restore(item.sessionId, () => true);
 }
 
 // The page is going away or being frozen: whatever has not been posted yet goes now. Not on visibilitychange,
@@ -183,6 +188,11 @@ const subscribe = (fn: () => void) => {
 
 export const useSends = () => useSyncExternalStore(subscribe, sends.items);
 
-// The sessions out of the deck while their send is held or not yet confirmed. Read through the hook, so that a view
-// computing the deck from it is computed again when it changes.
+// The sessions answered from this page while their send is held or not yet confirmed. Read through the hook, so that a
+// view computing what waits from it is computed again when it changes.
 export const useBusy = () => useSyncExternalStore(subscribe, sends.busy);
+
+export function useNotSent(s: Session) {
+  const refusal = useSyncExternalStore(subscribe, () => notSent).get(s.id);
+  return refusal && refusal.key === decisionKey(s) ? refusal.message : null;
+}

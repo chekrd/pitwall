@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { KEYS } from '../../../web/src/keys.ts';
 import { sleep, until } from '../cdp.ts';
-import { card, logged, matches, openFromWall, openNewTask, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
+import { logged, matches, openFromWall, openNewTask, pastePng, pickRepo, pillAt, reachable, reloadState, settled, sheetOpen, sidewaysScroll, tiles, toastsOf, type Check, type Probe } from '../helpers.ts';
 
 export const newTask: Check[] = [
   {
@@ -9,7 +9,7 @@ export const newTask: Check[] = [
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
       const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Fix the login redirect');
@@ -67,7 +67,7 @@ export const newTask: Check[] = [
       });
       assert.equal(facts.Model, 'Sonnet 5.5 extra high');
       await page.click('#task-sheet button[aria-label^="Back to"]');
-      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       await openNewTask(page);
       assert.equal(await page.eval(() => document.querySelector<HTMLTextAreaElement>('dialog#new-task textarea')!.value), '', 'the form kept the created task');
       await page.click('dialog#new-task input[placeholder="fix-login-redirect"]');
@@ -108,7 +108,7 @@ export const newTask: Check[] = [
     },
   },
   {
-    name: 'P4.10.background Create on a new worktree closes New task and opens the task at once, its worktree being made behind the card with nothing to press; Claude takes over when it is there. A worktree that fails tells so in a toast and on the task, whose Back to New task brings back all that was sent and takes the task away',
+    name: 'P4.10.background Create on a new worktree closes New task and opens the task at once, its worktree being made meanwhile with nothing to press; Claude takes over when it is there. A worktree that fails tells so in a toast and on the task, whose Back to New task brings back all that was sent and takes the task away',
     expectedErrors: [/did not start/],
     async run({ page, mock, shot }) {
       const create = async (name: string, prompt: string, file = false) => {
@@ -123,7 +123,7 @@ export const newTask: Check[] = [
         await page.type(name);
         await page.eval(() => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
       };
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
 
       await mock.post('/mock/worktree-hold', {});
@@ -137,7 +137,7 @@ export const newTask: Check[] = [
       await page.until('Claude at work', () => /Claude is working/.test(document.querySelector('#task-sheet [data-ux-section="working"]')?.textContent ?? ''));
       await page.until('the box and the menu back', () => !!document.querySelector('#task-sheet [data-ux-section="message box"]') && !!document.querySelector('#task-sheet [aria-label="Session actions"]'));
       await page.click('#task-sheet button[aria-label^="Back to"]');
-      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/');
 
       await mock.post('/mock/worktree-hold', {});
       await create('wont-come', 'Keep this prompt', true);
@@ -161,7 +161,7 @@ export const newTask: Check[] = [
     name: 'P4.10.files New task\'s prompt takes files as a reply box does: a pasted screenshot and a dropped file show as chips, Create waits while one uploads, the task starts with their paths, and the next New task starts without them; a chip can be taken off',
     async run({ page, mock, shot }) {
       const chips = () => [...document.querySelectorAll<HTMLElement>('dialog#new-task [data-state]')].map((f) => `${f.dataset.state} ${f.querySelector('button')?.getAttribute('aria-label')?.replace(/^Remove /, '')}`);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Fix what the screenshot shows');
@@ -194,7 +194,7 @@ export const newTask: Check[] = [
       assert.deepEqual((created.body.files as string[]).map((f) => f.split('/').at(-1)), ['server.log', 'shot.png']);
       await page.until('its sheet', () => document.querySelector('#task-sheet h2')?.textContent === 'shot-fix');
       await page.click('#task-sheet button[aria-label^="Back to"]');
-      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the Wall', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       await openNewTask(page);
       assert.deepEqual(await page.eval(chips), [], 'the next New task starts without the files');
       await page.eval(pastePng, 'dialog#new-task textarea');
@@ -210,7 +210,7 @@ export const newTask: Check[] = [
       const erase = async (n: number) => {
         for (let i = 0; i < n; i++) await page.key('Backspace');
       };
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await pickRepo(page, 'storefront');
@@ -239,7 +239,7 @@ export const newTask: Check[] = [
   {
     name: 'P4.11 Repos: Add, a folder\'s ×, Rescan, Settings Save, Remove worktree and Continue send their requests, and Continue opens the sheet',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.click('[data-repos]');
       await page.until('Repos', () => !!document.querySelector('dialog#workspace:modal'));
@@ -279,7 +279,7 @@ export const newTask: Check[] = [
   {
     name: 'P4.11s Repos: Add on a folder that holds repositories scans it, which then shows under Scanned folders, and adds no repository',
     async run({ page, mock }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.click('[data-repos]');
       await page.until('Repos', () => !!document.querySelector('dialog#workspace:modal'));
@@ -319,7 +319,7 @@ export const newTask: Check[] = [
   {
     name: 'P4.13 ? opens Keys with the rows of the KEYS table and Esc closes it; with the delete dialog open ? does nothing',
     async run({ holds, page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.key('?');
       const rows = await page.until('the Keys dialog', () =>
@@ -363,7 +363,7 @@ export const newTask: Check[] = [
     name: 'P4.16 narrow window: no sideways scroll on the Wall or in the sheet, which is full width; New task and the sheet\'s close stay in reach; the reload pill meets nothing else in the top bar and shows its whole text',
     narrow: true,
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await page.until('New task in reach', reachable, 'button[aria-label="New task"]', '');
@@ -382,7 +382,7 @@ export const newTask: Check[] = [
         const pill = document.querySelector<HTMLElement>('[data-new-version]')!;
         const at = pill.getBoundingClientRect();
         const meets = (b: DOMRect | undefined) => !!b && at.left < b.right && b.left < at.right && at.top < b.bottom && b.top < at.bottom;
-        const others = ['[data-wordmark]', '[data-link]', '[data-meter]', '[data-repos]', 'nav[aria-label="View"]', 'button[aria-label="New task"]'];
+        const others = ['[data-wordmark]', '[data-link]', '[data-next-decision]', '[data-repos]', 'button[aria-label="New task"]'];
         return { meets: others.filter((s) => meets(box(s))), cut: pill.scrollWidth > pill.clientWidth, inside: at.left >= 0 && at.right <= innerWidth };
       });
       assert.deepEqual(bar, { meets: [], cut: false, inside: true });
@@ -404,7 +404,7 @@ export const newTask: Check[] = [
   {
     name: 'P4.17 the reload pill: a new build announced while the New task prompt has focus offers "New version · Reload" after 15 s with the link live; the page\'s own build clears it, another arms it again, and the pill itself reloads while the prompt keeps focus, noting the build it reloaded for',
     async run({ holds, page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Fix the login redirect');
@@ -442,7 +442,7 @@ export const newTask: Check[] = [
     name: 'P4.17 the reload pill hides while the board reconnects',
     expectedErrors: [/WebSocket/, /ERR_CONNECTION/, /ERR_EMPTY_RESPONSE/],
     async run({ page, mock }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Fix the login redirect');
@@ -459,21 +459,22 @@ export const newTask: Check[] = [
     },
   },
   {
-    name: 'P4.18 New task keeps its fields: a prompt typed in it on the Wall and closed is there when N opens it over the queue, on the repository, and a reload keeps it',
+    name: 'P4.18 New task keeps its fields: a prompt typed in it on the Wall and closed is there when N opens it over a task page, on the repository, and a reload keeps it',
     async run({ page, mock, shot }) {
       const dialogPrompt = () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#new-task');
         const prompt = d?.querySelector('textarea');
         return d?.open && prompt && { value: prompt.value, repositoryFocused: document.activeElement === d.querySelector('button[aria-haspopup="listbox"]') };
       };
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.type('Typed on the Wall');
       await page.key('Escape');
       await page.until('the dialog to close', () => !document.querySelector('dialog#new-task[open]'));
-      await page.click('nav[aria-label="View"] a', 'Queue');
-      await page.until('the queue', () => location.pathname === '/');
+      await page.click('[data-tile][data-session="s-invoice"] a');
+      await page.until('the task page', () => location.pathname === '/s/s-invoice/overview');
+      await page.until('the task page to settle', settled);
       await page.key('n');
       assert.deepEqual(await page.until('the New task dialog', dialogPrompt), { value: 'Typed on the Wall', repositoryFocused: true });
       await page.until('the dialog to settle', settled);
@@ -481,7 +482,7 @@ export const newTask: Check[] = [
       await page.key('Escape');
       await page.until('the dialog to close', () => !document.querySelector('dialog#new-task[open]'));
       await page.goto(`${mock.url}/`);
-      await page.until('the card', card);
+      await page.until('the tiles', tiles);
       await page.key('n');
       assert.deepEqual(await page.until('the New task dialog after a reload', dialogPrompt), { value: 'Typed on the Wall', repositoryFocused: true });
     },

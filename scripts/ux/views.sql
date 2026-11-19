@@ -1,4 +1,4 @@
--- One row per decision: when it was asked, first shown on a card, answered on the board, and closed. A decision
+-- One row per decision: when it was asked, first shown on its task page, answered on the board, and closed. A decision
 -- answered on the board closes when the board claims it; the answer event follows once its keys are typed.
 CREATE TEMP VIEW decisions AS
 WITH opened AS (
@@ -6,7 +6,8 @@ WITH opened AS (
     json_extract(data, '$.load.open') AS open_then
   FROM ev WHERE name = 'decision-open' GROUP BY task_id, decision_id
 ), shown AS (
-  SELECT task_id, decision_id, MIN(at) AS shown_at FROM ev WHERE name = 'card-shown' AND decision_id IS NOT NULL GROUP BY task_id, decision_id
+  -- card-shown: rows recorded while decisions were answered on the queue's cards.
+  SELECT task_id, decision_id, MIN(at) AS shown_at FROM ev WHERE name IN ('decision-shown', 'card-shown') AND decision_id IS NOT NULL GROUP BY task_id, decision_id
 ), answered AS (
   SELECT task_id, decision_id, MIN(at) AS answered_at, json_extract(data, '$.how') AS how, json_extract(data, '$.option') AS option
   FROM ev WHERE name = 'decision-answer' GROUP BY task_id, decision_id

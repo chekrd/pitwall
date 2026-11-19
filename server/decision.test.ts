@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Session } from './db.ts';
-import { answeredLine, answerText, checkDecision, claim, decisionKey, menuAnswerText, openDecision } from './decision.ts';
+import { answerText, checkDecision, claim, decisionKey, menuAnswerText, openDecision } from './decision.ts';
 import type { Round } from './rounds.ts';
 
 const session = (patch: Partial<Session>): Session => ({
@@ -159,15 +159,6 @@ test('a menu answer reads one part per question, an own answer instead of the op
     ],
   };
   assert.equal(menuAnswerText(two, [{ labels: [], other: ' Teal ' }, { labels: ['S', 'L'], other: '' }]), 'Colour: Teal · Which sizes?: S, L');
-});
-
-test('"You answered" shows until Claude starts a turn the answer did not start', () => {
-  const a = answered('q:q1', 'Ship', 100_000);
-  assert.equal(answeredLine(session({ answered: a, activity: { step: null, since: 101_000 } })), 'Ship');
-  assert.equal(answeredLine(session({ answered: a, activity: { step: 'Edit a.ts', since: 40_000 } })), 'Ship');
-  assert.equal(answeredLine(session({ answered: a })), 'Ship');
-  assert.equal(answeredLine(session({ answered: a, activity: { step: 'Edit a.ts', since: 200_000 } })), null);
-  assert.equal(answeredLine(session({ activity: { step: null, since: 101_000 } })), null);
 });
 
 test('a round of questions is a decision that comes after a menu and an ask_human call', () => {

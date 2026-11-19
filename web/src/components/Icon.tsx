@@ -8,14 +8,6 @@ const shapes = {
       <path d="M6.5 5.8h11M9 2.8h6" />
     </>
   ),
-  wall: (
-    <>
-      <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" />
-      <rect x="13.5" y="3.5" width="7" height="7" rx="1.6" />
-      <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
-      <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
-    </>
-  ),
   plus: <path d="M12 5v14M5 12h14" />,
   pause: <path d="M9 5.5v13M15 5.5v13" />,
   play: <path d="M8 5.5v13l10.5-6.5z" />,
@@ -32,7 +24,6 @@ const shapes = {
     </>
   ),
   'arrow-left': <path d="M19 12H5M11 18l-6-6 6-6" />,
-  'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   more: (

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { connection, edgeLine, logged, luminance, openQueue, openSheetOf, POSTED_MS, reachable, ready, sidewaysScroll, wholeFile, type Check } from '../helpers.ts';
+import { connection, edgeLine, logged, luminance, openDecision, openSheetOf, POSTED_MS, reachable, sidewaysScroll, wholeFile, type Check } from '../helpers.ts';
 
 export const board: Check[] = [
   {
-    name: 'P0.2 board: 11 tiles, Archived (1) collapsed, title (3); an option on the card answers once and the tile turns working',
+    name: 'P0.2 board: 11 tiles, Archived (1) collapsed, title Pitwall; an option on the task page answers once and the tile turns working',
     clock: 'fast',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       const board = await page.eval(() => ({
         tiles: [...document.querySelectorAll('[data-tile]')].filter((t) => !t.closest('details')).length,
@@ -18,16 +18,15 @@ export const board: Check[] = [
       assert.deepEqual(board, { tiles: 11, archived: 'Archived (1)', open: false, title: 'Pitwall' });
       await shot('board');
 
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      await openDecision(page, mock);
       await shot('task-ask');
-      await page.click('[data-card] [data-option]', 'Keep the account cart');
+      await page.click('[data-decision] [data-option]', 'Keep the account cart');
       const answers = await logged(mock, 'the answer', (e) => e.action === 'answer', POSTED_MS);
       assert.equal(answers.length, 1);
       const [a] = answers;
       assert.deepEqual([a.sessionId, a.body.key, a.body.choice, a.status], ['s-cart', 'q:toolu_01Cart', 'Keep the account cart', 204]);
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the s-cart tile to turn working', () => document.querySelector('[data-tile][data-session="s-cart"]')?.getAttribute('data-attention') === 'working');
       assert.equal((await mock.log()).filter((e) => e.action === 'answer').length, 1);
       assert.equal(await page.eval(() => document.title), 'Pitwall');
@@ -40,15 +39,13 @@ export const board: Check[] = [
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
       await mock.post('/mock/fail', { error: 'this question is no longer open', code: 'stale' });
-      await openQueue(page, mock);
-      await page.key('ArrowRight');
-      await ready(page, 's-hooks');
-      await page.key('1');
-      await page.key('4');
+      await openDecision(page, mock, 's-hooks');
+      await page.click('[data-decision] [data-option="1"]');
+      await page.click('[data-decision] [data-option="4"]');
       await page.until('Exponential and Email the account owner picked', () =>
-        ['1', '4'].every((n) => document.querySelector(`[data-card] [data-option="${n}"]`)?.getAttribute('aria-pressed') === 'true'));
+        ['1', '4'].every((n) => document.querySelector(`[data-decision] [data-option="${n}"]`)?.getAttribute('aria-pressed') === 'true'));
       await shot('task-menu');
-      await page.click('[data-card] [data-primary]');
+      await page.click('[data-decision] [data-primary]');
       const toast = await until('the error toast', () => page.eval(() => [...document.querySelectorAll<HTMLElement>('[data-toast][data-kind="error"]')].map((t) => t.innerText.trim()).join('\n')), POSTED_MS);
       assert.equal(toast, 'Not sent to Retry failed webhooks: this question is no longer open\nShow');
       const [sent] = await logged(mock, 'the menu answer', (e) => e.action === 'answer-menu');
@@ -183,26 +180,26 @@ export const board: Check[] = [
     },
   },
   {
-    name: 'P0 narrow smoke: no sideways scroll on the board or in the sheet; New task and the way from the sheet to the card stay reachable',
+    name: 'P0 narrow smoke: no sideways scroll on the board or in the sheet; New task and the decision\'s main button stay reachable',
     narrow: true,
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await page.until('New task in reach', reachable, 'button', 'New task');
       await shot('narrow-board');
       await page.goto(`${mock.url}/s/s-cart/details`);
-      await page.until('the queue box', () => !!document.querySelector('#task-sheet [data-queued]'));
+      await page.until('the decision', () => !!document.querySelector('#task-sheet [data-decision]'));
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       // The sheet slides up as it opens.
-      await page.until('Open its card in reach', reachable, '#task-sheet [data-queued] button', 'Open its card');
+      await page.until('the main button in reach', reachable, '#task-sheet [data-decision] [data-primary]', '');
       await shot('narrow-task');
     },
   },
   {
     name: 'P2.1 fonts: Bricolage Grotesque and Hanken Grotesk come with the app, and the page asks no host but 127.0.0.1',
     async run({ page, mock }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       const fonts = await page.eval(async () => {
         await new Promise(requestAnimationFrame);
@@ -224,7 +221,7 @@ export const board: Check[] = [
   {
     name: "P2.2 the page background is C's ground: #110f0c in dark, #eeeae1 in light",
     async run({ themes, page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       await themes(async (scheme) => {
         const background = await page.eval(() => [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.body).backgroundColor]);
@@ -311,13 +308,13 @@ export const board: Check[] = [
   {
     name: 'P2.4 no console errors on the board, a decision, a menu, a reply with a table, the diff or an artifact',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
-      await openQueue(page, mock);
-      await page.until('the options', () => document.querySelectorAll('[data-card] [data-option]').length === 3);
+      await page.goto(`${mock.url}/s/s-cart/overview`);
+      await page.until('the options', () => document.querySelectorAll('[data-decision] [data-option]').length === 3);
       await shot('task-ask');
-      await page.key('ArrowRight');
-      await page.until('the menu with its 2 questions', () => document.querySelectorAll('[data-card] section[role="group"]').length === 2);
+      await page.goto(`${mock.url}/s/s-hooks/overview`);
+      await page.until('the menu with its 2 questions', () => document.querySelectorAll('[data-decision] section[role="group"]').length === 2);
       await shot('task-menu');
       await page.goto(`${mock.url}/s/s-reviews/details`);
       await page.until('the latest reply with its table', () => document.querySelector('section table') !== null);

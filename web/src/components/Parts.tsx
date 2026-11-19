@@ -1,16 +1,7 @@
-import type { ReactNode } from 'react';
 import { useNow } from '../now.ts';
 import type { Session } from '../types.ts';
 import { ago } from '../util.ts';
-import { CopyButton } from './CopyButton.tsx';
-import { Markdown } from './Markdown.tsx';
 import parts from './Parts.module.css';
-
-// The card's headline steps down in size as it grows longer.
-export function Headline({ text }: { text: string }) {
-  const length = text.length <= 64 ? 'short' : text.length <= 96 ? 'medium' : 'long';
-  return <h1 className={parts.headline} data-length={length}>{text}</h1>;
-}
 
 // The branch before a task's name, so a generated title still says which work it is. A task named after its branch
 // has it already.
@@ -21,19 +12,4 @@ export function BranchMark({ session, branch }: { session: Session; branch: stri
 
 export function Age({ at, prefix = '' }: { at: number; prefix?: string }) {
   return <>{prefix}{ago(at, useNow())}</>;
-}
-
-// One of the card's two columns; the card scrolls both together.
-export function Column({ side, children }: { side: 'left' | 'right'; children: ReactNode }) {
-  return <div className={parts.column} data-side={side}>{children}</div>;
-}
-
-export function LatestReply({ text }: { text: string | null }) {
-  if (!text) return null;
-  return (
-    <section className={parts.reply}>
-      <h3 className={parts.label}>Claude's latest reply<CopyButton value={text} what="Reply" /></h3>
-      <div className={parts.body}><Markdown source={text} /></div>
-    </section>
-  );
 }

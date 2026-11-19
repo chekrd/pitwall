@@ -13,9 +13,6 @@
     &[data-theme="light"] { color-scheme: light; }
     --ground: light-dark(#eeeae1, #110f0c);
     --ground-2: light-dark(#e7e2d7, #0c0b09);
-    --deck-1: light-dark(#e2dccf, #1e1b17);
-    --deck-2: light-dark(#ddd7ca, #191613);
-    --deck-3: light-dark(#cfc7b8, #151310);
     --card: light-dark(#fffdf9, #201d19);
     --card-2: light-dark(#faf7f1, #1c1915);
     --raised: light-dark(#f5f1ea, #28241f);
@@ -84,7 +81,7 @@
     flex-direction: column;
     @media (max-width: 760px) { height: auto; min-height: 100%; }
   }
-  /* The view under the top bar, which an open task covers whole; in a narrow window the task covers the top bar too. */
+  /* The Wall under the top bar, which an open task covers whole; in a narrow window the task covers the top bar too. */
   .views {
     position: relative;
     flex: 1;
@@ -96,10 +93,6 @@
   .view {
     display: contents;
     &[data-covered] { visibility: hidden; }
-  }
-  /* A narrow window scrolls the page under the queue card's sticky footer, which what scrolls into view has to clear. */
-  :root[data-view="queue"] {
-    @media (max-width: 760px) { scroll-padding-bottom: 130px; }
   }
   body {
     background: var(--ground);

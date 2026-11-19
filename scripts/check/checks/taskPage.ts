@@ -9,11 +9,11 @@ export const taskPage: Check[] = [
     async run({ page, mock }) {
       await openFromWall(page, mock, 's-invoice');
       await page.eval(() => history.back());
-      await page.until('the sheet to close on Back', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the sheet to close on Back', () => !document.querySelector('#task-sheet') && location.pathname === '/');
 
       await openFromWall(page, mock, 's-split');
       await mock.post('/api/sessions/s-split/forget');
-      await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       assert.deepEqual(await page.until('the toast', toastsOf, 'info'), [{ kind: 'info', text: 'That task is gone.', inSheet: false, hit: true }]);
     },
   },
@@ -37,7 +37,7 @@ export const taskPage: Check[] = [
         .filter((s) => s === 'latest reply' || s === 'decision');
       const below = () => !!document.querySelector('#task-sheet [data-decision-below]');
       await openSheetOf(page, mock, 's-cart');
-      await page.until('the decision', () => !!document.querySelector('#task-sheet [data-queued]'));
+      await page.until('the decision', () => !!document.querySelector('#task-sheet [data-decision]'));
       assert.deepEqual(await page.eval(order), ['latest reply', 'decision']);
       assert.equal(await page.eval(below), false, 'a short reply leaves the decision in view, without the pill');
 
@@ -49,7 +49,7 @@ export const taskPage: Check[] = [
       await shot('decision-below');
       await page.click('#task-sheet [data-decision-below]');
       await page.until('the decision in view, without the pill', () => {
-        const box = document.querySelector('#task-sheet [data-queued]')!.getBoundingClientRect();
+        const box = document.querySelector('#task-sheet [data-decision]')!.getBoundingClientRect();
         return box.top < innerHeight && !document.querySelector('#task-sheet [data-decision-below]');
       });
     },
@@ -111,7 +111,7 @@ export const taskPage: Check[] = [
     name: 'P4.9 the ⋯ menu lists what each session can do; Clear task…, or the trash beside the ⋯ on a task tile, asks in a dialog that names the branch, the path and the loss, starts on Cancel and closes on Esc; a failed loss check says so; Clear task deletes',
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       const open = async (id: string) => {
         await page.click(`[data-tile][data-session="${id}"] button[aria-label="Session actions"]`);
@@ -321,7 +321,7 @@ export const taskPage: Check[] = [
       await page.until('the menu', menuItems);
       await page.click(':popover-open button', 'Clear task');
       await clear();
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       const tiles = await page.until('the tile clearing', (all: string[]) => {
         const shown = all.map((id) => {
           const t = document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`);
@@ -353,7 +353,7 @@ export const taskPage: Check[] = [
       await until('the task gone', async () => !(await mock.get('/api/state')).sessions.some((s: { id: string }) => ids.includes(s.id)));
 
       await mock.post('/mock/clear-hold', {});
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-tile][data-session="s-cart"] button[aria-label="Clear task"]');
       await clear();
       await page.until('s-cart clearing', (id: string) => document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"]`)?.dataset.attention === 'clearing', 's-cart');

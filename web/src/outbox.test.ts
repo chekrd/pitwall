@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { setImmediate as settle } from 'node:timers/promises';
-import { deckOf, kindOf } from './deck.ts';
-import { ADOPTED_MS, CONFIRM_MS, createOutbox, NO_ANSWER, NOT_SENT, type Folded, type Outgoing, type Request } from './outbox.ts';
+import { kindOf } from './answers.ts';
+import { waitingOf } from './order.ts';
+import { ADOPTED_MS, CONFIRM_MS, createOutbox, NO_ANSWER, NOT_SENT, sendLine, type Folded, type Outgoing, type Request } from './outbox.ts';
 import { menu, question, session } from './testing.ts';
 import type { Session } from './types.ts';
 
@@ -217,7 +218,7 @@ test('the early check fails a held item whose session is gone or has ended', (t)
   ]);
 });
 
-test('commands skip the early check: a held /compact goes out although its card\'s decision moved on, and is gone on its 204', async (t) => {
+test('commands skip the early check: a held /compact goes out although the decision it was typed on moved on, and is gone on its 204', async (t) => {
   const { box, posts, tick } = outbox(t);
   box.hold(cart, command('q:q1', '/compact'), '');
   box.hold(cart, command('q:q1', '!git status'), '');
@@ -241,7 +242,7 @@ test('a sent item stays until the snapshot shows the session moved on, and at mo
   const sentAt = box.items()[0].sentAt!;
   const closed = { ...cart, answered: { key: 'q:q1', text: 'Keep', at: sentAt } };
   box.confirm([closed]);
-  assert.deepEqual(states(), ['sent'], 'answered lands before Claude starts; dropping it then would bring the card back as Your turn');
+  assert.deepEqual(states(), ['sent'], 'answered lands before Claude starts; dropping it then would bring the task back as Your turn');
   box.confirm([{ ...closed, status: 'working' }]);
   assert.deepEqual(states(), []);
 
@@ -276,7 +277,7 @@ test('a sent item stays until the snapshot shows the session moved on, and at mo
   assert.deepEqual(states(), []);
 });
 
-test('a menu still open 10 s after the board answered it counts as taken, so its card comes back as Needs focus then and not 5 s later', async (t) => {
+test('a menu still open 10 s after the board answered it counts as taken, so the task comes back as Needs focus then and not 5 s later', async (t) => {
   const { box, posts, tick, states } = outbox(t);
   box.hold(hooks, menuAnswer, '');
   tick(5000);
@@ -287,14 +288,14 @@ test('a menu still open 10 s after the board answered it counts as taken, so its
   box.confirm([stuck]);
   tick(8499);
   box.confirm([stuck]);
-  assert.deepEqual([states(), deckOf([stuck], box.busy())], [['sent'], []]);
+  assert.deepEqual([states(), waitingOf([stuck], box.busy())], [['sent'], []]);
   tick(1);
   box.confirm([stuck]);
   assert.deepEqual(states(), []);
-  assert.deepEqual(deckOf([stuck], box.busy()).map((s) => [s.id, kindOf(s)]), [['hooks', 'prompt']]);
+  assert.deepEqual(waitingOf([stuck], box.busy()).map((s) => [s.id, kindOf(s)]), [['hooks', 'prompt']]);
 });
 
-test('busy: a held, sending, waiting or unconfirmed send keeps its session out of the deck; a failed one and a command do not', async (t) => {
+test('busy: a held, sending, waiting or unconfirmed send keeps its session out of what waits; a failed one and a command do not', async (t) => {
   const { box, posts, tick } = outbox(t);
   box.hold(cart, answer('q:q1', { choice: 'Keep' }), '');
   box.hold(reviews, command(null, '/compact'), '');
@@ -455,7 +456,7 @@ test('a page that stays after a flush, as a frozen one that resumes, hears back:
   assert.deepEqual(posts.map((p) => p.out.sessionId), ['cart'], 'the waiting one goes out again once the board is back');
 });
 
-test('what a page that went away left unconfirmed is adopted: out of the deck and never posted again, gone once a snapshot shows it went out, and failed with what it took once the server would refuse it or, still open 3 s after it was due, never got it', (t) => {
+test('what a page that went away left unconfirmed is adopted: out of what waits and never posted again, gone once a snapshot shows it went out, and failed with what it took once the server would refuse it or, still open 3 s after it was due, never got it', (t) => {
   const { box, posts, tick, states } = outbox(t);
   const idle = session('group');
   const gone = createOutbox<string>({ post: () => new Promise(() => {}) });
@@ -496,4 +497,25 @@ test('what a page that went away left unconfirmed is adopted: out of the deck an
   ]);
   tick(60_000);
   assert.equal(posts.length, 0);
+});
+
+test('how far a send has got: a countdown that never reads more than the hold, then sending, waiting and sent', async (t) => {
+  const { box, posts, tick } = outbox(t);
+  const now = Date.now();
+  box.hold(cart, answer('q:q1', { choice: 'Keep' }), 'cart');
+  const line = (at = now) => sendLine(box.items()[0], at, 5000);
+  assert.equal(line(), 'Sending in 5 s');
+  assert.equal(line(now - 900), 'Sending in 5 s');
+  assert.equal(line(now + 1001), 'Sending in 4 s');
+  assert.equal(line(now + 4999), 'Sending in 1 s');
+  assert.equal(line(now + 5400), 'Sending in 1 s');
+  tick(5000);
+  assert.equal(line(), 'Sending…');
+  posts[0].fail(new TypeError('Failed to fetch'));
+  await settle();
+  assert.equal(line(), 'Waiting for Pitwall');
+  box.reconnected();
+  posts[1].ok();
+  await settle();
+  assert.equal(line(), 'Sent');
 });

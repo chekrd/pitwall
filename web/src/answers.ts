@@ -1,22 +1,13 @@
-import { decisionKey, menuAnswerText, openDecision } from '../../server/decision.ts';
+import { decisionKey, menuAnswerText } from '../../server/decision.ts';
 import { answeredCount, isAnswered, roundAnswerLabel, roundTitle } from '../../server/rounds.ts';
-import { compare } from './order.ts';
 import type { Body, Request } from './outbox.ts';
 import type { Command, Menu, MenuAnswer, RoundAnswers, Session } from './types.ts';
-import { attentionOf, decisionOf, menuStuck, type Attention } from './util.ts';
+import { attentionOf, decisionOf, menuStuck } from './util.ts';
 
-// The queue's cards: the tasks that wait on the developer, in board order, and what each press on the card sends.
+// What a press on a decision sends: an option, the picks of a menu, the answers of a round, a typed reply, a
+// dismissal; and the main button, which ⏎ presses.
 
 export type Kind = 'menu' | 'ask' | 'round' | 'prompt' | 'idle';
-
-const IN_DECK: readonly Attention[] = ['decide', 'focus', 'idle'];
-
-// `busy` are the sessions whose send is held or not yet confirmed: they have been answered on this page.
-export function deckOf(sessions: readonly Session[], busy: ReadonlySet<string>, now = Date.now()) {
-  return sessions
-    .filter((s) => !s.archived && s.status !== 'exited' && !busy.has(s.id) && IN_DECK.includes(attentionOf(s, now)))
-    .sort(compare);
-}
 
 export function kindOf(s: Session, now = Date.now()): Kind | null {
   const attention = attentionOf(s, now);
@@ -25,81 +16,6 @@ export function kindOf(s: Session, now = Date.now()): Kind | null {
   if (attention !== 'decide') return null;
   const key = decisionKey(s)!;
   return key.startsWith('m:') ? 'menu' : key.startsWith('q:') ? 'ask' : 'round';
-}
-
-// The deck as it is read: the front card, then a send that failed until it has been at the front, then the rest in
-// board order from the front on, round to the start.
-export function rotate<T extends { id: string }>(deck: readonly T[], frontId: string | null, notSent: ReadonlySet<string> = new Set()) {
-  const at = Math.max(0, deck.findIndex((s) => s.id === frontId));
-  const [front, ...rest] = [...deck.slice(at), ...deck.slice(0, at)];
-  return front ? [front, ...rest.filter((s) => notSent.has(s.id)), ...rest.filter((s) => !notSent.has(s.id))] : [];
-}
-
-// The card that followed the one leaving in the order the page last showed, passing over cards that left too.
-export function successor(lastOrder: readonly string[], leavingId: string, deck: readonly { id: string }[]) {
-  const ids = new Set(deck.map((s) => s.id));
-  const from = lastOrder.indexOf(leavingId);
-  for (let i = 1; i <= lastOrder.length; i++) {
-    const id = lastOrder[(from + i) % lastOrder.length];
-    if (id !== leavingId && ids.has(id)) return id;
-  }
-  return deck[0]?.id ?? null;
-}
-
-// The card pinned by id stays at the front for as long as it is in the deck; an arrival never takes its place.
-export function resolveFront(deck: readonly { id: string }[], pinned: string | null, lastOrder: readonly string[]) {
-  if (pinned && deck.some((s) => s.id === pinned)) return pinned;
-  return pinned ? successor(lastOrder, pinned, deck) : (deck[0]?.id ?? null);
-}
-
-// Decisions that came in after the page loaded and have not been at the front yet, newest first. A new decision on
-// the front card itself is an update of the card being read, not an arrival.
-export function arrivals(deck: readonly Session[], seen: ReadonlySet<string>, frontId: string | null, now = Date.now()) {
-  return deck
-    .filter((s) => s.id !== frontId && attentionOf(s, now) === 'decide' && !seen.has(decisionKey(s)!))
-    .sort((a, b) => openDecision(b)!.askedAt - openDecision(a)!.askedAt);
-}
-
-export const METER_SEGMENTS = 20;
-
-export interface Segment {
-  id: string;
-  attention: Attention;
-  current: boolean;
-  arrived: boolean;
-}
-
-export interface Bar {
-  attention: Attention;
-  count: number;
-  current: boolean;
-  arrived: boolean;
-  // Where a click goes: the group's first card, or the next one when the front card is in the group.
-  target: string;
-}
-
-const GROUPS = [['decide', 'decision', 'decisions'], ['focus', 'terminal prompt', 'terminal prompts'], ['idle', 'finished turn', 'finished turns']] as const;
-
-// One segment per card up to 20, then one bar per attention group with its count. `label` reads
-// "3 decisions · 1 terminal prompt · 2 finished turns"; `position` is the front card's place, 1-based, or 0.
-export function meter(deck: readonly Session[], frontId: string | null, arrived: ReadonlySet<string> = new Set(), now = Date.now()) {
-  const attention = deck.map((s) => attentionOf(s, now));
-  const label = GROUPS.flatMap(([a, one, many]) => {
-    const n = attention.filter((x) => x === a).length;
-    return n ? [`${n} ${n === 1 ? one : many}`] : [];
-  }).join(' · ');
-  const position = deck.findIndex((s) => s.id === frontId) + 1;
-  if (deck.length <= METER_SEGMENTS) {
-    const segments: Segment[] = deck.map((s, i) => ({ id: s.id, attention: attention[i], current: s.id === frontId, arrived: arrived.has(s.id) }));
-    return { label, position, total: deck.length, segments, bars: null };
-  }
-  const bars: Bar[] = GROUPS.flatMap(([a]) => {
-    const ids = deck.filter((_, i) => attention[i] === a).map((s) => s.id);
-    if (!ids.length) return [];
-    const at = frontId === null ? -1 : ids.indexOf(frontId);
-    return [{ attention: a, count: ids.length, current: at >= 0, arrived: ids.some((id) => arrived.has(id)), target: ids[(at + 1) % ids.length] }];
-  });
-  return { label, position, total: deck.length, segments: null, bars };
 }
 
 export interface Composer {
@@ -182,7 +98,7 @@ function roundPrimary(s: Session, replies: RoundAnswers): Primary {
   return { label, disabled: false, press: roundAnswer(s, replies) };
 }
 
-// The footer's primary button, which ⏎ presses: the option Claude recommends (with the open composer's note), the
+// The decision's main button, which ⏎ presses: the option Claude recommends (with the open composer's note), the
 // picks of a menu, the answers to a round, Terminal, or Reply. It never sends the composer's text by itself; Enter in
 // the composer does that.
 export function primary(
@@ -212,14 +128,15 @@ export function targetOf(s: Session, now = Date.now()) {
   return press.action === 'answer' ? `choice:${press.body.choice}` : press.action;
 }
 
-// An option pressed on an ask card, with the open composer's note. Null while an attachment is still uploading.
+// An option pressed on an ask_human question, with the open composer's note. Null while an attachment is still uploading.
 export function choose(s: Session, label: string, composer?: Composer): Request | null {
   if (uploadingIn(composer)) return null;
   return { action: 'answer', body: { key: decisionKey(s)!, choice: label, ...noteOf(composer) }, label };
 }
 
 // As the server tells a command from an answer: a `!` line, or a `/name` from its command list. Until that list has
-// loaded nothing counts, so no answer is mistaken for a command that keeps its card and skips the early check.
+// loaded nothing counts, so no answer is mistaken for a command that leaves the decision open and skips the early
+// check.
 export function isCommand(text: string, files: number, commands: readonly Command[] | null) {
   if (files || !commands) return false;
   if (text.startsWith('!')) return true;
@@ -227,7 +144,7 @@ export function isCommand(text: string, files: number, commands: readonly Comman
   return !!name && commands.some((c) => c.name === name);
 }
 
-// What Enter in a composer sends: an answer to the card's decision (`key`), or a plain message (null).
+// What Enter in a composer sends: an answer to the decision it shows (`key`), or a plain message (null).
 export function typed(key: string | null, text: string, files: readonly string[], commands: readonly Command[] | null): Request {
   const t = text.trim();
   if (isCommand(t, files.length, commands)) return { action: 'answer', body: { key, text: t }, label: t, command: true };
@@ -247,7 +164,7 @@ export function dismissal(s: Session): Request {
   return { action: 'dismiss', body: { key }, label: key.startsWith('r:') ? roundTitle(s.round!) : decisionOf(s)!.problem };
 }
 
-// The Needs-focus card: what the terminal shows, and its subject when Claude names one ("… for Bash: pnpm test").
+// Needs focus: what the terminal shows, and its subject when Claude names one ("… for Bash: pnpm test").
 export function promptOf(s: Session, now = Date.now()) {
   if (menuStuck(s, now)) return { headline: 'Claude still shows its menu in the terminal', subject: null };
   const waiting = s.waitingFor ?? 'a prompt';

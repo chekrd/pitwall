@@ -1,6 +1,5 @@
-import { lineOf } from '../dock.ts';
 import { useNow } from '../now.ts';
-import type { Item } from '../outbox.ts';
+import { sendLine, type Item } from '../outbox.ts';
 import { HOLD_MS, undo, useSends } from '../sends.ts';
 import type { Session } from '../types.ts';
 import { clock } from '../util.ts';
@@ -19,8 +18,8 @@ const sendingText = (i: Item) => [i.body.choice, i.body.text].filter(Boolean).jo
 // What you wrote last and Claude has not replied to: the trigger of the turn under way.
 export const waitingText = (session: Session, send: Item | null) => (send ? sendingText(send) : session.unanswered?.text ?? null);
 
-function Countdown({ session, send }: { session: Session; send: Item }) {
-  return <>{lineOf({ session, state: 'held', send }, useNow(), HOLD_MS)}</>;
+function Countdown({ send }: { send: Item }) {
+  return <>{sendLine(send, useNow(), HOLD_MS)}</>;
 }
 
 function claudeLine(session: Session) {
@@ -41,7 +40,7 @@ export function YourMessage({ session, send, inside = false }: { session: Sessio
       <h3>
         Your latest message
         <span className={styles.when} data-when aria-live="polite">
-          {send?.state === 'held' ? <Countdown session={session} send={send} /> : send ? lineOf({ session, state: 'sent', send }, 0, HOLD_MS) : `Sent ${clock(session.unanswered!.at)}`}
+          {send?.state === 'held' ? <Countdown send={send} /> : send ? sendLine(send, 0, HOLD_MS) : `Sent ${clock(session.unanswered!.at)}`}
         </span>
         {send?.state === 'held' && <button type="button" className={styles.undo} data-explain="Take the message back into the reply box" onClick={() => undo(send.id)}>Undo</button>}
       </h3>

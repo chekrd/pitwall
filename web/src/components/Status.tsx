@@ -72,15 +72,7 @@ export function PrChip({ pr, status }: { pr: PrFlow; status: SessionStatus }) {
   return pr.url ? <a {...marks} data-ux="pr" href={pr.url} target="_blank" rel="noreferrer">{text}</a> : <span {...marks}>{text}</span>;
 }
 
-export function PrDot({ pr, status }: { pr: PrFlow; status: SessionStatus }) {
-  const { label, state } = prState(pr, status);
-  return <span className={styles.dot} data-pr data-state={state} data-label={label} data-watching={pr.watching || undefined} aria-hidden />;
-}
-
 export const prKey = (pr: PrFlow) => `${pr.repo ?? ''}#${pr.id ?? 'opening'}`;
 
 export const PrChips = ({ prs, status }: { prs: PrFlow[]; status: SessionStatus }) =>
   prs.map((pr) => <PrChip key={prKey(pr)} pr={pr} status={status} />);
-
-export const PrDots = ({ prs, status }: { prs: PrFlow[]; status: SessionStatus }) =>
-  prs.map((pr) => <PrDot key={prKey(pr)} pr={pr} status={status} />);

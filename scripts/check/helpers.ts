@@ -100,13 +100,13 @@ export const connection = () => {
   return { link: pill?.dataset.link ?? null, text: pill?.innerText.trim() ?? null, warm: r > g, green: g > r };
 };
 
-// What scrolls sideways, but for code and the agents dock, which does so by design in a narrow window.
+// What scrolls sideways, but for code.
 export const sidewaysScroll = () => {
   const wide = (el: Element) => el.scrollWidth > el.clientWidth + 1;
   const out = wide(document.scrollingElement!) ? ['the page'] : [];
   for (const el of document.querySelectorAll('body *')) {
     const { overflowX } = getComputedStyle(el);
-    if ((overflowX === 'auto' || overflowX === 'scroll') && wide(el) && !el.closest('pre, code, textarea, [data-dock]')) {
+    if ((overflowX === 'auto' || overflowX === 'scroll') && wide(el) && !el.closest('pre, code, textarea')) {
       out.push(`${el.tagName.toLowerCase()}.${(el.getAttribute('class') ?? '').split(' ')[0]}`);
     }
   }
@@ -204,13 +204,13 @@ export const settled = () => document.getAnimations().every((a) =>
   a.playState === 'finished' || !(a instanceof CSSTransition || (a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations !== Infinity)));
 
 export async function openFromWall(page: Page, mock: Mock, id: string) {
-  await page.goto(`${mock.url}/wall`);
+  await page.goto(`${mock.url}/`);
   await page.until('the tiles', tiles);
   await page.click(`[data-tile][data-session="${id}"] a`);
   await page.until(`the sheet of ${id}`, sheetOpen);
 }
 
-// A task's page loaded straight from its URL, over the queue.
+// A task's page loaded straight from its URL, over the Wall.
 export async function openSheetOf(page: Page, mock: Mock, id: string) {
   await page.goto(`${mock.url}/s/${id}/overview`);
   await page.until(`the sheet of ${id}`, sheetOpen);
@@ -236,25 +236,6 @@ export const frame = (path: string, width: number, height: number) =>
     f.onload = () => done();
     document.body.append(f);
   });
-
-// The meter in the page, or in the frame: whether it meets the wordmark or Repos, its segments' widths, its bars, the
-// text it carries for screen readers and the text it shows.
-export const meterIn = (inFrame: boolean) => {
-  const doc = inFrame ? (document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument! : document;
-  const box = (el: Element | null) => el?.getBoundingClientRect() ?? null;
-  const meets = (a: DOMRect | null, b: DOMRect | null) => !!a && !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-  const wordmark = box(doc.querySelector('[data-wordmark]'));
-  const repos = box(doc.querySelector('[data-repos]'));
-  const parts = [box(doc.querySelector('[data-meter]')), box(doc.querySelector('[data-meter] [role="group"]'))];
-  return {
-    overlap: parts.some((m) => meets(m, wordmark) || meets(m, repos)),
-    segments: [...doc.querySelectorAll('[data-segment]')].map((s) => Math.round(s.getBoundingClientRect().width * 10) / 10),
-    bars: [...doc.querySelectorAll('[data-bar]')].map((b) => b.textContent),
-    label: doc.querySelector('[data-meter] [role="group"]')?.getAttribute('aria-label') ?? null,
-    shown: doc.querySelector<HTMLElement>('[data-meter]')?.innerText.trim() ?? null,
-    justIn: [...doc.querySelectorAll<HTMLElement>('[data-justin]')].map((j) => j.innerText.trim()),
-  };
-};
 
 // The toasts of a kind: what each shows, whether it sits inside the open sheet, and whether a point in its middle hits
 // it; null while there is none.
@@ -292,31 +273,31 @@ export const reloadState = (until: 'pill' | 'reconnecting' | null) => {
   return (until === 'pill' && !state.pill) || (until === 'reconnecting' && state.link !== 'reconnecting') ? null : state;
 };
 
-// The queue's card: whose it is, its kind and key, its name for screen readers, the text of its header and of the
-// whole card, and what its primary says and whether the guard holds it.
-export const card = () => {
-  const c = document.querySelector<HTMLElement>('[data-card]');
-  if (!c) return null;
-  const primary = c.querySelector<HTMLElement>('[data-primary]');
+// The decision on the open task's Overview: whose it is, its kind and key, its text, and what its main button says,
+// whether it is disabled and whether the guard holds it.
+export const decision = () => {
+  const d = document.querySelector<HTMLElement>('#task-sheet [data-decision]');
+  if (!d) return null;
+  const primary = d.querySelector<HTMLElement>('[data-primary]');
   return {
-    session: c.dataset.session ?? null,
-    kind: c.dataset.kind ?? null,
-    key: c.dataset.key ?? null,
-    label: c.getAttribute('aria-label'),
-    header: c.querySelector('header')?.innerText ?? '',
-    text: c.innerText,
+    session: d.dataset.session ?? null,
+    kind: d.dataset.kind ?? null,
+    key: d.dataset.key ?? null,
+    text: d.innerText,
     primary: primary?.firstElementChild?.textContent ?? null,
     disabled: primary?.matches(':disabled') ?? null,
     guarded: primary?.hasAttribute('data-guarded') ?? null,
   };
 };
 
-// `id` is the card and no deal is moving it.
-export const frontIs = (id: string) => document.querySelector<HTMLElement>('[data-card]')?.dataset.session === id && !document.documentElement.dataset.deal;
+// The open task is `id` and its Overview shows a decision.
+export const decisionOf = (id: string) => !!document.querySelector(`#task-sheet[data-session="${id}"] [data-decision]`);
 
-// No card is being dealt, and every animation that ends has ended.
-export const still = () => !document.documentElement.dataset.deal &&
-  document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getComputedTiming().iterations === Infinity);
+// The open task's Overview shows no decision.
+export const noDecision = (id: string) => !!document.querySelector(`#task-sheet[data-session="${id}"]`) && !document.querySelector('#task-sheet [data-decision]');
+
+// No animation that ends is running.
+export const still = () => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getComputedTiming().iterations === Infinity);
 
 // The element shows whole: inside the window and inside every box around it that clips.
 export const whole = (selector: string) => {
@@ -332,28 +313,6 @@ export const whole = (selector: string) => {
   }
   return true;
 };
-
-// The element starts in view in the card's scroll area, which scrolls to the rest of it.
-export const startsInScroll = (selector: string) => {
-  const el = document.querySelector(selector);
-  const scroll = el?.closest('[data-scroll]');
-  if (!el || !scroll || scroll.scrollHeight <= scroll.clientHeight) return false;
-  const r = el.getBoundingClientRect();
-  const hit = document.elementFromPoint(r.left + Math.min(24, r.width / 2), r.top + Math.min(12, r.height / 2));
-  return !!hit && el.contains(hit);
-};
-
-// The peeks behind the card, each with its place, session and text.
-// The branch mark before the name is left out of `text`.
-export const peeks = () => [...document.querySelectorAll<HTMLElement>('[data-peek]')].map((p) => {
-  const branch = p.querySelector<HTMLElement>('[data-branch]')?.innerText;
-  const text = p.innerText.trim();
-  return { peek: p.dataset.peek, session: p.dataset.session, branch, text: branch && text.startsWith(branch) ? text.slice(branch.length).trim() : text };
-});
-
-export const segmentsNow = () => [...document.querySelectorAll<HTMLElement>('[data-segment]')].map((s) => ({
-  session: s.dataset.session, current: s.hasAttribute('data-current'), new: s.hasAttribute('data-new'), width: Math.round(s.getBoundingClientRect().width),
-}));
 
 export const newTaskOnRepo = () => !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open &&
   document.activeElement === document.querySelector('dialog#new-task button[aria-haspopup="listbox"]');
@@ -382,9 +341,10 @@ export async function pickRepo(page: Page, filter: string) {
   await page.until('the picker to close', () => !document.querySelector('#new-task [data-repo-picker]:popover-open'));
 }
 
-export async function openQueue(page: Page, mock: Mock, front = 's-cart') {
-  await page.goto(`${mock.url}/`);
-  await page.until(`the card of ${front}`, frontIs, front);
+// The task's page with its decision, the guard that came with it over, so an answer key counts.
+export async function openDecision(page: Page, mock: Mock, id = 's-cart') {
+  await page.goto(`${mock.url}/s/${id}/overview`);
+  await ready(page, id);
 }
 
 // A held send goes out 5 s after the press.
@@ -399,46 +359,32 @@ export const stateOf = async (mock: Mock, id: string) => (await mock.get('/api/s
 // A send the page has posted and the mock answered.
 export const sent = (e: Entry) => e.method === 'POST' && e.action !== null;
 
-export const unguarded = () => !document.querySelector('[data-card] footer[data-guarding]');
+export const unguarded = () => !document.querySelector('#task-sheet [data-decision][data-guarding]');
 
-// `id` is the card, and the guard that came with it is over, so an answer key counts.
+// The open task's Overview shows `id`'s decision, and the guard that came with it is over, so an answer key counts.
 export async function ready(page: Page, id: string) {
-  await page.until(`the card of ${id}`, frontIs, id);
+  await page.until(`the decision of ${id}`, decisionOf, id);
   await page.until('the guard to end', unguarded);
 }
 
-// Records every deal the page runs from now on.
-export const watchDeals = () => {
-  const w = window as unknown as { e2eDeals: string[] };
-  w.e2eDeals = [];
-  let last: string | undefined;
-  new MutationObserver(() => {
-    const deal = document.documentElement.dataset.deal;
-    if (deal && deal !== last) w.e2eDeals.push(deal);
-    last = deal;
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-deal'] });
-};
-export const dealt = () => (window as unknown as { e2eDeals?: string[] }).e2eDeals ?? [];
-
-// Writes `text` in s-cart's reply box and sends it with Enter, which deals the card and brings up s-hooks.
+// Writes `text` in s-cart's reply box and sends it with Enter, which takes the decision off its page.
 export async function replyOnCart(page: Page, mock: Mock, text: string) {
-  await openQueue(page, mock);
-  await ready(page, 's-cart');
+  await openDecision(page, mock);
   await page.key('w');
-  await page.until('the reply box, focused', () => document.activeElement?.matches('[data-card] textarea'));
+  await page.until('the reply box, focused', () => document.activeElement?.matches('[data-decision] textarea'));
   await page.type(text);
   await page.key('Enter');
-  await page.until('s-hooks at the front', frontIs, 's-hooks');
+  await page.until('the decision to go', noDecision, 's-cart');
 }
 
-// A reply to s-cart the page never knew to have gone out comes back as Not sent, and Show brings up its card with the
-// text in the reply box.
+// A reply to s-cart the page never knew to have gone out comes back as Not sent, and Show opens its page with the text
+// in the reply box.
 export async function cartNotSent(page: Page, text: string) {
   const [error] = await until('the Not sent toast', () => page.eval(toastsOf, 'error'), 15_000);
   assert.equal(error.text, 'Not sent to Merge guest cart on login: the page closed before it went out\nShow');
   await page.click('[data-toast] button', 'Show');
-  await page.until('s-cart at the front', frontIs, 's-cart');
-  assert.equal((await page.eval(replyIn, '[data-card]'))?.value, text);
+  await page.until('the decision of s-cart', decisionOf, 's-cart');
+  assert.equal((await page.eval(replyIn, '[data-decision]'))?.value, text);
 }
 
 // A one-pixel PNG on disk, for a file chooser, in a folder of its own that `remove` deletes.
@@ -469,7 +415,7 @@ export const replyIn = (scope: string) => {
   } : null;
 };
 
-// Pressing a key on the card from a script, as auto-repeat or a fast double press would.
+// Pressing a key on the page from a script, as auto-repeat or a fast double press would.
 export const pressEnter = (gaps: number[], repeat = false) =>
   new Promise<void>((done) => {
     const press = () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', repeat, bubbles: true, cancelable: true }));
@@ -478,99 +424,6 @@ export const pressEnter = (gaps: number[], repeat = false) =>
     for (const gap of gaps) setTimeout(press, (at += gap));
     setTimeout(done, at + 50);
   });
-
-// The agents dock as drawn: its label and count, the ended pill, the box of the capsules' grid and how far it scrolls,
-// and each capsule with its state, name, second line (in a mono font or not), clock, PR dot (its animation), Worth-
-// knowing dot and boxes; null while there is no dock.
-export const dockState = () => {
-  const dock = document.querySelector<HTMLElement>('[data-dock]');
-  if (!dock) return null;
-  const box = (el: Element | null | undefined) => {
-    const r = el?.getBoundingClientRect();
-    return r ? { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), width: r.width, height: r.height } : null;
-  };
-  const grid = dock.querySelector('[data-capsule]')?.parentElement;
-  const ended = dock.querySelector<HTMLAnchorElement>('a[href="/wall"]');
-  return {
-    label: dock.getAttribute('aria-label'),
-    count: (dock.firstElementChild as HTMLElement).innerText,
-    ended: ended && { text: ended.innerText.trim(), title: ended.dataset.explain ?? "" },
-    box: box(dock),
-    grid: grid && { box: box(grid), scrollHeight: grid.scrollHeight, clientHeight: grid.clientHeight },
-    capsules: [...dock.querySelectorAll<HTMLElement>('[data-capsule]')].map((c) => {
-      const name = c.querySelector('button strong');
-      const line = name?.parentElement?.nextElementSibling;
-      const pr = c.querySelector('button [data-pr]');
-      return {
-        session: c.dataset.session!,
-        state: c.dataset.state,
-        name: name?.textContent,
-        line: line?.textContent,
-        mono: !!line && getComputedStyle(line).fontFamily.includes('monospace'),
-        clock: c.querySelector('[data-clock]')?.textContent ?? null,
-        pr: pr && getComputedStyle(pr).animationName,
-        box: box(c),
-        nameBox: box(name),
-        lineBox: box(line),
-      };
-    }),
-  };
-};
-
-// A capsule's hover card while it is open: its popover type, what it says, its box and its capsule's.
-export const hoverCard = (id: string) => {
-  const capsule = document.querySelector(`[data-capsule][data-session="${id}"]`);
-  const card = capsule?.querySelector<HTMLElement>('[data-hovercard]');
-  if (!capsule || !card?.matches(':popover-open')) return null;
-  const r = card.getBoundingClientRect();
-  const c = capsule.querySelector('button')!.getBoundingClientRect();
-  return {
-    popover: card.popover,
-    text: card.innerText,
-    box: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
-    capsule: { left: c.left, right: c.right, top: c.top },
-    inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
-  };
-};
-
-// The sessions whose hover card is open.
-export const openCards = () => [...document.querySelectorAll('[data-hovercard]:popover-open')].map((c) => c.closest<HTMLElement>('[data-capsule]')?.dataset.session);
-
-export const docked = (n: number) => document.querySelectorAll('[data-dock] [data-capsule]').length === n;
-
-// The card's primary shows whole in the window at the top of the page's scroll and at its bottom, and whether the page
-// scrolls at all, which the second needs to mean anything.
-export const primaryAtEnds = () => {
-  const page = document.scrollingElement!;
-  const inView = () => {
-    const r = document.querySelector('[data-card] [data-primary], [data-card] footer textarea')!.getBoundingClientRect();
-    return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth;
-  };
-  page.scrollTop = 0;
-  const top = inView();
-  page.scrollTop = page.scrollHeight;
-  const bottom = inView();
-  const scrolls = page.scrollTop > 0;
-  page.scrollTop = 0;
-  return { top, bottom, scrolls };
-};
-
-// The card in a narrow window: whether its columns, or a menu's questions, stand one under the other, which peeks
-// and slivers show, and how many rows the footer's buttons and reply box take.
-export const narrowCard = () => {
-  const c = document.querySelector('[data-card]')!;
-  const stacked = (els: Element[]) => {
-    const rs = els.map((e) => e.getBoundingClientRect());
-    return rs.every((r, i) => i === 0 || (Math.abs(r.left - rs[0].left) < 1 && r.top >= rs[i - 1].bottom - 1));
-  };
-  const shown = (el: Element | null) => !!el?.checkVisibility();
-  return {
-    stacked: stacked([...c.querySelectorAll('[data-side]')]) && stacked([...c.querySelectorAll('section[role="group"]')]),
-    peeks: [...document.querySelectorAll<HTMLElement>('[data-peek]')].filter(shown).map((p) => p.dataset.peek),
-    sliver: shown(document.querySelector('[data-sliver]')),
-    footRows: new Set([...c.querySelectorAll('footer button, footer textarea')].filter(shown).map((b) => { const r = b.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size,
-  };
-};
 
 // Starts noting every animation the page runs, with when it ends after it starts; `animations()` stops and returns them.
 export const noteAnimations = () => {

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, sessionAction } from '../api.ts';
-import { queue } from '../queue.ts';
 import { closeSheetOf } from '../router.ts';
 import { patchSession, unpatch, useStore } from '../store.ts';
 import type { Session, WorktreeLoss as Loss } from '../types.ts';
@@ -50,12 +49,12 @@ export function DeleteWorktreeDialog() {
     cancel.current?.focus();
   }, [asked]);
 
-  // The task shows as clearing until the server has removed it, its card leaving sideways when it is the one being read.
+  // The task shows as clearing until the server has removed it.
   const confirm = () => {
     const { session } = target!;
     dialog.current!.close();
     closeSheetOf(session.id);
-    queue.leave(session.id, () => patchSession(session.id, { clearing: true, clearError: null }));
+    patchSession(session.id, { clearing: true, clearError: null });
     sessionAction(session.id, 'delete-worktree', { discard: approved }).catch((err) => {
       unpatch(session.id);
       reportError(err);

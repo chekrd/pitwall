@@ -1,6 +1,5 @@
 import { useId } from 'react';
 import { api, sessionAction } from '../api.ts';
-import { queue } from '../queue.ts';
 import { closeSheetOf } from '../router.ts';
 import { sends } from '../sends.ts';
 import { patchSession, unpatch, useStore } from '../store.ts';
@@ -26,34 +25,29 @@ const failed = (id: string) => (err: unknown) => {
   reportError(err);
 };
 
-// The session leaves the queue at once, its card sideways when it is the one being read, and Undo brings it back.
+// The task shows as archived at once, and Undo brings it back.
 export function archive(session: Session, name: string) {
   const { id } = session;
-  const front = queue.leave(id, () => patchSession(id, { archived: true }));
+  patchSession(id, { archived: true });
   sessionAction(id, 'archive', { archived: true }).then(() => {
     const undo = () => {
-      const back = () => {
-        patchSession(id, { archived: false, ...resumed(session) });
-        return true;
-      };
-      if (front) queue.restore(id, back);
-      else back();
+      patchSession(id, { archived: false, ...resumed(session) });
       sessionAction(id, 'archive', { archived: false }).catch(failed(id));
     };
     toast('undo', `Archived ${name}`, { session: id, action: { label: 'Undo', kbd: UNDO_KBD, run: undo } });
   }, failed(id));
 }
 
-// Archiving quit an idle or waiting Claude, which an Undo resumes waiting for you, so the card comes back as it left
+// Archiving quit an idle or waiting Claude, which an Undo resumes waiting for you, so the task comes back as it left
 // rather than as ended until the snapshot that has it running again.
 const resumed = (session: Session): Partial<Session> => (session.status === 'idle' || session.status === 'waiting' ? { status: 'idle' } : {});
 
 const quitNote = (session: Session) =>
   session.status === 'exited' ? '' : session.status === 'working' ? 'its Claude quits once this turn ends, and ' : 'its Claude quits, and ';
 
-// Claude quits: the session leaves the queue as ended, its card sideways when it is the one being read.
+// Claude quits: the task shows as ended at once.
 function quit(session: Session) {
-  queue.leave(session.id, () => patchSession(session.id, { status: 'exited' }));
+  patchSession(session.id, { status: 'exited' });
   sessionAction(session.id, 'quit').catch(failed(session.id));
 }
 
@@ -92,7 +86,7 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
           />
         )}
         {clearing ? null : session.archived ? (
-          <Item label="Unarchive" note={exited ? 'Resume the conversation, back into the queue and the strip' : 'Back into the queue and the strip'} onClick={act('archive', { archived: false })} />
+          <Item label="Unarchive" note={exited ? 'Resume the conversation, back among the tasks on the Wall' : 'Back among the tasks on the Wall'} onClick={act('archive', { archived: false })} />
         ) : (
           <Item label="Archive" note={`Done with it: ${quitNote(session)}Unarchive resumes the conversation`} onClick={pick(() => archive(session, name))} />
         )}

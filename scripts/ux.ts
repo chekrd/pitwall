@@ -57,9 +57,9 @@ export function report(rows: Row[]) {
     table('Screens (time in sight, visits)', [...perScreen].sort((a, b) => b[1].ms - a[1].ms)
       .map(([s, v]) => [s, `${minutes(v.ms).padStart(8)}  ${pct(v.ms, inSight).padStart(5)}  ${v.visits} visits`])),
     `How actions were taken: ${keys.length} keys, ${clicks.length} clicks (${clicks.filter((r) => r.data.via === 'keyboard').length} of them from the keyboard)\n`,
-    table('Keys used', count(keys, (r) => `${r.data.action} on ${r.data.screen}${r.data.card ? `/${r.data.card}` : ''}`)),
+    table('Keys used', count(keys, (r) => `${r.data.action} on ${r.data.screen}${(r.data.kind ?? r.data.card) ? `/${r.data.kind ?? r.data.card}` : ''}`)),
     table('Board keys never pressed', KEYS.filter((k) => !usedKeys.has(k.keys)).map((k) => [k.keys, k.help])),
-    table('Board keys that did nothing where pressed (guarded: just after the card changed)', count(of('key-noop'), (r) => `${r.data.keys} on ${r.data.screen}${r.data.guarded ? ' (guarded)' : ''}`)),
+    table('Board keys that did nothing where pressed (guarded: just after the decision changed)', count(of('key-noop'), (r) => `${r.data.keys} on ${r.data.screen}${r.data.guarded ? ' (guarded)' : ''}`)),
     table('Keys the board has no use for (what someone expected a key to do)', count(of('key-miss'), (r) => `${r.data.key} on ${r.data.screen}${r.data.more ? ' (burst)' : ''}`)),
     table('Clicks', count(clicks, (r) => `${r.data.area} › ${r.data.control}`), 30),
     table('Sends', count(sends, (r) => `${r.data.action}${r.data.command ? ' (command)' : (r.data.option ?? r.data.choice) ? ' (option)' : (r.data.ownText ?? r.data.text) ? ' (own text)' : ''}${r.data.files ? ' +files' : ''}`)),

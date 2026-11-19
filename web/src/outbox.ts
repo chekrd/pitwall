@@ -4,7 +4,7 @@ import { menuStuck } from './util.ts';
 
 export type Action = 'answer' | 'answer-menu' | 'answer-round' | 'decline-menu' | 'dismiss';
 
-// `key` is the decision the card showed, null for a plain message. It is always sent, since the server takes a
+// `key` is the decision the page showed, null for a plain message. It is always sent, since the server takes a
 // missing key for a page from before that check.
 export interface Body {
   key?: string | null;
@@ -25,7 +25,7 @@ export interface Request {
   body: Body;
   // What the toast quotes: the option, the reply or the picks.
   label: string;
-  // A `/` or `!` command: the server types it as it is, so it answers nothing and keeps its card.
+  // A `/` or `!` command: the server types it as it is, so it answers nothing and the decision stays open.
   command?: boolean;
 }
 
@@ -72,6 +72,15 @@ export const CONFIRM_MS = 15_000;
 export const ADOPTED_MS = 3000;
 export const NO_ANSWER = "No answer from Pitwall; check the session's terminal before sending again";
 export const NOT_SENT = 'the page closed before it went out';
+
+// How far a send has got. The countdown never reads more than the hold, as `now` may come from a clock that ticks
+// once a second.
+export function sendLine(send: Item, now: number, holdMs: number) {
+  if (send.state === 'held') return `Sending in ${Math.min(Math.ceil(holdMs / 1000), Math.max(1, Math.ceil((send.dueAt - now) / 1000)))} s`;
+  if (send.state === 'sending') return 'Sending…';
+  if (send.state === 'waiting') return 'Waiting for Pitwall';
+  return 'Sent';
+}
 
 export const active = (i: Item) => i.state === 'held' || i.state === 'sending' || i.state === 'waiting';
 
@@ -236,8 +245,8 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
   }
 
   // The snapshot shows the session moved on from what the item answered. An answer lands as `answered` before
-  // Claude starts, so that alone would bring the card back as Your turn for a moment. A menu still open 10 s after
-  // the answer is stuck, and its card comes back as Needs focus.
+  // Claude starts, so that alone would bring the task back as Your turn for a moment. A menu still open 10 s after
+  // the answer is stuck, and the task comes back as Needs focus.
   function took(i: Item<R>, s: Session | undefined) {
     if (!s) return true;
     if (s.status !== i.status && s.status !== 'idle') return true;
@@ -370,7 +379,7 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
     },
 
     // Takes over what a page that went away left unconfirmed, as its storage kept it. None of it posts again: each
-    // item waits as a send not yet confirmed, out of the deck, until the snapshots show what became of it, and one the
+    // item waits as a send not yet confirmed, its task out of what waits, until the snapshots show what became of it, and one the
     // server would still take by ADOPTED_MS after it was due never reached it.
     adopt(list: readonly Item<R>[]) {
       if (!list.length) return;
@@ -388,7 +397,8 @@ export function createOutbox<R = unknown>(o: { post: (out: Outgoing) => Promise<
       return items.some(active) ? new Promise<void>((done) => waiters.push(done)) : Promise.resolve();
     },
 
-    // The sessions out of the deck while their send is held, under way or not yet confirmed. A command keeps its card.
+    // The sessions out of what waits while their send is held, under way or not yet confirmed. A command leaves its
+    // decision open, so it counts for none.
     busy: (): ReadonlySet<string> => {
       if (busyOf?.items !== items) {
         busyOf = { items, ids: new Set(items.filter((i) => !i.command && (active(i) || i.state === 'sent')).map((i) => i.sessionId)) };

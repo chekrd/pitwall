@@ -34,24 +34,6 @@
     [data-resting] & h1 { font-size: 34px; }
   }
 
-  .back {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    height: 40px;
-    padding: 0 12px 0 16px;
-    border-radius: 11px;
-    background: var(--accent);
-    color: var(--on-accent);
-    font-size: 14.5px;
-    font-weight: 700;
-    white-space: nowrap;
-    text-decoration: none;
-    box-shadow: 0 8px 22px -12px var(--accent-glow);
-    &:hover { filter: brightness(1.06); }
-    kbd { border-color: rgb(20 25 0 / 0.22); background: rgb(20 25 0 / 0.1); }
-  }
-
   .empty {
     flex: none;
     display: flex;

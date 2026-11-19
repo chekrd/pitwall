@@ -4,7 +4,6 @@ import { DriftBanner } from './components/DriftBanner.tsx';
 import { DeleteWorktreeDialog } from './components/DeleteWorktreeDialog.tsx';
 import { KeysDialog } from './components/KeysDialog.tsx';
 import { NewTaskDialog } from './components/NewTaskForm.tsx';
-import { Queue, useDeckSync } from './components/Queue.tsx';
 import { RestartBanner } from './components/RestartBanner.tsx';
 import { TaskSheet } from './components/TaskSheet.tsx';
 import { TerminalNoticeBanner } from './components/TerminalNoticeBanner.tsx';
@@ -12,7 +11,7 @@ import { Toasts } from './components/Toasts.tsx';
 import { TopBar } from './components/TopBar.tsx';
 import { Wall } from './components/Wall.tsx';
 import { WorkspaceDialog } from './components/WorkspaceDialog.tsx';
-import { deckOf } from './deck.ts';
+import { nextDecision, waitingOf } from './order.ts';
 import { useRoute } from './router.ts';
 import { useBusy } from './sends.ts';
 import { useStore } from './store.ts';
@@ -22,12 +21,9 @@ import { setBoard } from './ux.ts';
 export function App() {
   const store = useStore();
   const route = useRoute();
-  const deck = deckOf(store.sessions, useBusy());
+  const waiting = waitingOf(store.sessions, useBusy());
+  const next = nextDecision(waiting, route.sheet?.id ?? null);
   const sheetSession = route.sheet && store.sessions.find((s) => s.id === route.sheet!.id);
-
-  useEffect(() => {
-    document.documentElement.dataset.view = route.view;
-  }, [route.view]);
 
   useEffect(() => {
     const live = store.sessions.filter((s) => !s.archived);
@@ -36,22 +32,21 @@ export function App() {
       ...store.repos.flatMap((r) => [r.name, ...r.worktrees.flatMap((w) => [w.branch, w.path.split('/').at(-1)])]),
       ...store.folders.map((f) => f.name),
     ];
-    setBoard({ tasks: live.length, deck: deck.length, names: names.filter((n): n is string => !!n) });
-  }, [store.sessions, store.repos, store.folders, deck.length]);
+    setBoard({ tasks: live.length, waiting: waiting.length, names: names.filter((n): n is string => !!n) });
+  }, [store.sessions, store.repos, store.folders, waiting.length]);
 
-  useDeckSync(deck, store.link !== 'connecting');
-  useBoardKeys({ route, deck: deck.length, repos: store.repos.length > 0, artifacts: !!sheetSession?.artifacts.length });
+  useBoardKeys({ route, next: next.next?.id ?? null, repos: store.repos.length > 0, artifacts: !!sheetSession?.artifacts.length });
 
   return (
     <>
-      <TopBar route={route} deck={deck} />
+      <TopBar next={next} />
       <RestartBanner />
       <DriftBanner />
       <TerminalNoticeBanner />
-      {/* Under an open task the view stays, so it comes back as it was left. */}
+      {/* Under an open task the Wall stays, so it comes back as it was left. */}
       <div className="views">
         <div className="view" data-covered={!!route.sheet || undefined} inert={!!route.sheet}>
-          {route.view === 'queue' ? <Queue deck={deck} /> : <Wall deck={deck} />}
+          <Wall waiting={waiting} />
         </div>
         <TaskSheet route={route} />
       </div>

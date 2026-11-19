@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { actions, card, frontIs, HELD_MS, matches, openFromWall, openNewTask, openQueue, openSheetOf, pickerOpen, pickRepo, ready, sheetOpen, still, tiles, toastsOf, wholeFile, type Check } from '../helpers.ts';
+import { actions, decisionOf, HELD_MS, matches, noDecision, openDecision, openFromWall, openNewTask, openSheetOf, pickerOpen, pickRepo, settled, sheetOpen, still, tiles, toastsOf, wholeFile, type Check } from '../helpers.ts';
 
 export const dialogs: Check[] = [
   {
@@ -36,34 +36,37 @@ export const dialogs: Check[] = [
       await page.until('all files again', () => document.querySelectorAll('section[data-file]').length === 12);
       assert.equal(await page.eval(sheetOpen), true, 'Esc in one file closed the sheet');
       await page.key('Escape');
-      await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/');
     },
   },
   {
-    name: 'P4.esc-tooltip Esc with the pointer on the held send\'s toast, its tooltip showing, takes the send back and nothing goes out; with nothing held, Esc on a tooltip only dismisses it, and the next Esc leaves the Wall',
+    name: 'P4.esc-tooltip Esc with the pointer on the held send\'s toast, its tooltip showing, takes the send back and nothing goes out; with nothing held, Esc on a tooltip only dismisses it, and the Wall stays',
     async run({ holds, page, mock }) {
       const tip = () => !!document.querySelector('#tooltip:popover-open');
-      await openQueue(page, mock);
-      await ready(page, 's-cart');
+      // The page's clock runs slow, so the hold outlasts the hover and its tooltip delay on a busy machine.
+      await page.fastClock(0.4);
+      await openDecision(page, mock);
       await page.key('Enter');
-      await page.until('s-hooks at the front', frontIs, 's-hooks');
+      await page.until('the decision to go', noDecision, 's-cart');
+      // A pointer placed while the toast slides in is left beside it once it stops, with no hover.
+      await page.until('the toast to settle', settled);
       await page.hover('[data-toast][data-kind="undo"] [data-explain]');
       await page.until('the toast\'s tooltip', tip);
       await page.key('Escape');
-      await page.until('s-cart back at the front', frontIs, 's-cart');
+      await page.until('s-cart\'s decision back', decisionOf, 's-cart');
       assert.equal(await page.eval(toastsOf, 'undo'), null, 'the undo toast stayed');
       await page.until('the tooltip gone', () => !document.querySelector('#tooltip:popover-open'));
       await holds('the send taken back to stay back', HELD_MS, async () => !(await actions(mock)).length);
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.hover('[data-window]');
       await page.until('the usage\'s tooltip', tip);
       await page.key('Escape');
       await page.until('the tooltip gone', () => !document.querySelector('#tooltip:popover-open'));
-      await holds('the Esc on the tooltip to stay on the Wall', 150, () => page.eval(() => location.pathname === '/wall'));
+      await holds('the Esc on the tooltip to stay on the Wall', 150, () => page.eval(() => location.pathname === '/' && !document.querySelector('#tooltip:popover-open')));
       await page.key('Escape');
-      await page.until('the queue', () => location.pathname === '/');
+      await holds('the next Esc to leave the Wall as it is', 300, () => page.eval(() => location.pathname === '/' && document.querySelectorAll('[data-tile]').length > 0));
     },
   },
   {
@@ -104,7 +107,7 @@ export const dialogs: Check[] = [
     name: 'P4.close-in-place a sheet loaded in a tab after another page of the board closes in place: the page does not load again, and it says the task is gone',
     async run({ page, mock }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the card', card);
+      await page.until('the tiles', tiles);
       await page.goto(`${mock.url}/s/s-nope/overview`);
       await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       assert.deepEqual(await page.until('the toast', toastsOf, 'info'), [{ kind: 'info', text: 'That task is gone.', inSheet: false, hit: true }]);
@@ -120,7 +123,7 @@ export const dialogs: Check[] = [
     async run({ holds, page, mock }) {
       const reads = async (repo: number) => (await mock.log()).filter((e) => e.method === 'GET' && e.path === `/api/repos/${repo}/branches`).length;
       const rows = (host: string) => [...document.querySelectorAll(`${host} [aria-label="Branches"] code`)].map((c) => c.textContent);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await pickRepo(page, 'storefront');
@@ -144,7 +147,7 @@ export const dialogs: Check[] = [
       const picker = '#new-task [data-repo-picker]';
       const shown = (picker: string) => [...document.querySelectorAll(`${picker} [role="option"]`)].map((o) => o.querySelector('strong')?.textContent);
       const picked = () => document.querySelector('#new-task button[aria-haspopup="listbox"] strong')?.textContent;
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.click('dialog#new-task button[aria-haspopup="listbox"]');
@@ -190,7 +193,7 @@ export const dialogs: Check[] = [
       const list = `${picker} [role="listbox"]`;
       const top = (list: string) => document.querySelector(list)!.scrollTop;
       const active = (list: string) => document.querySelector(`${list} [data-active] strong`)?.textContent;
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       // The mock's five repositories fit the list; this height leaves one half in view, as a longer list would.
@@ -242,7 +245,7 @@ export const dialogs: Check[] = [
       const button = '#new-task button[aria-haspopup="listbox"]';
       const focused = (selector: string) => document.activeElement === document.querySelector(selector);
       const picked = () => document.querySelector('#new-task button[aria-haspopup="listbox"] strong')?.textContent;
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.eval(() => [...document.querySelectorAll<HTMLSelectElement>('dialog#new-task select')].at(-1)!.focus());
@@ -282,7 +285,7 @@ export const dialogs: Check[] = [
       const open = (list: string) => !!document.querySelector(`${list}:popover-open`);
       const shown = (list: string) => [...document.querySelectorAll(`${list} [role="option"] code`)].map((c) => c.textContent);
       const dialogHeight = () => Math.round(document.querySelector('dialog#new-task')!.getBoundingClientRect().height);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await pickRepo(page, 'storefront');
@@ -339,7 +342,7 @@ export const dialogs: Check[] = [
       await page.key('Escape');
       await page.until('the title back', () => document.querySelector('#task-sheet h2')?.textContent === 'Lazy-load product reviews');
 
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       await page.click('dialog#new-task button[aria-haspopup="listbox"]');
@@ -370,7 +373,7 @@ export const dialogs: Check[] = [
   {
     name: 'P4.delete-stays-closed a delete dialog closed just as its loss check comes back stays closed',
     async run({ holds, page, mock }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       // The loss check's answer waits until the check lets it through.
       await page.eval(() => {

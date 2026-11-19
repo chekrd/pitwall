@@ -3,7 +3,7 @@ export { tildeIn } from '../../server/home.ts';
 import type { QuestionOption, RepoView, Session } from './types.ts';
 
 // `place` names the repository, or for a task across a folder of repos, the folder.
-// Where a task works, as its tile and card name it: the repositories, and the branch, or the branches of a folder task's
+// Where a task works, as its tile and its page name it: the repositories, and the branch, or the branches of a folder task's
 // worktrees. A worktree that is gone is named by its task folder, as git-wt lays it out in <task>/<repo folder>, not by
 // the repository folder at the end of its path.
 export function locate(repos: RepoView[], session: Session) {

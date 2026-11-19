@@ -156,6 +156,9 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
   const [treeWidth, setTreeWidth] = useState(storedTreeWidth);
   const [loading, startLoading] = useTransition();
   const kept = useRef(at ? undefined : places.get(session.id));
+  // The place being come back to, until it holds or the user scrolls: leaving meanwhile keeps it, as the files are not
+  // all drawn yet and the diff is not where it reads.
+  const restoring = useRef<Place | null>(null);
   const [selected, setSelected] = useState<string | null>(() => (kept.current && !kept.current.whole ? kept.current.file : null));
   const [focused, setFocused] = useState<string | null>(null);
   const [dir, setDir] = useState<string | null>(() => kept.current?.dir ?? null);
@@ -373,29 +376,36 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
     const section = document.getElementById(fileAnchor(place.file));
     if (!root || !section) return;
     // The files around it change height as they draw, and a drawn file has none until its highlighting comes back from
-    // the workers, so the place is held until it stops moving: hidden for two seconds, in sight after that on a busy
+    // the workers, so the place is held until none of them is still drawing and it stops moving: hidden for two seconds, in sight after that on a busy
     // machine, and let go as soon as the user scrolls.
     setSeeking(place.file);
+    restoring.current = place;
     let frame = 0;
     let still = 0;
     const started = performance.now();
-    const stop = () => {
+    const cancel = () => {
       cancelAnimationFrame(frame);
       setSeeking(null);
       for (const type of ['wheel', 'pointerdown', 'keydown', 'touchstart'] as const) root.removeEventListener(type, stop);
     };
+    const stop = () => {
+      restoring.current = null;
+      cancel();
+    };
     for (const type of ['wheel', 'pointerdown', 'keydown', 'touchstart'] as const) root.addEventListener(type, stop, { passive: true });
     const hold = () => {
+      if (!section.isConnected) return stop();
       const by = Math.round(section.getBoundingClientRect().top - root.getBoundingClientRect().top + place.offset);
       root.scrollTop += by;
-      still = by === 0 && section.querySelector('diffs-container')?.shadowRoot?.querySelector('pre') ? still + 1 : 0;
+      const drawing = [...root.querySelectorAll('diffs-container')].some((d) => !d.shadowRoot?.querySelector('pre'));
+      still = by === 0 && !drawing && section.querySelector('diffs-container') ? still + 1 : 0;
       const held = performance.now() - started;
       if (held > 2000) setSeeking(null);
       if (still < 3 && held < 10_000) frame = requestAnimationFrame(hold);
       else stop();
     };
     hold();
-    return stop;
+    return cancel;
   }, [diff]);
 
   const leftAt = useRef<() => Place | null>(null);
@@ -403,6 +413,7 @@ function Diffs({ session, at }: { session: Session; at: string | null }) {
     const root = diffsRef.current;
     if (!root) return null;
     if (focused) return { file: focused, offset: root.scrollTop, whole: true, dir };
+    if (restoring.current) return restoring.current;
     const top = root.getBoundingClientRect().top;
     const section = [...root.querySelectorAll<HTMLElement>('section[data-file]')].find((s) => s.getBoundingClientRect().bottom > top);
     return section ? { file: section.dataset.file!, offset: top - section.getBoundingClientRect().top, whole: false, dir } : null;

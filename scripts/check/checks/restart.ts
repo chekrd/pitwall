@@ -1,28 +1,31 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { logged, openQueue, openSheetOf, POSTED_MS, reachable, sidewaysScroll, type Check } from '../helpers.ts';
+import { logged, openSheetOf, POSTED_MS, reachable, ready, sidewaysScroll, tiles, type Check } from '../helpers.ts';
 import type { UxRow } from '../mock.ts';
 
 export const restart: Check[] = [
   {
-    name: 'UX the usage recorder posts the screens, a board key, a key the board has no use for, a click and the cards shown, but not what the option said',
+    name: 'UX the usage recorder posts the screens, a board key, a key the board has no use for, a click and the decisions shown, but not what the option said',
     async run({ page, mock }) {
-      await openQueue(page, mock);
-      await page.key('ArrowRight');
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
+      await page.key('d');
+      await ready(page, 's-cart');
       await page.key('q');
-      const label = await page.eval(() => document.querySelector('[data-card] [data-option]')!.textContent.trim());
-      await page.click('[data-card] [data-option]');
-      await page.goto(`${mock.url}/wall`);
+      const label = await page.eval(() => document.querySelector('[data-decision] [data-option]')!.textContent.trim());
+      await page.click('[data-decision] [data-option]');
+      await page.goto(`${mock.url}/`);
       const events = await until('the recorded events', async () => {
         const all: UxRow[] = await mock.get('/mock/ux');
-        return all.some((e) => e.name === 'screen') ? all : null;
+        return all.some((e) => e.name === 'screen' && e.data?.screen === 'task/overview') ? all : null;
       });
       assert.ok(events.some((e) => e.name === 'load'), 'the page load');
-      assert.ok(events.some((e) => e.name === 'screen' && e.data?.screen === 'queue' && e.data.ms > 0), 'time on the queue');
-      assert.ok(events.some((e) => e.name === 'key' && e.data?.action === 'skip' && e.data.keys === '→'), 'the skip key');
-      assert.ok(events.some((e) => e.name === 'key-miss' && e.data?.key === 'q'), 'the unused key');
-      assert.ok(events.some((e) => e.name === 'click' && e.data?.control === 'option' && e.data.area === 'queue/menu'), 'the option clicked');
-      assert.ok(events.some((e) => e.name === 'card-shown' && e.task === 's-cart' && e.decision && e.data?.deck > 0), 'the card shown, with its decision and the deck size');
+      assert.ok(events.some((e) => e.name === 'screen' && e.data?.screen === 'wall' && e.data.ms > 0), 'time on the Wall');
+      assert.ok(events.some((e) => e.name === 'screen' && e.data?.screen === 'task/overview' && e.data.ms > 0), 'time on the task page');
+      assert.ok(events.some((e) => e.name === 'key' && e.data?.action === 'next' && e.data.keys === 'D' && e.data.screen === 'wall'), 'the next-decision key');
+      assert.ok(events.some((e) => e.name === 'key-miss' && e.data?.key === 'q' && e.data.screen === 'task/overview' && e.data.kind === 'ask'), 'the unused key, with the kind of decision shown');
+      assert.ok(events.some((e) => e.name === 'click' && e.data?.control === 'option' && e.data.area === 'task/overview/ask'), 'the option clicked');
+      assert.ok(events.some((e) => e.name === 'decision-shown' && e.task === 's-cart' && e.decision === 'q:toolu_01Cart' && e.data?.kind === 'ask'), 'the decision shown, with its key and kind');
       assert.ok(label && !JSON.stringify(events).includes(label), `the option's text "${label}" is not recorded`);
     },
   },
@@ -60,7 +63,7 @@ export const restart: Check[] = [
         return document.querySelectorAll(selector).length;
       };
       const CONTROLS = 'button, a[href], summary, select, [role="tab"], [role="option"], [role="menuitem"], input[type="checkbox"], input[type="radio"]';
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the Wall', () => document.querySelectorAll('[data-tile]').length > 3);
       let clicked = await page.eval(clickAll, CONTROLS);
       // In-page navigation keeps the page and its unsent events.
@@ -72,7 +75,7 @@ export const restart: Check[] = [
         if (!tab) await page.click('#task-sheet button[aria-label="Session actions"]');
         clicked += await page.eval(clickAll, CONTROLS);
       }
-      await go('/wall');
+      await go('/');
       await page.until('the task page to close', () => !document.querySelector('#task-sheet [role="tabpanel"]'));
       await page.click('header button[aria-label="New task"]');
       await page.click('dialog#new-task button[aria-haspopup="listbox"]');
@@ -134,7 +137,7 @@ export const restart: Check[] = [
     name: 'new-task.default New task first opens on Current checkout with the default branch picked and the repository focused, More folded under the prompt; ⌘↵ creates there; the repository, mode and More outlast a reload; More opens the model and effort, and names what is set in them while folded',
     newTask: 'default',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('header button[aria-label="New task"]');
       const form = () => {
         const d = document.querySelector<HTMLDialogElement>('dialog#new-task');
@@ -168,7 +171,7 @@ export const restart: Check[] = [
       await page.click('dialog#new-task [data-more]');
       await shot('new-task-more');
       await page.click('dialog#new-task [data-more]');
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('header button[aria-label="New task"]');
       assert.equal((await page.until('New task after the reload', form)).mode, 'Current checkout');
       await page.until('the repository focused', () => document.activeElement === document.querySelector('dialog#new-task button[aria-haspopup="listbox"]'));
@@ -180,7 +183,7 @@ export const restart: Check[] = [
   {
     name: 'P1 Pause waits for every turn to end, Stop now cuts the rest short, each Claude stops its background tasks and the banner says it is safe to close the laptop or restart; Resume on a task page or Resume all carries on',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       type Row = { id: string; status: string; title: string | null; archived: boolean; activity: { between?: true } | null; interrupted: { cause?: string } | null };
       const all = (await mock.get('/api/state')).sessions as Row[];
@@ -217,7 +220,7 @@ export const restart: Check[] = [
       const [one] = await logged(mock, 'the resume of one', (e) => e.path === '/api/pause/resume');
       assert.equal(one.body.id, first.id);
       await page.until('its note to go once Claude works', () => !document.querySelector('#task-sheet [data-interrupted]'));
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-pause="paused"] button', 'Resume all');
       await page.until('the banner to go once every Claude works', () => !document.querySelector('section[data-pause]'));
       const after = (await mock.get('/api/state')).sessions as typeof all;
@@ -233,7 +236,7 @@ export const restart: Check[] = [
       const ended = before.filter((s) => s.interrupted && !s.archived);
       const midTurn = ended.filter((s) => s.interrupted!.status !== 'idle');
       assert.ok(ended.length > 3 && midTurn.length > 1 && midTurn.length < ended.length, 'the scenario has tasks of every kind');
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       const banner = await page.until('the recovery banner', () => document.querySelector<HTMLElement>('[data-restart="recover"]')?.innerText ?? null);
       assert.match(banner, new RegExp(`The Mac restarted and ended ${ended.length} tasks with it: .*\\d+ in progress`));
       assert.doesNotMatch(banner, /Paused/, 'nothing was paused, so the banner reads as before');
@@ -276,7 +279,7 @@ export const restart: Check[] = [
     name: 'R2 a task Resume all cannot bring back says why in a toast and stays ended; Dismiss forgets the rest',
     scenario: 'restartedFails',
     async run({ page, mock }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-restart="recover"] button', 'Resume all');
       const message = await page.until('the toast', () => document.querySelector<HTMLElement>('[data-toast]')?.innerText ?? null);
       assert.match(message, /Not resumed: conversation not found in this worktree/);
@@ -303,7 +306,7 @@ export const restart: Check[] = [
       const ended = before.filter((s) => s.interrupted && s.interrupted.cause !== 'pause' && !s.archived);
       const midTurn = ended.filter((s) => s.interrupted!.status !== 'idle');
       assert.ok(held.length > 1 && ended.length > 1 && midTurn.length > 0, 'the scenario has paused tasks and tasks the restart ended');
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       const banner = await page.until('the one banner', () => document.querySelector<HTMLElement>('[data-restart="recover"][data-paused]')?.innerText ?? null);
       assert.equal(await page.eval(() => document.querySelectorAll('section[data-pause], section[data-restart]').length), 1, 'the pause has no banner of its own');
       assert.match(banner, new RegExp(`^The Mac restarted and ended ${ended.length} tasks with it: .+\\. Paused ${held.length} tasks: `));
@@ -336,7 +339,7 @@ export const restart: Check[] = [
     name: 'R7 after a restart that followed a pause, one Dismiss forgets the restart and the pause; a paused task Resume all cannot bring back says why in a toast and stays paused',
     scenario: 'restartedPausedFails',
     async run({ page, mock }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-restart="recover"][data-paused] button', 'Dismiss');
       const [dismissed] = await logged(mock, 'the dismiss', (e) => e.path === '/api/restart/dismiss');
       assert.equal(dismissed.body.paused, true);
@@ -346,7 +349,7 @@ export const restart: Check[] = [
 
       await mock.post('/mock/scenario/restartedPausedFails', {});
       const failing = ((await mock.get('/api/state')).sessions as typeof state).find((s) => s.interrupted?.cause === 'pause')!;
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.click('[data-restart="recover"][data-paused] button', 'Resume all');
       const message = await page.until('the toast', () => document.querySelector<HTMLElement>('[data-toast]')?.innerText ?? null);
       assert.match(message, /Not resumed: conversation not found in this worktree/);
@@ -364,12 +367,12 @@ export const restart: Check[] = [
     narrow: true,
     scenario: 'restarted',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('Resume all in reach', reachable, '[data-restart] button', 'Resume all');
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await shot('narrow-restart-recover');
       await mock.post('/mock/scenario/restartedPaused', {});
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the banner after a pause', () => !!document.querySelector('[data-restart="recover"][data-paused]'));
       await page.until('Resume all in reach', reachable, '[data-restart] button', 'Resume all');
       await page.until('Dismiss in reach', reachable, '[data-restart] button', 'Dismiss');
@@ -381,7 +384,7 @@ export const restart: Check[] = [
     name: 'R3 narrow: the pausing banner fits the window, Stop now and Cancel stay in reach',
     narrow: true,
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', () => document.querySelectorAll('[data-tile]').length > 0);
       await mock.post('/api/pause', {});
       await page.until('Stop now in reach', reachable, '[data-pause] button', 'Stop now');
@@ -398,7 +401,7 @@ export const restart: Check[] = [
     async run({ page, mock }) {
       const all = (await mock.get('/api/state')).sessions as { id: string; archived: boolean; interrupted: unknown }[];
       const tasks = all.filter((s) => s.interrupted && !s.archived);
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the recovery banner', () => !!document.querySelector('[data-restart="recover"]'));
       for (const s of tasks) {
         await page.click(`[data-tile][data-session="${s.id}"] button[aria-label="Session actions"]`);
@@ -427,7 +430,7 @@ export const restart: Check[] = [
       const s = all.find((o) => o.status === 'idle' && !o.archived && !o.question && !o.menu && !o.summary?.decision)!;
       const refused = "API Error: Opus 5.5's safeguards flagged this message (https://www.anthropic.com/legal/aup). This sometimes happens with safe, normal conversations.\n\nDouble press esc to edit your last message, or try a different model with /model.";
       await mock.post('/mock/patch', { id: s.id, patch: { turnError: { at: Date.now(), kind: 'refusal', text: refused } } });
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       const tile = await page.until('the tile to say so', (id: string) => {
         const state = document.querySelector<HTMLElement>(`[data-tile][data-session="${id}"] [data-error]`);
         const t = state?.closest<HTMLElement>('[data-tile]');

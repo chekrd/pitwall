@@ -3,12 +3,12 @@ import { openBugReport } from './components/BugReportDialog.tsx';
 import { diffNarrowed, stepFile, widenDiff } from './components/DiffView.tsx';
 import { toggleKeys } from './components/KeysDialog.tsx';
 import { openNewTask } from './components/NewTaskForm.tsx';
-import { keyAction, KEYS_DIALOG, LOCK_MS, rowFor, SHEET_DIALOG, typingLock, type Action, type Card, type KeyContext, type Key, type Target } from './keys.ts';
+import { keyAction, KEYS_DIALOG, LOCK_MS, rowFor, SHEET_DIALOG, typingLock, type Action, type Decision, type KeyContext, type Key, type Target } from './keys.ts';
 import { openPopovers } from './layers.ts';
-import { queue } from './queue.ts';
 import { record } from './recorder.ts';
-import { closeSheet, go, showTab, viewPath, type Route } from './router.ts';
+import { closeSheet, openSheet, showTab, type Route } from './router.ts';
 import { holding, undo } from './sends.ts';
+import { guarded } from './useDecision.ts';
 import { hideTooltip, tooltipShown } from './tooltip.ts';
 import { track } from './ux.ts';
 
@@ -31,7 +31,7 @@ function target(el: EventTarget | null): Target {
 
 const actionName = (a: Action) => [a.type, 'tab' in a ? a.tab : 'to' in a ? a.to : 'what' in a ? a.what : null].filter(Boolean).join(':');
 
-const scopeOf = (ctx: KeyContext) => (ctx.sheet ? `task/${ctx.sheet.tab}` : ctx.view);
+const scopeOf = (ctx: KeyContext) => (ctx.sheet ? `task/${ctx.sheet.tab}` : 'wall');
 
 // Misses in a row less than a second apart count into the first, so typing that lands on the page reads as one
 // burst, not as the text.
@@ -41,10 +41,10 @@ let lastMiss: { at: number; data: { more: number } } | null = null;
 // which shows what someone expected a key to do.
 function trackKey(ctx: KeyContext, e: Key & { repeat: boolean }, action: Action | null) {
   if (e.repeat) return;
-  const card = ctx.card?.kind ?? null;
+  const kind = ctx.decision?.kind ?? null;
   const row = rowFor(ctx, e);
-  if (action) return void track('key', { action: actionName(action), keys: row?.keys, screen: scopeOf(ctx), card });
-  if (row) return void track('key-noop', { keys: row.keys, screen: scopeOf(ctx), card, guarded: !!row.guarded && ctx.guarded });
+  if (action) return void track('key', { action: actionName(action), keys: row?.keys, screen: scopeOf(ctx), kind });
+  if (row) return void track('key-noop', { keys: row.keys, screen: scopeOf(ctx), kind, guarded: !!row.guarded && ctx.guarded });
   if (e.key.length !== 1 || e.key === ' ' || ctx.target.editable || ctx.modal || ctx.popovers.includes('auto')) return;
   const now = Date.now();
   if (lastMiss && now - lastMiss.at < 1000) {
@@ -52,7 +52,7 @@ function trackKey(ctx: KeyContext, e: Key & { repeat: boolean }, action: Action 
     lastMiss.data.more++;
     return;
   }
-  const data = { key: e.key.toLowerCase(), screen: scopeOf(ctx), card, more: 0 };
+  const data = { key: e.key.toLowerCase(), screen: scopeOf(ctx), kind, more: 0 };
   track('key-miss', data);
   lastMiss = { at: now, data };
 }
@@ -67,7 +67,7 @@ function dom(e: KeyboardEvent): Pick<KeyContext, 'target' | 'modal' | 'popovers'
   };
 }
 
-// The board's one keydown listener. `context` gives what the app knows (view, sheet, front card, guard); the DOM
+// The board's one keydown listener. `context` gives what the app knows (the open task, its decision, the guard); the DOM
 // gives the rest. A field that unmounts while typed in leaves focus on the page, and the typing lock takes the keys
 // that follow until the typing stops.
 export function useKeys(context: () => Omit<KeyContext, 'target' | 'modal' | 'popovers' | 'tip'>, dispatch: (action: Action, e: KeyboardEvent) => void) {
@@ -143,9 +143,9 @@ export function useKeys(context: () => Omit<KeyContext, 'target' | 'modal' | 'po
   }, []);
 }
 
-// The card the queue shows, with what its keys do. The queue sets it while a card is on screen.
+// The decision a task's Overview shows, with what its keys do. Overview sets it while it shows one.
 export interface Front {
-  card: Card;
+  decision: Decision;
   act: (action: Action, e: KeyboardEvent) => void;
 }
 
@@ -160,21 +160,20 @@ export function useFront(value: Front | null) {
   }, [value]);
 }
 
-// The board's keys: switching views, New task, Bug report, the Keys dialog, Undo and the sheet's tabs and files here, and the
-// card's keys through the front the queue sets.
-export function useBoardKeys({ route, deck, repos, artifacts }: { route: Route; deck: number; repos: boolean; artifacts: boolean }) {
+// The board's keys: the next decision, New task, Bug report, the Keys dialog, Undo and the task's tabs and files here,
+// and the decision's keys through the front Overview sets.
+export function useBoardKeys({ route, next, repos, artifacts }: { route: Route; next: string | null; repos: boolean; artifacts: boolean }) {
   useKeys(
     () => ({
-      view: route.view,
       sheet: route.sheet ? { tab: route.sheet.tab, artifacts, narrowed: route.sheet.tab === 'diff' && diffNarrowed() } : null,
-      card: front?.card ?? null,
-      deck,
-      guarded: queue.guarded(),
+      decision: route.sheet ? front?.decision ?? null : null,
+      next: next !== null,
+      guarded: guarded(),
       held: holding(),
       repos,
     }),
     (action, e) => {
-      if (action.type === 'view') go(viewPath(action.to));
+      if (action.type === 'next') openSheet(next!, 'overview');
       else if (action.type === 'new-task') openNewTask();
       else if (action.type === 'bug') openBugReport();
       else if (action.type === 'keys') toggleKeys();

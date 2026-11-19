@@ -23,7 +23,7 @@ export function describe(el: EventTarget | null | undefined): string | null {
   const h = el as HTMLElement;
   const bits = [`${el.tagName.toLowerCase()}#${serials.get(el)}`];
   if (el.id) bits.push(`id=${el.id}`);
-  for (const k of ['draft', 'session', 'card', 'tile', 'queued', 'kind'] as const) if (h.dataset?.[k] !== undefined) bits.push(`${k}=${h.dataset[k]}`);
+  for (const k of ['draft', 'session', 'decision', 'tile', 'kind'] as const) if (h.dataset?.[k] !== undefined) bits.push(`${k}=${h.dataset[k]}`);
   const label = el.getAttribute('aria-label');
   if (label) bits.push(`"${label.slice(0, 40)}"`);
   if (!el.isConnected) bits.push('detached');
@@ -116,7 +116,6 @@ const onScreen = (el: Element) => !el.closest('[inert]') && el.checkVisibility()
 // The page as it is at this moment: taken when the report opens, before its dialog takes focus.
 export function snapshot() {
   const selection = document.getSelection();
-  const root = document.documentElement;
   return {
     at: new Date().toISOString(),
     ms: Math.round(performance.now()),
@@ -126,8 +125,6 @@ export function snapshot() {
     visibility: document.visibilityState,
     active: describe(document.activeElement),
     selection: selection ? { anchor: describe(selection.anchorNode?.parentElement), type: selection.type } : null,
-    view: root.dataset.view ?? null,
-    deal: root.dataset.deal ?? null,
     open: [...document.querySelectorAll('dialog[open], :popover-open')].map(describe),
     boxes: [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-draft]')].map((b) => ({
       box: describe(b),

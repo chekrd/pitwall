@@ -40,9 +40,8 @@ let state: State = { home: '', roots: [], repos: [], folders: [], sessions: [], 
 const subscribers = new Set<() => void>();
 let order = '';
 
-// On the queue the tiles' reorder would cut a card's own transition short, and under an open task or a dialog it has
-// nothing to show.
-const reorderShows = () => document.documentElement.dataset.view !== 'queue' && !document.querySelector('dialog[open], #task-sheet');
+// Under an open task or a dialog the tiles' reorder has nothing to show.
+const reorderShows = () => !document.querySelector('dialog[open], #task-sheet');
 
 // The state changes at once and only the redraw waits for a reorder's transition, so a set made meanwhile builds on
 // the newest state and is not undone when the transition applies.
@@ -107,7 +106,7 @@ export function unpatch(id: string) {
 let wake: ReturnType<typeof setTimeout> | undefined;
 
 // A menu answered from the board turns from working to Needs focus by the clock alone, with no snapshot to say so;
-// its send counts as taken then, so the card comes back.
+// its send counts as taken then, so the task shows as waiting again.
 function wakeAtNextChange() {
   clearTimeout(wake);
   const now = Date.now();

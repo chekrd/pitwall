@@ -98,13 +98,3 @@ export const DECLINED = 'Declined the question';
 
 export const menuAnswerText = (menu: Menu, answers: MenuAnswer[]) =>
   menu.questions.map((q, i) => `${q.header || q.question}: ${answers[i]?.other?.replace(/\s+/g, ' ').trim() || [...new Set(answers[i]?.labels)].join(', ')}`).join(' · ');
-
-const PROMPT_LAG_MS = 30_000;
-
-// An answer to a question starts the next turn, whose prompt reaches the transcript a moment later; a menu
-// answer continues the current turn. A turn started later from the terminal is not about this answer.
-export function answeredLine(s: Session) {
-  const a = s.answered;
-  if (!a) return null;
-  return (s.activity?.since ?? a.at) <= a.at + PROMPT_LAG_MS ? a.text : null;
-}

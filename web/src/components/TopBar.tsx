@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useQueue } from '../queue.ts';
-import type { Route } from '../router.ts';
+import { openSheet } from '../router.ts';
 import { reloadNow, useStore, type Link } from '../store.ts';
 import type { Session } from '../types.ts';
-import { clock } from '../util.ts';
+import { clock, locate, sessionLabel } from '../util.ts';
 import { openBugReport } from './BugReportDialog.tsx';
 import { Icon } from './Icon.tsx';
-import { Meter } from './Meter.tsx';
 import { openNewTask } from './NewTaskForm.tsx';
 import { pauseAll } from './RestartBanner.tsx';
 import { ThemeMenu } from './ThemeMenu.tsx';
@@ -16,7 +14,6 @@ import { openRepos } from './WorkspaceDialog.tsx';
 import { explain, SENDS } from './explain.ts';
 
 const LINK_TEXT: Record<Link, string> = { connecting: 'Connecting…', live: 'Live', reconnecting: 'Reconnecting…' };
-
 
 function ConnectionPill({ link }: { link: Link }) {
   const [lostAt, setLostAt] = useState(0);
@@ -32,10 +29,25 @@ function ConnectionPill({ link }: { link: Link }) {
   );
 }
 
-export function TopBar({ route, deck }: { route: Route; deck: readonly Session[] }) {
+export interface Next {
+  next: Session | null;
+  count: number;
+}
+
+// The first task in the Wall's order that waits for a decision, but the one open now; absent when none waits.
+export function NextDecision({ next: { next, count }, className }: { next: Next; className?: string }) {
+  const { repos } = useStore();
+  if (!next) return null;
+  const name = sessionLabel(next, locate(repos, next).branch);
+  return (
+    <button type="button" className={className} data-next-decision data-ux="next decision" data-explain={`Open ${name}, the next task that waits for a decision (D)`} onClick={() => openSheet(next.id, 'overview')}>
+      Next decision <span className={styles.count}>{count}</span> <kbd>D</kbd>
+    </button>
+  );
+}
+
+export function TopBar({ next }: { next: Next }) {
   const { repos, link, newVersion, pause } = useStore();
-  const { shown } = useQueue();
-  const onQueue = route.view === 'queue';
   return (
     <header className={styles.bar}>
       <div className={styles.start}>
@@ -48,7 +60,7 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
         )}
       </div>
       <div className={styles.middle}>
-        {deck.length > 0 && <Meter deck={deck} repos={repos} current={onQueue ? shown : null} />}
+        <NextDecision next={next} className={styles.next} />
       </div>
       <div className={styles.usage}><Usage /></div>
       <div className={styles.theme}><ThemeMenu /></div>
@@ -82,16 +94,6 @@ export function TopBar({ route, deck }: { route: Route; deck: readonly Session[]
           <Icon name="folder" size={17} />
           <span className={styles.label}>Repos</span>
         </button>
-        <nav className={styles.toggle} aria-label="View">
-          <a href="/" aria-current={onQueue ? 'page' : undefined} aria-label="Queue">
-            <Icon name="queue" />
-            <span className={styles.label}>Queue</span>
-          </a>
-          <a href="/wall" aria-current={onQueue ? undefined : 'page'} aria-label="Wall">
-            <Icon name="wall" />
-            <span className={styles.label}>Wall</span>
-          </a>
-        </nav>
         <button type="button" className={styles.newTask} disabled={!repos.length} aria-label="New task" onClick={() => openNewTask()}>
           <Icon name="plus" />
           <span className={styles.label}>New task</span>

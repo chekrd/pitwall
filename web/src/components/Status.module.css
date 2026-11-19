@@ -1,5 +1,5 @@
 @layer components {
-  .pr, .dot {
+  .pr {
     --dot: var(--prompt);
     &[data-state="PASSED"] { --dot: var(--ok); }
     &[data-state="FAILED"], &[data-state="ERROR"] { --dot: var(--danger); }
@@ -28,14 +28,5 @@
     &[data-state="FAILED"], &[data-state="ERROR"] { border-color: var(--danger); color: var(--danger); }
     &[data-label="fixing"] { border-color: var(--line-2); color: var(--text-2); }
     &[href]:hover { background: var(--hover); }
-  }
-
-  .dot {
-    flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--dot);
-    &[data-watching]:not([data-state="PASSED"]) { animation: breathe 1.4s ease-in-out infinite; }
   }
 }

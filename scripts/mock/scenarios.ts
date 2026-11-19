@@ -210,7 +210,6 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   norepos: () => ({ roots: [], repos: [], sessions: [], usage: null, flags: {} }),
 
   volume: (now) => crowd(now, { decide: 14, prompt: 3, idle: 7, working: 16, exited: 3 }),
-  // The most items the meter still draws one segment each for.
   volume20: (now) => crowd(now, { decide: 12, prompt: 3, idle: 5, working: 16, exited: 3 }),
   volume45: (now) => crowd(now, { decide: 30, prompt: 5, idle: 10, working: 16, exited: 0 }),
 };

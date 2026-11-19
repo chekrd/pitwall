@@ -1,27 +1,27 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import { card, frame, meterIn, openFromWall, openSheetOf, settled, sheetOpen, tiles, wholeFile, withoutBoard, type Check } from '../helpers.ts';
+import { frame, openFromWall, openSheetOf, settled, sheetOpen, tiles, wholeFile, withoutBoard, type Check } from '../helpers.ts';
 
 export const wall: Check[] = [
   {
-    name: 'P4.1 the Wall: its title and the queue\'s counts, Back to the queue Esc; tiles in the order they need you, the longest waiting first in each kind, with repo · branch and no line counts; Archived (1) collapsed; working clocks tick; Esc goes to the queue and V back; a menu answered from the board that stays open turns Needs focus by the clock alone',
+    name: 'P4.1 the Wall at /: its title and what waits for you; tiles in the order they need you, the longest waiting first in each kind, with repo · branch and no line counts; Archived (1) collapsed; working clocks tick; a menu answered from the board that stays open turns Needs focus by the clock alone',
     async run({ page, mock, shot }) {
       const wall = () => ({
         title: document.querySelector('main h1')?.textContent,
         sub: document.querySelector('main h1 + p')?.textContent,
-        back: document.querySelector('main a[href="/"]')?.textContent,
+        back: !!document.querySelector('main a[href="/"]'),
         order: [...document.querySelectorAll<HTMLElement>('[data-tile]')].filter((t) => !t.closest('details')).map((t) => `${t.dataset.session} ${t.dataset.attention}`),
         archived: document.querySelector('main details > summary')?.textContent,
         open: document.querySelector<HTMLDetailsElement>('main details')?.open,
         texts: Object.fromEntries([...document.querySelectorAll<HTMLElement>('[data-tile]')].map((t) => [t.dataset.session, t.innerText])) as Record<string, string>,
       });
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       const shown = await page.eval(wall);
       assert.deepEqual({ ...shown, texts: undefined }, {
         title: 'Every agent, in the order they need you',
-        sub: '3 decisions · 1 terminal prompt · 2 finished turns wait in the queue.',
-        back: 'Back to the queue Esc',
+        sub: '3 decisions · 1 terminal prompt · 2 finished turns wait for you.',
+        back: false,
         order: [
           's-cart decide', 's-hooks decide', 's-group decide', 's-astro focus', 's-reviews idle', 's-anchors idle',
           's-invoice working', 's-search working', 's-thumbs working', 's-split exited', 's-stripe exited',
@@ -41,11 +41,6 @@ export const wall: Check[] = [
       await until('the working clock to tick', async () => (await page.eval(clock)) !== first);
       await shot('wall');
 
-      await page.key('Escape');
-      await page.until('the queue', () => location.pathname === '/' && document.documentElement.dataset.view === 'queue' && !!document.querySelector('[data-card]'));
-      await page.key('v');
-      await page.until('the Wall again', () => location.pathname === '/wall' && document.documentElement.dataset.view === 'wall');
-
       const hooks = () => [document.querySelector('[data-tile][data-session="s-hooks"]')?.getAttribute('data-attention'), document.title];
       await mock.post('/mock/patch', { id: 's-hooks', patch: { answered: { key: 'm:toolu_01Hooks', text: 'Backoff: Exponential, 5 tries', at: Date.now() - 8000 } } });
       await page.until('the answered menu to count as working', () => document.querySelector('[data-tile][data-session="s-hooks"]')?.getAttribute('data-attention') === 'working');
@@ -55,11 +50,11 @@ export const wall: Check[] = [
     },
   },
   {
-    name: 'P4.2 the top bar: Live, and a tab title without a count; six meter segments whose counts are only in the aria-label, then the usage limits, Repos, the view toggle and New task; before the first snapshot the pill reads Connecting… and every view says so',
+    name: 'P4.2 the top bar: Live, and a tab title without a count; Next decision with the count of decisions, then the usage limits, Repos and New task, and no other count; before the first snapshot the pill reads Connecting… and the Wall and a task page say so',
     expectedErrors: [/WebSocket/],
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
-      await page.until('the card', card);
+      await page.until('the tiles', tiles);
       const bar = await page.eval(() => {
         const left = (s: string) => document.querySelector(s)?.getBoundingClientRect().left ?? NaN;
         const right = (s: string) => document.querySelector(s)?.getBoundingClientRect().right ?? NaN;
@@ -67,21 +62,20 @@ export const wall: Check[] = [
         return {
           link: [pill?.dataset.link, pill?.innerText.trim()],
           title: document.title,
-          segments: document.querySelectorAll('[data-segment]').length,
-          label: document.querySelector('[data-meter] [role="group"]')?.getAttribute('aria-label'),
-          // The usage limits are shares of the plan, not counts of cards.
+          next: document.querySelector<HTMLElement>('header [data-next-decision]')?.innerText.replace(/\s+/g, ' ').trim(),
+          views: !!document.querySelector('nav[aria-label="View"]'),
+          // The usage limits are shares of the plan, and Next decision counts the decisions; nothing else counts.
           shown: [...document.querySelector<HTMLElement>('header')!.querySelectorAll<HTMLElement>(':scope > div')].map((d) => {
             const c = d.cloneNode(true) as HTMLElement;
             c.querySelector('[data-usage]')?.remove();
+            c.querySelector('[data-next-decision]')?.remove();
             return c.textContent;
           }).join(' '),
-          order: right('[data-meter] [role="group"]') <= left('[data-usage]') && right('[data-usage]') <= left('[data-repos]') && left('[data-repos]') < left('nav[aria-label="View"]') &&
-            left('nav[aria-label="View"]') < left('button[aria-label="New task"]'),
+          order: right('[data-link]') <= left('[data-next-decision]') && right('[data-next-decision]') <= left('[data-usage]') && right('[data-usage]') <= left('[data-repos]') &&
+            left('[data-repos]') < left('button[aria-label="New task"]'),
         };
       });
-      assert.deepEqual({ ...bar, shown: undefined }, {
-        link: ['live', 'Live'], title: 'Pitwall', segments: 6, label: '3 decisions · 1 terminal prompt · 2 finished turns', shown: undefined, order: true,
-      });
+      assert.deepEqual({ ...bar, shown: undefined }, { link: ['live', 'Live'], title: 'Pitwall', next: 'Next decision 3 D', views: false, shown: undefined, order: true });
       assert.doesNotMatch(bar.shown ?? '', /\d/, 'the top bar shows a count');
       await shot('top-bar');
 
@@ -99,59 +93,53 @@ export const wall: Check[] = [
     },
   },
   {
-    name: 'P4.3 the meter at volume: 24 and 45 cards keep it clear of the wordmark and Repos at 1440 and 1100 px, 45 draw bars of 30, 5 and 10; 20 cards at 1100 px keep every segment 6 px or wider; counts stay in the aria-label, and an arrival shows the Just-in chip, short where the slot is narrow',
+    name: 'P4.3 the top bar at volume: 24, 45 and 20 waiting tasks keep Next decision whole and clear of the wordmark, the usage limits and Repos at 1440 and 1100 px, counting 14, 30 and 12 decisions; the Wall says what waits; an arrival counts at once',
     scenario: 'volume',
-    async run({ page, mock, look, shot }) {
-      const load = async (scenario: string, ready: (inFrame: boolean) => boolean) => {
+    async run({ page, mock, shot }) {
+      const barIn = (inFrame: boolean) => {
+        const doc = inFrame ? (document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument! : document;
+        const box = (el: Element | null) => el?.getBoundingClientRect() ?? null;
+        const meets = (a: DOMRect | null, b: DOMRect | null) => !!a && !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        const next = doc.querySelector<HTMLElement>('header [data-next-decision]');
+        const at = box(next);
+        return {
+          text: next?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+          overlap: ['[data-wordmark]', '[data-usage]', '[data-repos]'].filter((s) => meets(at, box(doc.querySelector(s)))),
+          cut: !!next && next.scrollWidth > next.clientWidth,
+          sub: doc.querySelector('main h1 + p')?.textContent ?? null,
+        };
+      };
+      const load = async (scenario: string) => {
         await mock.post(`/mock/scenario/${scenario}`);
         await page.goto(`${mock.url}/`);
-        await page.until(`${scenario} in the meter`, ready, false);
+        await page.until(`${scenario} on the Wall`, tiles);
         await page.eval(frame, '/', 1100, 900);
-        await page.until(`${scenario} in the meter at 1100 px`, ready, true);
-        return [await page.eval(meterIn, false), await page.eval(meterIn, true)];
+        await page.until(`${scenario} at 1100 px`, () => !!(document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument?.querySelector('[data-tile]'));
+        return [await page.eval(barIn, false), await page.eval(barIn, true)];
       };
-      const bars = (inFrame: boolean) => {
-        const doc = inFrame ? (document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument : document;
-        return doc?.querySelectorAll('[data-bar]').length === 3;
-      };
-      const twenty = (inFrame: boolean) => {
-        const doc = inFrame ? (document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument : document;
-        return doc?.querySelectorAll('[data-segment]').length === 20;
-      };
-
-      for (const [wide, at1100] of [await load('volume', bars)]) {
-        for (const m of [wide, at1100]) {
-          assert.deepEqual([m.overlap, m.label, m.shown, m.justIn], [false, '14 decisions · 3 terminal prompts · 7 finished turns', '14\n3\n7', []]);
+      for (const [scenario, label, n] of [
+        ['volume', '14 decisions · 3 terminal prompts · 7 finished turns', 14], ['volume45', '30 decisions · 5 terminal prompts · 10 finished turns', 30],
+        ['volume20', '12 decisions · 3 terminal prompts · 5 finished turns', 12],
+      ] as const) {
+        for (const b of await load(scenario)) {
+          assert.deepEqual(b, { text: `Next decision ${n} D`, overlap: [], cut: false, sub: `${label} wait for you.` }, scenario);
         }
+        if (scenario === 'volume45') await shot('top-bar-volume45-1100');
+        await page.eval(() => document.getElementById('e2e-frame')?.remove());
       }
-      await shot('meter-volume-1100');
-      await page.eval(() => document.getElementById('e2e-frame')?.remove());
-      await shot('meter-volume');
-
-      for (const m of await load('volume45', bars)) {
-        assert.deepEqual([m.overlap, m.bars, m.label], [false, ['30', '5', '10'], '30 decisions · 5 terminal prompts · 10 finished turns']);
-      }
-      await page.eval(() => document.getElementById('e2e-frame')?.remove());
-      await shot('meter-volume45');
-
-      const [wide, narrow] = await load('volume20', twenty);
-      for (const m of [wide, narrow]) {
-        assert.deepEqual([m.overlap, m.label, m.shown, m.justIn], [false, '12 decisions · 3 terminal prompts · 5 finished turns', '', []]);
-        assert.ok(m.segments.every((w) => w >= 6), `segments ${m.segments.join(', ')}`);
-      }
+      await page.eval(frame, '/', 1100, 900);
+      await page.until('the frame', () => !!(document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument?.querySelector('[data-tile]'));
       await mock.post('/mock/add', { template: 'ask', id: 's-new' });
-      await page.until('the Just-in chip at 1100 px', () =>
-        !!(document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument?.querySelector('[data-justin]'));
-      assert.deepEqual((await page.eval(meterIn, true)).justIn, ['Just in']);
-      assert.deepEqual((await page.eval(meterIn, false)).justIn, [look.width > 1100 ? 'Just in: Retire the v1 orders API' : 'Just in']);
-      await shot('meter-just-in-1100');
+      await page.until('the arrival counted at 1100 px', () =>
+        (document.getElementById('e2e-frame') as HTMLIFrameElement).contentDocument?.querySelector<HTMLElement>('header [data-next-decision]')?.innerText.replace(/\s+/g, ' ').trim() === 'Next decision 13 D');
+      assert.equal((await page.eval(barIn, false)).text, 'Next decision 13 D');
     },
   },
   {
     name: 'P4.4 a tile opens its sheet on Overview, which takes focus itself: the working banner with a 30 px clock that ticks, the composer, the latest reply with its code in colour, Facts with the repository, the worktree\'s name and its path under ~, whose Path, Branch and Session copy on a click (the path whole) and say Copied in place, the reply copies from its heading, and the Artifacts links; Esc in the composer\'s command list closes only the list',
     clock: 'fast',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.click('[data-tile][data-session="s-invoice"] p');
       await page.until('the sheet', sheetOpen);
@@ -327,7 +315,7 @@ export const wall: Check[] = [
   {
     name: 'P4.5 Diff: 2 replaces the entry; the tree resizes by key and resets on a double click, kept in localStorage; a file opens whole, J and K step, All files in the tree goes back; Esc goes back to all files, a second Esc closes the sheet and focus returns to the tile\'s name',
     async run({ page, mock, shot }) {
-      await page.goto(`${mock.url}/wall`);
+      await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await page.eval(() => document.querySelector<HTMLElement>('[data-tile][data-session="s-invoice"] a')!.focus());
       await page.key('Enter');
@@ -370,7 +358,7 @@ export const wall: Check[] = [
       await page.until('all files again', () => document.querySelectorAll('section[data-file]').length === 12);
       assert.equal(await page.eval(sheetOpen), true, 'Esc in one file closed the sheet');
       await page.key('Escape');
-      await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/wall');
+      await page.until('the sheet to close', () => !document.querySelector('#task-sheet') && location.pathname === '/');
       assert.equal(await page.eval(() => document.activeElement?.closest('[data-tile]')?.getAttribute('data-session') + ' ' + document.activeElement?.tagName), 's-invoice A');
     },
   },

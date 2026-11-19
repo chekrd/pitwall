@@ -1,25 +1,29 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type RefObject } from 'react';
 import { sessionAction } from '../api.ts';
-import { choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, typed, type Composer as Note } from '../deck.ts';
+import { choose, declining, dismissal, kindOf, menuAnswer, primary as primaryOf, typed, type Composer as Note } from '../answers.ts';
+import { openDecision } from '../../../server/decision.ts';
 import type { Request } from '../outbox.ts';
+import { nextDecision, waitingOf } from '../order.ts';
 import { roundTitle } from '../../../server/rounds.ts';
-import { queue } from '../queue.ts';
 import { useRoundAnswers } from '../rounds.ts';
-import { closeSheet, closeSheetOf, closeSheetToQueue, showTab } from '../router.ts';
-import { hold, useBusy } from '../sends.ts';
+import { closeSheet, closeSheetOf, showTab } from '../router.ts';
+import { hold, useBusy, useNotSent } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { Link, RepoView, Session } from '../types.ts';
-import { useDecision } from '../useDecision.ts';
-import { ago, attentionOf, contextUse, decisionOf, effortName, folderTaskOf, isDelivered, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
+import { guarded, signature, useDecision, useGuard, useKeyed } from '../useDecision.ts';
+import { isEditable, useFront, type Front } from '../useKeys.ts';
+import { track } from '../ux.ts';
+import { ago, attentionOf, contextUse, decisionOf, effortName, folderTaskOf, isDelivered, menuStuck, modelName, shortUrl, tilde, worktreeName } from '../util.ts';
 import { Clock } from './Clock.tsx';
 import { useCopy } from './CopyButton.tsx';
 import { Composer, readyPaths, uploading, useDraft } from './Composer.tsx';
+import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
 import { Later, LaterActions } from './Later.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
 import { MenuBody } from './MenuBody.tsx';
-import { Options } from './Options.tsx';
+import { Age } from './Parts.tsx';
 import { interruptedAs, resumePaused } from './RestartBanner.tsx';
 import { RoundBody } from './RoundBody.tsx';
 import styles from './Overview.module.css';
@@ -28,6 +32,7 @@ import { editFailedTask } from './NewTaskForm.tsx';
 import { failedToStart, STATE_LABELS, stoppedOnError } from './Status.tsx';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { FocusButton } from './SessionMenu.tsx';
+import { NextDecision } from './TopBar.tsx';
 import { explain, SENDS, TIPS } from './explain.ts';
 
 function Copy({ value, what, title, shown = value }: { value: string; what: string; title?: string; shown?: string }) {
@@ -58,95 +63,159 @@ function LinkList({ links }: { links: Link[] }) {
   );
 }
 
-// A decision answered on its task page: the same options and reply box as on its card. A send is held with its Undo as
-// from the card, and the box goes with it. `box` is off while Message Claude stays for the writing in it.
-function Queued({ session, name, box: ownBox }: { session: Session; name: string; box: boolean }) {
-  const menu = session.menu;
-  const decision = menu ? null : decisionOf(session);
-  const { key, picks, toggle, answerOwn, lone } = useDecision(session, menu);
-  const round = kindOf(session) === 'round' ? session.round : null;
+// Another task or another decision on it: what must not replace a field the reader is typing in.
+const differs = (a: Session | null, b: Session | null) => a?.id !== b?.id || (!!a && !!b && signature(a) !== signature(b));
+
+// The decision as the page shows it. While the reader types in its reply box, a new decision, or none, waits until
+// focus leaves the box, so the box stays the field they write in and Enter answers what they read.
+function useShown(live: Session | null) {
+  const [typing, setTyping] = useState(false);
+  const [shown, setShown] = useState(live);
+  const next = typing && differs(shown, live) ? shown : live;
+  if (next !== shown) setShown(next);
+  const onFocus = (e: FocusEvent) => setTyping(isEditable(e.target));
+  const onBlur = (e: FocusEvent) => {
+    const to = e.relatedTarget;
+    // Focus went to the page, or the window lost it and the field gets it back with the window.
+    if (!to) {
+      if (document.hasFocus()) setTyping(false);
+      return;
+    }
+    setTyping(e.currentTarget.contains(to) && isEditable(to));
+  };
+  return { shown: next, onFocus, onBlur };
+}
+
+const KIND_LABEL = { ask: 'Decision', menu: 'Asked in the terminal', round: 'Questions' } as const;
+
+const UPLOADING = 'An attachment is still uploading; nothing was sent.';
+
+// A decision answered on its task page: Claude's question with its details and options, a menu, or a round, with a
+// reply box. ⏎ presses the main button. A send is held with its Undo, and the reply box goes with it. `box` is off
+// while Message Claude stays for the writing in it.
+function OpenDecision({ session, name, box: ownBox, onSent }: { session: Session; name: string; box: boolean; onSent: () => void }) {
+  const kind = kindOf(session) as 'ask' | 'menu' | 'round';
+  const menu = kind === 'menu' ? session.menu : null;
+  const decision = kind === 'ask' ? decisionOf(session) : null;
+  const round = kind === 'round' ? session.round : null;
+  const { key, picks, setPicks, toggle, answerOwn, lone } = useDecision(session, menu);
   const [replies, setReplies] = useRoundAnswers(round ? key : null);
-  const roundPress = round ? primaryOf(session, { replies }) : null;
+  const [hidden, setHidden] = useKeyed(key, () => false);
   const draft = useDraft(session.id);
   const [note, setNote] = useState<string | null>(null);
+  const [focusAsk, setFocusAsk] = useState(0);
+  const guarding = useGuard(signature(session));
+  const notSent = useNotSent(session);
   const box: Note = { open: true, text: draft.text, files: readyPaths(draft), uploading: uploading(draft) };
+  const primary = primaryOf(session, { composer: box, picks: menu ? picks : undefined, replies: round ? replies : undefined });
+
+  useEffect(() => {
+    track('decision-shown', { task: session.id, decision: key ?? undefined, kind });
+  }, [session.id, key]);
+
   const send = (r: Request | null) => {
-    if (!r) return setNote('An attachment is still uploading; nothing was sent.');
+    if (!r) return setNote(UPLOADING);
     setNote(r.command ? `${r.label.split(/\s/)[0]} goes to the terminal as typed; the question stays open.` : null);
-    hold(session, r, name);
+    void hold(session, r, name);
+    if (!r.command) onSent();
+  };
+  const answer = (r: Request | null) => {
+    if (!guarded()) send(r);
+  };
+  const compose = () => setFocusAsk((n) => n + 1);
+  const pressPrimary = () => {
+    const p = primary.press;
+    if (primary.disabled || !p || guarded()) return;
+    if (!('intent' in p)) send(p);
+    else if (p.intent === 'compose') compose();
   };
   const pickInMenu = (question: number, label: string) => {
-    if (lone) send(menuAnswer(session, [{ labels: [label], other: '' }]));
-    else toggle(question, label);
+    if (!lone) return toggle(question, label);
+    if (guarded()) return;
+    const only = [{ labels: [label], other: '' }];
+    setPicks(only);
+    send(menuAnswer(session, only));
   };
-  const menuPress = menu ? primaryOf(session, { picks }) : null;
-  const submitMenu = () => {
-    if (menuPress?.press && !('intent' in menuPress.press)) send(menuPress.press);
+
+  const keys: Front = {
+    decision: { kind, details: !!decision?.context, primary: !primary.disabled && primary.press !== null, reply: ownBox && kind !== 'menu' },
+    act: (a) => {
+      if (a.type === 'primary') pressPrimary();
+      else if (a.type === 'details') setHidden(!hidden);
+      else if (a.type === 'compose') compose();
+    },
   };
-  const toCard = () => {
-    queue.jump(session.id);
-    closeSheetToQueue();
-  };
+  useFront(keys);
+
+  const composer = { focus: focusAsk, note, onSend: answer, onEscape: closeSheet };
+  const asked = openDecision(session)?.askedAt ?? session.updatedAt;
   return (
-    <section className={styles.queued} data-queued data-ux-section="decision">
-      <span className={styles.kicker}>In your queue · {menu ? 'Asked in the terminal' : round ? 'Questions' : 'Decision'}</span>
+    <section className={styles.decision} data-decision data-session={session.id} data-kind={kind} data-key={key ?? undefined} data-guarding={guarding || undefined} data-ux-section="decision">
+      <span className={styles.kicker}>
+        {KIND_LABEL[kind]}
+        <span className={styles.asked}>
+          {kind === 'ask' && session.question?.category && <> · {session.question.category}</>}
+          <Age at={asked} prefix=" · asked " />
+        </span>
+      </span>
+      {notSent && <p className={styles.notSent} data-not-sent role="alert">Not sent: {notSent}</p>}
       {decision && (
-        <>
-          <h3>{decision.problem}</h3>
-          <Options options={decision.options} onPick={(label) => send(choose(session, label, box))} />
-          {ownBox && <Composer
-            session={session}
-            decision={decision.key}
-            label="Your own answer"
-            placeholder={decision.options.length ? 'Or write your own answer, / for commands, paste or drop files…' : 'Reply, / for commands, paste or drop files…'}
-            focus={0}
-            note={note}
-            onSend={send}
-            onEscape={closeSheet}
-          />}
-        </>
+        <DecisionBody
+          session={session}
+          decision={decision}
+          hidden={hidden}
+          onDetails={() => setHidden(!hidden)}
+          onPick={(label) => answer(choose(session, label, box))}
+          composer={ownBox ? composer : null}
+        />
       )}
       {round && (
         <>
           <h3>{roundTitle(round)}</h3>
           <RoundBody session={session} round={round} answers={replies} onAnswers={setReplies} />
-          <button
-            type="button"
-            data-variant="primary"
-            data-round-send
-            disabled={roundPress?.disabled}
-            {...explain(TIPS.sendRound)}
-            onClick={() => roundPress?.press && !('intent' in roundPress.press) && send(roundPress.press)}
-          >
-            {roundPress?.label}
-          </button>
           {ownBox && <Composer
             session={session}
             decision={key}
             label="A message instead of answers"
             placeholder="Write to Claude instead of answering; the questions close with it…"
-            focus={0}
-            note={note}
-            onSend={send}
-            onEscape={closeSheet}
+            {...composer}
           />}
         </>
       )}
-      {menu && (
-        <>
-          <MenuBody menu={menu} picks={picks} onPick={pickInMenu} onOther={answerOwn} onSubmit={submitMenu} />
-          {!lone && (
-            <button type="button" data-variant="primary" disabled={menuPress?.disabled} onClick={submitMenu}>{menuPress?.label}</button>
-          )}
-        </>
-      )}
-      <div className={styles.queuedActions}>
-        {(kindOf(session) === 'ask' || round) && (
-          <button type="button" data-explain={round ? 'Clear the questions without answering them' : 'Clear the question without answering it'} onClick={() => send(dismissal(session))}>Dismiss</button>
+      {menu && <MenuBody menu={menu} picks={picks} onPick={pickInMenu} onOther={answerOwn} onSubmit={pressPrimary} />}
+      <div className={styles.decisionActions}>
+        {!lone && (
+          <button
+            type="button"
+            className={styles.primary}
+            data-primary
+            data-guarded={guarding || undefined}
+            disabled={primary.disabled}
+            {...(round ? explain(TIPS.sendRound) : { 'data-explain': menu ? "Picks your answers in Claude's terminal menu" : undefined })}
+            onClick={pressPrimary}
+          >
+            <span className={styles.primaryLabel}>{primary.label}</span>
+            <kbd>↵</kbd>
+          </button>
         )}
-        {menu && <button type="button" {...explain(TIPS.decline)} onClick={() => send(declining(session))}>Decline</button>}
-        <button type="button" data-explain="Its card in the queue" onClick={toCard}>Open its card</button>
+        {kind !== 'menu' && (
+          <button type="button" data-explain={round ? 'Clear the questions without answering them' : 'Clear the question without answering it'} onClick={() => answer(dismissal(session))}>Dismiss</button>
+        )}
+        {menu && <button type="button" {...explain(TIPS.decline)} onClick={() => answer(declining(session))}>Decline</button>}
       </div>
+    </section>
+  );
+}
+
+// After a decision answered here, the way on to the next task that waits for one.
+function NextAfter({ session }: { session: Session }) {
+  const { sessions } = useStore();
+  const next = nextDecision(waitingOf(sessions, useBusy()), session.id);
+  if (!next.next) return null;
+  return (
+    <section className={styles.after} data-next-after data-ux-section="next decision">
+      <p>{next.count === 1 ? 'One more task waits for a decision.' : `${next.count} more tasks wait for a decision.`}</p>
+      <NextDecision next={next} className={styles.nextButton} />
     </section>
   );
 }
@@ -271,7 +340,7 @@ function DecisionBelow({ scroller, what }: { scroller: RefObject<HTMLDivElement 
   const [below, setBelow] = useState(false);
   useEffect(() => {
     const root = scroller.current;
-    const target = root?.querySelector('[data-queued]');
+    const target = root?.querySelector('[data-decision]');
     if (!root || !target) return;
     const seen = new IntersectionObserver(([e]) => setBelow(!e.isIntersecting && e.boundingClientRect.top > (e.rootBounds?.bottom ?? 0)), { root });
     seen.observe(target);
@@ -280,7 +349,7 @@ function DecisionBelow({ scroller, what }: { scroller: RefObject<HTMLDivElement 
   if (!below) return null;
   return (
     <div className={styles.below}>
-      <button type="button" data-decision-below data-ux="decision below" onClick={() => scroller.current?.querySelector('[data-queued]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+      <button type="button" data-decision-below data-ux="decision below" onClick={() => scroller.current?.querySelector('[data-decision]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
         {what} waiting below
         <Icon name="chevron-down" size={15} />
       </button>
@@ -329,7 +398,15 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const cited = links.filter((l) => !isDelivered(l.url));
   const scroller = useRef<HTMLDivElement>(null);
   const deciding = !archived && attention === 'decide';
-  const queued = deciding && !busy.has(session.id);
+  const { shown, onFocus, onBlur } = useShown(deciding && !busy.has(session.id) ? session : null);
+  // After an answer sent from this page, the way on to the next decision shows until the task waits on one again.
+  const [answered, setAnswered] = useState(false);
+  if (answered && shown) setAnswered(false);
+  const sent = () => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest('[data-decision]')) scroller.current?.closest<HTMLElement>('#task-sheet')?.focus({ preventScroll: true });
+    setAnswered(true);
+  };
   const reply = session.lastMessage && (
     <LatestReply key={session.lastMessage} text={session.lastMessage} prompt={session.lastPrompt} previous={waits}>
       <YourMessage session={session} send={sending} inside />
@@ -337,7 +414,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   );
   return (
     <div className={styles.scroll} ref={scroller}>
-      {queued && <DecisionBelow scroller={scroller} what={session.menu ? 'Question' : kindOf(session) === 'round' ? 'Questions' : 'Decision'} />}
+      {shown && <DecisionBelow scroller={scroller} what={shown.menu ? 'Question' : kindOf(shown) === 'round' ? 'Questions' : 'Decision'} />}
       <div className={styles.grid}>
         <div className={styles.main}>
           {clearing && (
@@ -369,15 +446,20 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
               {activity && <span className={styles.clock} data-explain="Time since your last message"><Clock since={activity.since} /></span>}
             </section>
           )}
-          {deciding && reply}
-          {queued && <Queued session={session} name={name} box={!writing} />}
+          {(deciding || shown) && reply}
+          {shown && (
+            <div className={styles.decisionSlot} onFocus={onFocus} onBlur={onBlur}>
+              <OpenDecision session={shown} name={name} box={!writing} onSent={sent} />
+            </div>
+          )}
+          {answered && !shown && <NextAfter session={session} />}
           {!archived && attention === 'focus' && (
-            <section className={styles.blocked} data-ux-section="terminal prompt">
-              <p>Claude is showing <strong>{session.waitingFor ?? 'a prompt'}</strong> in its terminal. Answer it there.</p>
+            <section className={styles.blocked} data-prompt data-ux-section="terminal prompt">
+              <p>{menuStuck(session) ? <>Claude still shows <strong>its menu</strong> in the terminal.</> : <>Claude is showing <strong>{session.waitingFor ?? 'a prompt'}</strong> in its terminal.</>} Answer it there.</p>
               <FocusButton session={session} />
             </section>
           )}
-          {!deciding && reply}
+          {!deciding && !shown && reply}
           {!session.lastMessage && <YourMessage session={session} send={sending} />}
           {ended && !writing && (
             <section className={styles.blocked} data-ended data-ux-section="ended">
