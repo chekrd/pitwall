@@ -162,10 +162,10 @@ export function useFront(value: Front | null) {
 
 // The board's keys: the next decision, New task, Bug report, the Keys dialog, Undo and the task's tabs and files here,
 // and the decision's keys through the front Overview sets.
-export function useBoardKeys({ route, next, repos, artifacts }: { route: Route; next: string | null; repos: boolean; artifacts: boolean }) {
+export function useBoardKeys({ route, next, repos, artifacts, documents }: { route: Route; next: string | null; repos: boolean; artifacts: boolean; documents: boolean }) {
   useKeys(
     () => ({
-      sheet: route.sheet ? { tab: route.sheet.tab, artifacts, narrowed: route.sheet.tab === 'diff' && diffNarrowed() } : null,
+      sheet: route.sheet ? { tab: route.sheet.tab, artifacts, documents, narrowed: route.sheet.tab === 'diff' && diffNarrowed() } : null,
       decision: route.sheet ? front?.decision ?? null : null,
       next: next !== null,
       guarded: guarded(),

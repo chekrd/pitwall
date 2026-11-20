@@ -37,6 +37,10 @@ declare global {
   }
 
   interface Element {
-    setHTML(html: string, options?: { sanitizer?: unknown }): void;
+    setHTML(html: string, options?: { sanitizer?: Sanitizer }): void;
+  }
+
+  class Sanitizer {
+    allowElement(element: { name: string; attributes?: string[] }): void;
   }
 }

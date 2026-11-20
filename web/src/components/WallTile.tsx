@@ -11,6 +11,7 @@ import { ClearButton, SessionMenu } from './SessionMenu.tsx';
 import { BranchMark } from './Parts.tsx';
 import { StateMark } from './StateMark.tsx';
 import { ERROR_LINES, failedToStart, hintOf, labelOf, PrChips, stoppedOnError } from './Status.tsx';
+import { PhaseChip } from './Workflow.tsx';
 import styles from './WallTile.module.css';
 
 function textOf(s: Session, attention: Attention) {
@@ -81,6 +82,7 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
       {!archived && (
         <footer className={styles.foot}>
           <span className={styles.where}>{place} · {branch}</span>
+          {session.workflow && <PhaseChip workflow={session.workflow} />}
           <PrChips prs={session.prs} status={session.status} />
         </footer>
       )}

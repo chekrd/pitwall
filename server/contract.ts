@@ -5,6 +5,7 @@ import type { Command } from './commands.ts';
 import type { ConversationLog } from './conversations.ts';
 import type { FullDiff, Upstream } from './git.ts';
 import type { pauser } from './pause.ts';
+import type { TaskFolder } from './rpi.ts';
 import type { WorktreeLoss } from './removal.ts';
 import type { Run, Schedule, TaskRequest } from './schedule.ts';
 import type { modelChoices } from './tasks.ts';
@@ -17,21 +18,22 @@ export type { Snapshot, State };
 const key = z.string().nullable().optional();
 const none = z.strictObject({});
 const files = z.array(z.string()).optional();
+const workflow = z.enum(['rpi']).optional();
 
 // What New task posts to start a task now; a schedule keeps the same with every field filled in.
 const repoTask = z.strictObject({
   repoId: z.number().int(), name: z.string(), branch: z.string().optional(), path: z.string().optional(), prompt: z.string().optional(),
-  files, existingBranch: z.boolean().optional(), model: z.string().optional(), effort: z.string().optional(),
+  files, existingBranch: z.boolean().optional(), model: z.string().optional(), effort: z.string().optional(), workflow,
 });
 const folderTask = z.strictObject({
-  folder: z.string(), name: z.string(), prompt: z.string().optional(), files, model: z.string().optional(), effort: z.string().optional(),
+  folder: z.string(), name: z.string(), prompt: z.string().optional(), files, model: z.string().optional(), effort: z.string().optional(), workflow,
 });
 const scheduledTask = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('repo'), repoId: z.number().int(), existingBranch: z.boolean(), branch: z.string(), path: z.string(), prompt: z.string(), files,
-    model: z.string(), effort: z.string(),
+    model: z.string(), effort: z.string(), workflow,
   }),
-  z.strictObject({ kind: z.literal('folder'), folder: z.string(), prompt: z.string(), files, model: z.string(), effort: z.string() }),
+  z.strictObject({ kind: z.literal('folder'), folder: z.string(), prompt: z.string(), files, model: z.string(), effort: z.string(), workflow }),
 ]) satisfies z.ZodType<TaskRequest>;
 
 const when = z.union([z.strictObject({ at: z.number() }), z.strictObject({ time: z.string(), days: z.array(z.number()) })]);
@@ -141,6 +143,7 @@ export interface Responses {
   'POST /api/sessions': { id: string };
   'POST /api/shell': void;
   'GET /api/sessions/:id/conversation': ConversationLog[];
+  'GET /api/sessions/:id/documents': TaskFolder[];
   'GET /api/sessions/:id/delete-worktree': WorktreeLoss;
   'POST /api/restart/resume': Resumed;
   'POST /api/restart/dismiss': void;

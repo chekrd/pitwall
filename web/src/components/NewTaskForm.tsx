@@ -12,6 +12,7 @@ import { toast } from './Toasts.tsx';
 import { effortName, tilde, untilde } from '../util.ts';
 import { ModelPicker, modelOptionsOf, useModelChoices } from './ModelPicker.tsx';
 import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
+import { RPI_DIR, taskDirName } from '../../../server/rpi.ts';
 import { Icon } from './Icon.tsx';
 import styles from './NewTaskForm.module.css';
 
@@ -26,6 +27,8 @@ interface Fields {
   existing: boolean;
   model: string;
   effort: string;
+  // RPI starts Claude on HumanLayer's /rpi with the prompt, which writes its documents into the task's .pitwall folder.
+  workflow: 'none' | 'rpi';
   // The prompt, model and effort, folded away by default since a task usually starts without them.
   more: boolean;
   // Now, or a schedule: once at `at` (a datetime-local value), or at `time` on `days` (0 is Sunday).
@@ -46,8 +49,8 @@ const DIALOG = 'new-task';
 const STORED = 'pitwall:new-task';
 const CHOICES = 'pitwall:new-task-choices';
 const WHEN = { start: 'now', at: '', time: '09:00', days: [1, 2, 3, 4, 5] } as const satisfies Partial<Fields>;
-const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: '', effort: '', more: false, ...WHEN, days: [...WHEN.days] };
-const choicesOf = ({ repoId, folder, existing, model, effort, more }: Fields) => ({ repoId, folder, existing, model, effort, more });
+const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: '', effort: '', workflow: 'none', more: false, ...WHEN, days: [...WHEN.days] };
+const choicesOf = ({ repoId, folder, existing, model, effort, workflow, more }: Fields) => ({ repoId, folder, existing, model, effort, workflow, more });
 
 const NAME = /^[A-Za-z0-9._/-]+$/;
 // Monday first.
@@ -146,7 +149,7 @@ function clearAttached() {
   editDraft(ATTACHED, () => ({ text: '', files: [] }));
 }
 
-export function openNewTask(preset?: { repoId: number; name: string; prompt: string; branch?: string; path?: string; model?: string; effort?: string }) {
+export function openNewTask(preset?: { repoId: number; name: string; prompt: string; branch?: string; path?: string; model?: string; effort?: string; workflow?: Fields['workflow'] }) {
   const dialog = document.getElementById(DIALOG) as HTMLDialogElement | null;
   if (!dialog) return;
   if (preset) edit({ folder: null, existing: false, branch: '', path: '', ...preset, more: fields.more || !!preset.branch || !!preset.path });
@@ -160,8 +163,8 @@ export function openNewTask(preset?: { repoId: number; name: string; prompt: str
 
 // A task that failed to start goes back to the form as it was sent, its tile making way.
 export function editFailedTask(session: Session) {
-  const { files, ...request } = session.starting!.request;
-  openNewTask(request);
+  const { files, workflow, ...request } = session.starting!.request;
+  openNewTask({ ...request, workflow: workflow ?? 'none' });
   clearAttached();
   editDraft(ATTACHED, (d) => ({ ...d, files: files.map((path) => ({ id: crypto.randomUUID(), name: path.split('/').at(-1)!, preview: null, path, error: null })) }));
 }
@@ -426,13 +429,14 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
     const files = readyPaths(draftOf(ATTACHED));
     const chose = {
       mode: pickedFolder ? 'folder' : now.existing ? 'existing-branch' : 'worktree', model: !!now.model, effort: !!now.effort,
-      branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length, files: files.length,
+      branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length, files: files.length, workflow: now.workflow,
     };
+    const workflow = now.workflow === 'rpi' ? { workflow: 'rpi' as const } : {};
     try {
       if (now.start !== 'now') {
         const task = pickedFolder
-          ? { kind: 'folder' as const, folder: pickedFolder.path, prompt: now.prompt, files, model: now.model, effort: now.effort }
-          : { kind: 'repo' as const, repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model: now.model, effort: now.effort };
+          ? { kind: 'folder' as const, folder: pickedFolder.path, prompt: now.prompt, files, model: now.model, effort: now.effort, ...workflow }
+          : { kind: 'repo' as const, repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model: now.model, effort: now.effort, ...workflow };
         const schedule = await api('POST', '/api/schedules', { name: now.existing && !pickedFolder ? '' : now.name.trim(), task, when: whenOf(now)! });
         edit({ ...EMPTY, ...choicesOf(now), repoId: pickedFolder ? now.repoId : repo.id, branch: now.existing && !pickedFolder ? defaultBranch(repo) : '' });
         clearAttached();
@@ -443,7 +447,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       }
       if (pickedFolder) {
         const result = await api('POST', '/api/folder-tasks', {
-          folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, files, model: now.model, effort: now.effort,
+          folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, files, model: now.model, effort: now.effort, ...workflow,
         });
         edit({ ...EMPTY, ...choicesOf(now) });
         clearAttached();
@@ -462,6 +466,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         existingBranch: now.existing,
         model: now.model,
         effort: now.effort,
+        ...workflow,
       });
       edit({ ...EMPTY, ...choicesOf(now), repoId: repo.id, branch: now.existing ? defaultBranch(repo) : '' });
       clearAttached();
@@ -487,7 +492,24 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
-  const chosen = [when && describeWhen(when), f.model && modelOptionsOf(choices).find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+  const rpi = f.workflow === 'rpi';
+  const rpiDir = `${RPI_DIR}/${taskDirName(existing ? branch : pickedFolder ? name : branch || name, name)}`;
+  const chosen = [rpi && 'RPI', when && describeWhen(when), f.model && modelOptionsOf(choices).find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+
+  const workflowControl = (
+    <div className={styles.when} data-workflow>
+      <span className={styles.caption}>Workflow</span>
+      <fieldset className={styles.segments}>
+        <legend>Workflow</legend>
+        {(['none', 'rpi'] as const).map((w) => (
+          <label key={w} data-explain={w === 'rpi' ? "HumanLayer's rpi: research, then design and an outline as documents you review, then the implementation" : 'Claude starts on the prompt as it is'}>
+            <input type="radio" name="workflow" checked={f.workflow === w} onChange={() => edit({ workflow: w })} />
+            {w === 'rpi' ? 'RPI' : 'None'}
+          </label>
+        ))}
+      </fieldset>
+    </div>
+  );
 
   const modelControl = <ModelPicker choices={choices} model={f.model} effort={f.effort} onChange={edit} />;
 
@@ -613,13 +635,22 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
                 </label>
                 {startControl}
               </div>
-              <div className={styles.options}>{modelControl}</div>
+              <div className={styles.options}>
+                {workflowControl}
+                {modelControl}
+              </div>
             </>
           ) : (
             <div className={styles.options}>
               {startControl}
+              {workflowControl}
               {modelControl}
             </div>
+          )}
+          {rpi && (
+            <p className={styles.hint} data-workflow-hint>
+              Starts Claude on <code>/rpi</code> with the prompt; its documents go to <code>{rpiDir}</code>{pickedFolder ? ' in the task folder' : ', which git is told to ignore'}.
+            </p>
           )}
           {scheduling && (
             <p className={styles.hint} data-when-hint>

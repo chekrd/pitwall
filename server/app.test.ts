@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -142,7 +142,7 @@ test('the server serves every route of the contract, under its method and path',
     'POST /api/rescan': true, 'PATCH /api/repos/:id': true, 'DELETE /api/repos/:id': true, 'GET /api/repos/:id/branches': true,
     'GET /api/repos/:id/models': true, 'GET /api/folders/models': true, 'POST /api/folder-tasks': true, 'POST /api/worktrees': true,
     'DELETE /api/worktrees': true, 'POST /api/schedules': true, 'PATCH /api/schedules/:id': true, 'DELETE /api/schedules/:id': true,
-    'POST /api/schedules/:id/run': true, 'POST /api/sessions': true, 'POST /api/shell': true, 'GET /api/sessions/:id/conversation': true,
+    'POST /api/schedules/:id/run': true, 'POST /api/sessions': true, 'POST /api/shell': true, 'GET /api/sessions/:id/conversation': true, 'GET /api/sessions/:id/documents': true,
     'GET /api/sessions/:id/delete-worktree': true, 'POST /api/restart/resume': true, 'POST /api/restart/dismiss': true,
     'POST /api/pause': true, 'POST /api/pause/now': true, 'POST /api/pause/resume': true, 'POST /api/pause/dismiss': true,
     'POST /api/terminal-notices/:id/dismiss': true,
@@ -195,4 +195,30 @@ test('every open socket gets the same snapshot on a change, and a closed one no 
   } finally {
     server.close();
   }
+});
+
+test("a task's documents are listed, and its files served for an opaque origin, only from inside .pitwall/artifacts", async () => {
+  const worktree = await realpath(await mkdtemp(join(tmpdir(), 'pitwall-app-docs-')));
+  const task = join(worktree, '.pitwall', 'artifacts', 'retries');
+  await mkdir(task, { recursive: true });
+  await writeFile(join(task, '01-research-questions-retries.md'), '---\ntype: research-questions\nrepos: []\n---\n# Research Questions: Retries\n');
+  await writeFile(join(task, 'mockup-attempts.html'), '<p>attempts</p>');
+  await writeFile(join(worktree, 'secret.md'), 'outside');
+  const id = `app-test-${process.pid}-${n++}`;
+  sessions.insert({ id, repoId: null, worktree, cwd: worktree, pid: null, tty: null, title: null, firstPrompt: null, status: 'idle' });
+
+  const list = await (await call('GET', `/api/sessions/${id}/documents`)).json();
+  assert.deepEqual(list.map((f: { path: string; documents: { title: string }[] }) => [f.path, f.documents.map((d) => d.title)]), [['.pitwall/artifacts/retries', ['Research Questions: Retries']]]);
+
+  const doc = await call('GET', `/api/sessions/${id}/documents/.pitwall/artifacts/retries/01-research-questions-retries.md`);
+  assert.equal(doc.status, 200);
+  assert.equal(doc.headers.get('content-type'), 'text/markdown; charset=utf-8');
+  assert.match(await doc.text(), /Research Questions: Retries/);
+  const mockup = await call('GET', `/api/sessions/${id}/documents/.pitwall/artifacts/retries/mockup-attempts.html`);
+  assert.match(mockup.headers.get('content-security-policy') ?? '', /default-src 'none'.*sandbox allow-scripts/);
+  for (const path of ['..%2F..%2F..%2Fsecret.md', '.pitwall/artifacts/retries/..%2F..%2F..%2Fsecret.md', 'secret.md', '%2Fetc%2Fpasswd', '.pitwall/artifacts/retries/%E0%A4%A']) {
+    assert.equal((await call('GET', `/api/sessions/${id}/documents/${path}`)).status, 404, path);
+  }
+  assert.equal((await call('GET', '/api/sessions/nobody/documents')).status, 404);
+  sessions.remove(id);
 });

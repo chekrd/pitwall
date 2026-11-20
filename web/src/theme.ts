@@ -50,3 +50,16 @@ const subscribe = (fn: () => void) => {
 };
 
 export const useTheme = () => useSyncExternalStore(subscribe, () => theme);
+
+const darkSystem = matchMedia('(prefers-color-scheme: dark)');
+const onSystem = (fn: () => void) => {
+  darkSystem.addEventListener('change', fn);
+  return () => darkSystem.removeEventListener('change', fn);
+};
+
+// Whether the page is dark now, by the theme picked or else the system's.
+export function useDark() {
+  const picked = useTheme();
+  const system = useSyncExternalStore(onSystem, () => darkSystem.matches);
+  return picked === 'dark' || (picked === 'system' && system);
+}

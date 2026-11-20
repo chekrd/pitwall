@@ -14,6 +14,7 @@ import { sends } from './sends.ts';
 import { taskPage } from './taskPage.ts';
 import { usageFindings } from './usageFindings.ts';
 import { wall } from './wall.ts';
+import { workflow } from './workflow.ts';
 
 export const checks: Check[] = [
   ...board,
@@ -31,4 +32,5 @@ export const checks: Check[] = [
   ...restart,
   ...schedulesLater,
   ...rounds,
+  ...workflow,
 ];

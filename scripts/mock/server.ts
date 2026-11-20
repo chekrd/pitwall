@@ -1,6 +1,7 @@
 import { HOME } from './home.ts';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
@@ -30,6 +31,8 @@ import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, 
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
+import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
+import { contentType, RPI_DIR, rpiPrompt, taskDirName } from '../../server/rpi.ts';
 import { nextUsage } from '../../server/usage.ts';
 import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
@@ -88,9 +91,9 @@ const PICTURE = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="200
 <text x="24" y="150" font-family="sans-serif" font-size="18" fill="#c00">Total</text><text x="456" y="150" text-anchor="end" font-family="sans-serif" font-size="18" fill="#c00">0.29 ≠ 0.30</text></svg>`;
 
 class Page {
-  html: string;
+  html: string | Buffer;
   headers: Record<string, string>;
-  constructor(html: string, headers: Record<string, string> = {}) {
+  constructor(html: string | Buffer, headers: Record<string, string> = {}) {
     this.html = html;
     this.headers = headers;
   }
@@ -158,6 +161,36 @@ const folders = (): FolderView[] => [...Map.groupBy(state.repos, (r) => parentOf
 const taskWorktrees = (taskFolder: string) =>
   state.repos.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && parentOf(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
 
+// As the server's documentRoots().
+const documentRoots = (s: Session) => {
+  const own = s.repoId === null ? [s.worktree, ...taskWorktrees(s.worktree).map(({ worktree }) => worktree.path)] : [s.worktree];
+  return [...new Set(s.cwd === s.worktree || s.cwd.startsWith(`${s.worktree}/`) ? [...own, s.cwd] : own)];
+};
+
+// The scenario's rpi documents lie on disk in the mock's HOME and are read by the server's own code, a store to each
+// scenario, so a read that began before another one loaded changes nothing. The poll stands in for the server's sync.
+let docs = workflows();
+let written: string[] = [];
+
+function writeDocuments(documents: Scenario['documents'] = {}) {
+  for (const root of written) rmSync(join(root, '.pitwall'), { recursive: true, force: true });
+  written = Object.keys(documents);
+  for (const [root, folders] of Object.entries(documents)) {
+    for (const [folder, files] of Object.entries(folders)) {
+      const dir = join(root, RPI_DIR, folder);
+      mkdirSync(dir, { recursive: true });
+      for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+    }
+  }
+}
+
+async function refreshDocuments() {
+  const store = docs;
+  const changed = await store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s) })));
+  if (changed && store === docs) push();
+}
+setInterval(() => void refreshDocuments().catch((err) => console.warn('documents', err)), 1000);
+
 // --legacy answers as a server from before folders, schedules, usage, Pause, drift and the sessions' newer fields,
 // which the contract no longer describes.
 function snapshot(): State {
@@ -170,7 +203,7 @@ function snapshot(): State {
     return { home: HOME, roots: state.roots, repos: state.repos, sessions: old } as unknown as State;
   }
   return {
-    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id) })),
+    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id) })),
     usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, terminalNotices, pitwall: `${HOME}/git/github/pitwall`,
   };
 }
@@ -217,6 +250,9 @@ function load(name: string) {
   schedules = [];
   transcripts.clear();
   state = make(Date.now());
+  docs = workflows();
+  writeDocuments(state.documents);
+  void refreshDocuments();
   if (args.legacy) for (const s of state.sessions) s.answered = null;
   answers = answeringFor(state);
   scenarioName = name;
@@ -731,21 +767,22 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const model = MODELS.models[req.model ?? ''] ?? req.model;
   const effort = req.effort || MODELS.efforts[req.model ?? ''] || undefined;
   const name = (req.name ?? '').trim();
-  const prompt = taskPrompt(req.prompt ?? '', checkUploads(req.files));
+  const text = taskPrompt(req.prompt ?? '', checkUploads(req.files));
+  const first = (branch: string) => (req.workflow === 'rpi' ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`) : text);
   if (req.kind === 'folder') {
     const folder = folders().find((f) => f.path === req.folder);
     if (!folder) throw new Error('unknown folder');
     if (!name) throw new Error('name is required');
     const path = `${folder.path}/worktrees/${name}`;
     if (state.sessions.some((s) => s.worktree === path) || taskWorktrees(path).length) throw new Error(`${path} already exists; pick another name`);
-    return { path, sessionId: startSession(null, path, { title: name, prompt, model, effort, scheduled: req.scheduled }) };
+    return { path, sessionId: startSession(null, path, { title: name, prompt: first(name), model, effort, scheduled: req.scheduled }) };
   }
   const repo = mustRepo(req.repoId);
-  const claude = { prompt, model, effort, scheduled: req.scheduled };
+  const claude = { model, effort, scheduled: req.scheduled };
   if (req.existingBranch) {
     const path = addWorktree(repo, req);
     push();
-    return { path, sessionId: startSession(repo.id, path, { ...claude, title: req.scheduled ? name : '' }) };
+    return { path, sessionId: startSession(repo.id, path, { ...claude, prompt: first(req.branch.trim()), title: req.scheduled ? name : '' }) };
   }
   if (!name) throw new Error('name is required');
   const wanted = req.path?.trim().replace(/^~(?=\/|$)/, HOME);
@@ -753,9 +790,9 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const branch = req.branch?.trim() || name;
   if (branch.includes('..')) throw new Error(`${branch} cannot name a branch`);
   const path = wanted || `${repo.defaultWorktreeRoot}/${name.replaceAll('/', '-')}/${repo.name}`;
-  const sessionId = startSession(repo.id, path, { ...claude, title: name });
+  const sessionId = startSession(repo.id, path, { ...claude, prompt: first(branch), title: name });
   const { status, activity } = find(sessionId)!;
-  const request = { repoId: repo.id, name, branch: req.branch?.trim() ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files: req.files ?? [], model: req.model ?? '', effort: req.effort ?? '' };
+  const request = { repoId: repo.id, name, branch: req.branch?.trim() ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files: req.files ?? [], model: req.model ?? '', effort: req.effort ?? '', workflow: req.workflow };
   const finish = () => {
     addWorktree(repo, req);
     update(sessionId, { starting: null, status, activity });
@@ -861,6 +898,27 @@ route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => {
   const artifact = find(params[0])?.artifacts.find((a) => a.id === params[1]);
   if (!artifact) throw new HttpError(404, 'artifact not found');
   return new Page(artifactPage(artifact.title), { 'content-security-policy': ARTIFACT_CSP });
+});
+api('GET /api/sessions/:id/documents', ({ params }) => {
+  const s = must(params[0]);
+  return taskFolders(s.worktree, documentRoots(s));
+});
+routes.push(['GET', /^\/api\/sessions\/([^/]+)\/documents\/(.+)$/, async ({ params }) => {
+  const s = find(params[0]);
+  const file = s && await documentFile(s.worktree, documentRoots(s), params[1]);
+  const type = file && contentType(file);
+  if (!file || !type) throw new HttpError(404, 'document not found');
+  return new Page(await readFile(file), { 'content-type': type, 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff' });
+}]);
+// Writes a file under a worktree's .pitwall/artifacts, as Claude would, and reads the documents again at once.
+route('POST', '/mock/document', async ({ body }) => {
+  const s = must(String(body.id));
+  const path = join(s.worktree, String(body.path));
+  if (!path.startsWith(join(s.worktree, RPI_DIR) + sep)) throw new Error('only under .pitwall/artifacts');
+  await mkdir(path.slice(0, path.lastIndexOf('/')), { recursive: true });
+  await writeFile(path, String(body.text));
+  await refreshDocuments();
+  return NONE;
 });
 // Each earlier conversation ends on the reply it was cleared after; the current one has the first prompt, a reply that
 // asked for more, a prompt left without a reply, and the latest reply.
@@ -1141,7 +1199,7 @@ const TYPES: Record<string, string> = {
 };
 
 async function serveStatic(res: ServerResponse, pathname: string) {
-  const asset = !!extname(pathname);
+  const asset = !!extname(pathname) && !pathname.startsWith('/s/');
   const file = asset ? resolve(DIST, `.${decodeURIComponent(pathname)}`) : join(DIST, 'index.html');
   const body = file.startsWith(DIST + sep) ? await readFile(file).catch(() => null) : null;
   if (!body) {
@@ -1213,7 +1271,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (data === undefined) {
       res.writeHead(status, headers);
       res.end();
-    } else if (typeof data === 'string') {
+    } else if (typeof data === 'string' || Buffer.isBuffer(data)) {
       res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', ...headers });
       res.end(data);
     } else {

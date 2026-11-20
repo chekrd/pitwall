@@ -9,6 +9,7 @@ import { locate, sessionLabel, shownOf } from '../util.ts';
 import { Artifacts } from './Artifacts.tsx';
 import { Conversation } from './Conversation.tsx';
 import { DiffView } from './DiffView.tsx';
+import { Documents } from './Documents.tsx';
 import { Icon } from './Icon.tsx';
 import { Overview } from './Overview.tsx';
 import { BranchMark } from './Parts.tsx';
@@ -77,6 +78,7 @@ function Body({ session, name, repos, tab, item }: BodyProps) {
     { key: 'conversation', label: 'Conversation', kbd: '2' },
     { key: 'diff', label: 'Diff', kbd: '3' },
     ...(session.artifacts.length ? [{ key: 'artifacts' as const, label: `Artifacts (${session.artifacts.length})`, kbd: '4' }] : []),
+    ...(session.workflow ? [{ key: 'documents' as const, label: `Documents (${session.workflow.documents})`, kbd: '5' }] : []),
   ];
   const current = tabs.some((t) => t.key === tab) ? tab : 'overview';
 
@@ -130,6 +132,7 @@ function Body({ session, name, repos, tab, item }: BodyProps) {
         {current === 'diff' && <DiffView session={session} at={item} />}
         {current === 'artifacts' && <Artifacts session={session} item={item} />}
         {current === 'conversation' && <Conversation session={session} />}
+        {current === 'documents' && <Documents session={session} item={item} />}
       </div>
     </>
   );

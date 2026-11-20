@@ -103,4 +103,12 @@ export function taskFolderOf(path: string) {
 export const taskWorktrees = (taskFolder: string) =>
   cache.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && dirname(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
 
+// Where a task's rpi documents can be: the folder Claude runs in and its worktree, or for a task across a folder of
+// repos its task folder and every worktree it opened.
+export function documentRoots(s: { repoId: number | null; worktree: string; cwd: string }) {
+  const own = s.repoId === null ? [s.worktree, ...taskWorktrees(s.worktree).map(({ worktree }) => worktree.path)] : [s.worktree];
+  const inside = s.cwd === s.worktree || s.cwd.startsWith(`${s.worktree}/`);
+  return [...new Set(inside ? [...own, s.cwd] : own)];
+}
+
 export const snapshot = () => ({ home: homedir(), roots: roots.all(), repos: cache, folders: folders(), sessions: sessions.all() });

@@ -12,7 +12,8 @@ import { askInput, roundOf } from './mcp.ts';
 import { archivePatch, bootTime, interruption, pickedUp } from './restart.ts';
 import { describeLinks } from './linkAbout.ts';
 import { mergeLinks } from './links.ts';
-import { notify, refreshWorkspace, repoView, taskFolderOf, workspace } from './workspace.ts';
+import { documentRoots, notify, refreshWorkspace, repoView, taskFolderOf, workspace } from './workspace.ts';
+import { tasksWorkflows } from './documents.ts';
 import { folderDiff, prWorktree } from './folderTasks.ts';
 
 const run = promisify(execFile);
@@ -277,6 +278,8 @@ async function syncLive() {
     void refreshDiffstat(s.id);
     changed = true;
   }
+  const tasks = sessions.all().map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s) }));
+  if (await tasksWorkflows.refresh(tasks)) changed = true;
   if (changed) notify();
   void describeLinks();
 }

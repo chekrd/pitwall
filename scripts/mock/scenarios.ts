@@ -5,6 +5,7 @@ import { pauseMark } from '../../server/pause.ts';
 import type { RepoView } from '../../server/workspace.ts';
 import { addFromTemplate, queue, repos, ROOTS, session, titleOf, type Template } from './fixtures.ts';
 import { HOME } from './home.ts';
+import { rpiDocuments } from './rpiDocs.ts';
 
 export type Flag = 'lossFails' | 'resumeFails';
 
@@ -14,6 +15,8 @@ export interface Scenario {
   sessions: Session[];
   usage: Usage | null;
   flags: Record<string, Flag[]>;
+  // Files the mock writes into its HOME when the scenario loads: by worktree, task folder and name, under .pitwall/artifacts.
+  documents?: Record<string, Record<string, Record<string, string>>>;
 }
 
 const MIN = 60_000;
@@ -58,6 +61,28 @@ function restarted(now: number, fails: boolean, paused = false): Scenario {
   if (fails) scenario.flags[first.id] = [...(scenario.flags[first.id] ?? []), 'resumeFails'];
   return scenario;
 }
+
+const RPI_WORKTREES = [
+  [2, `${HOME}/code/worktrees/invoice-export/billing-api`, 'invoice-export'],
+  [4, `${HOME}/code/worktrees/search-page/docs-site`, 'search-page'],
+] as const;
+
+const rpiTasks = (now: number) => [
+  session({
+    id: 's-export', repoId: 2, worktree: RPI_WORKTREES[0][1], tty: '/dev/ttys023', pid: 83120,
+    title: 'Export invoices as CSV',
+    firstPrompt: '/rpi Finance wants to download a month of invoices as CSV; task directory: .pitwall/artifacts/invoice-export',
+    status: 'idle', createdAt: now - 3 * 60 * MIN, updatedAt: now - 4 * MIN,
+    lastMessage: 'Phase 1 is done: the CSV writer formats one invoice per row, and `pnpm test csv` passes. Phase 2 streams a month from `GET /invoices/export`.',
+    lastTurn: 't-export-5',
+  }),
+  session({
+    id: 's-search-page', repoId: 4, worktree: RPI_WORKTREES[1][1], tty: '/dev/ttys024', pid: 83190,
+    title: 'Docs search page',
+    firstPrompt: '/rpi Readers cannot find a page unless they know its section; task directory: .pitwall/artifacts/search-page',
+    status: 'working', createdAt: now - 40 * MIN, updatedAt: now - MIN, activity: { step: 'Read: src/pages/[...slug].astro', since: now - 2 * MIN },
+  }),
+];
 
 export const scenarios: Record<string, (now: number) => Scenario> = {
   // 3 decisions, 1 Needs focus, 2 Your turn, 3 working, 2 ended, 1 archived.
@@ -204,6 +229,17 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   // Paused before the restart: the Claudes that were at work carry the pause's mark, the rest the restart's.
   restartedPaused: (now) => restarted(now, false, true),
   restartedPausedFails: (now) => restarted(now, true, true),
+
+  // Two tasks started with New task's RPI workflow, whose documents lie in their worktrees: one implementing its
+  // outline, one at research.
+  workflow: (now) => {
+    const scenario = base(now, [...queue(now), ...rpiTasks(now)]);
+    for (const [repoId, path, branch] of RPI_WORKTREES) {
+      scenario.repos.find((r) => r.id === repoId)!.worktrees.push({ path, branch, head: '7'.repeat(40), isMain: false, conversations: [] });
+    }
+    scenario.documents = rpiDocuments(HOME);
+    return scenario;
+  },
 
   zero: (now) => base(now, queue(now).filter((s) => s.status === 'working' || (s.status === 'exited' && !s.archived))),
   empty: (now) => base(now, []),

@@ -1,9 +1,11 @@
 import type { ClearMark } from '../../server/clearing.ts';
 import type { Session as Row } from '../../server/db.ts';
+import type { Workflow } from '../../server/rpi.ts';
 
 export type { Answered, Artifact, CodeRef, Interrupted, Aside, Link, Parked, PrFlow, Question, QuestionOption, SessionStatus } from '../../server/db.ts';
-// The mark is optional for the mock's --legacy server, which predates it.
-export type Session = Row & Partial<ClearMark>;
+// The mark and the workflow are optional for the mock's --legacy server, which predates them.
+export type Session = Row & Partial<ClearMark> & { workflow?: Workflow | null };
+export type { DocumentEntry, SupportingFile, TaskFolder, Workflow, WorkflowStep } from '../../server/rpi.ts';
 export type { FullDiff, Upstream } from '../../server/git.ts';
 export type { Conversation, ConversationLog, Exchange, Menu, MenuQuestion } from '../../server/conversations.ts';
 export type { FolderView, RepoView, WorktreeView } from '../../server/workspace.ts';

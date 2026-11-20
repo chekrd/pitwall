@@ -20,6 +20,7 @@ import { Composer, readyPaths, uploading, useDraft } from './Composer.tsx';
 import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
 import { Later, LaterActions } from './Later.tsx';
+import { PhaseStrip } from './Workflow.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
 import { MenuBody } from './MenuBody.tsx';
@@ -494,6 +495,12 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
           {!starting && <Later session={session} name={name} />}
         </div>
         <aside className={styles.aside}>
+          {session.workflow && (
+            <section aria-label="Workflow" data-ux-section="workflow">
+              <h3 className={styles.label} data-explain="The phases of the task's rpi workflow, read from its documents in .pitwall/artifacts; each with a document opens it in Documents">Workflow</h3>
+              <PhaseStrip session={session.id} workflow={session.workflow} />
+            </section>
+          )}
           <section aria-label="Facts" data-ux-section="facts">
             <dl className={styles.facts}>
               <dt>Task</dt>

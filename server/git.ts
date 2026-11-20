@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { copyFile, mkdtemp, rm, stat, utimes } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -21,6 +21,23 @@ const ok = (p: Promise<unknown>) => p.then(() => true, () => false);
 export async function repoRoot(path: string) {
   const common = (await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
   return resolve(common, '..');
+}
+
+const excluding = new Map<string, Promise<void>>();
+
+// A line in the repository's own exclude file, which every worktree shares and nothing commits; added once.
+export async function excludeLocally(path: string, pattern: string) {
+  const common = (await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
+  const file = join(common, 'info', 'exclude');
+  const add = async () => {
+    const text = await readFile(file, 'utf8').catch(() => '');
+    if (text.split(/\r?\n/).some((l) => l.trim() === pattern)) return;
+    await mkdir(join(common, 'info'), { recursive: true });
+    await appendFile(file, `${text && !text.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  };
+  const turn = (excluding.get(file) ?? Promise.resolve()).then(add, add);
+  excluding.set(file, turn);
+  return turn;
 }
 
 // Local on purpose, as every workspace refresh reads it; git wt add corrects origin/HEAD from origin itself.

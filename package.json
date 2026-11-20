@@ -25,6 +25,7 @@
     "@pierre/diffs": "^1.6.4",
     "hono": "^4.13.18",
     "marked": "^18.2.0",
+    "mermaid": "12.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "ws": "^8.23.0",
@@ -59,7 +60,7 @@
     "check": "tsc && pnpm lint && pnpm test",
     "claude:connect": "node scripts/claude.ts connect",
     "claude:disconnect": "node scripts/claude.ts disconnect",
-    "test": "node scripts/isolate.ts node --test 'server/**/*.test.ts' 'web/src/**/*.test.ts'",
+    "test": "node scripts/isolate.ts node --test 'server/**/*.test.ts' 'web/src/**/*.test.ts' 'scripts/**/*.test.ts'",
     "mock": "node scripts/mock/server.ts",
     "e2e": "node scripts/check/run.ts",
     "ux": "node scripts/ux.ts"

@@ -3,7 +3,8 @@ import { basename, isAbsolute, join, resolve as pathResolve } from 'node:path';
 import type { RouteInput } from './contract.ts';
 import { schedules, sessions } from './db.ts';
 import { makeTaskFolder } from './folderTasks.ts';
-import { addWorktree, validBranch } from './git.ts';
+import { addWorktree, excludeLocally, validBranch } from './git.ts';
+import { RPI_DIR, rpiPrompt, taskDirName } from './rpi.ts';
 import { ALIASES, EFFORTS, ranHeadless, resolver, settingsFor } from './models.ts';
 import { scheduler, taskPrompt, type Scheduled, type TaskRequest } from './schedule.ts';
 import * as S from './sessions.ts';
@@ -49,9 +50,12 @@ async function startTask(req: NewTask) {
   const { model, effort } = chosenModel(req);
   const name = req.name.trim();
   const files = await checkUploads(req.files);
-  const prompt = taskPrompt(req.prompt ?? '', files) || undefined;
+  const text = taskPrompt(req.prompt ?? '', files);
+  // The task folder rpi writes to: a branch's name is known before its worktree is.
+  const first = (branch: string) => (req.workflow === 'rpi' ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`) : text || undefined);
   if (req.kind === 'folder') {
     if (!name) throw new Error('name is required');
+    const prompt = first(name);
     const path = await makeTaskFolder(req.folder, name);
     const { model: fallback, real, effortOf } = await resolve(req.folder);
     const running = model ? real(model) : fallback;
@@ -65,12 +69,15 @@ async function startTask(req: NewTask) {
   const branch = req.branch?.trim();
   const { model: fallback, real, effortOf } = await resolve(repo.path);
   const running = model ? real(model) : fallback;
-  const claude = { repoId: repo.id, prompt, model, effort, running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled };
+  const claude = { repoId: repo.id, model, effort, running: { model: running, effort: effort ?? effortOf(running) }, scheduled: req.scheduled };
+  // Every worktree reads the main checkout's exclude file, so the documents stay out of git and the Diff from the start.
+  if (req.workflow === 'rpi') await excludeLocally(repo.path, '.pitwall/');
   if (req.existingBranch) {
     if (!branch) throw new Error('pick a branch');
+    const prompt = first(branch);
     const path = await S.checkoutExistingBranch(repo, branch);
     await refreshWorkspace();
-    const sessionId = await S.startClaude({ ...claude, worktree: path, title: req.scheduled ? name : '' });
+    const sessionId = await S.startClaude({ ...claude, prompt, worktree: path, title: req.scheduled ? name : '' });
     return { path, sessionId, ready: Promise.resolve() };
   }
   if (!name) throw new Error('name is required');
@@ -79,8 +86,8 @@ async function startTask(req: NewTask) {
   const newBranch = branch || name;
   if (!(await validBranch(newBranch))) throw new Error(`${newBranch} cannot name a branch`);
   const path = wanted ? pathResolve(wanted) : join(repo.defaultWorktreeRoot, name.replaceAll('/', '-'), basename(repo.path));
-  const request = { repoId: repo.id, name, branch: branch ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files, model: req.model ?? '', effort: req.effort ?? '' };
-  const { id, ready } = S.startAfter({ ...claude, worktree: path, title: name, setup: repo.setupCommand }, request, 'Creating the worktree', async () => {
+  const request = { repoId: repo.id, name, branch: branch ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files, model: req.model ?? '', effort: req.effort ?? '', workflow: req.workflow };
+  const { id, ready } = S.startAfter({ ...claude, prompt: first(newBranch), worktree: path, title: name, setup: repo.setupCommand }, request, 'Creating the worktree', async () => {
     await addWorktree(repo.path, { branch: newBranch, task: name, base: repo.baseBranch, root: repo.defaultWorktreeRoot, path });
     await refreshWorkspace();
   });

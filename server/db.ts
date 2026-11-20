@@ -145,7 +145,7 @@ export interface Interrupted {
 // A task whose worktree is being made behind its card, Claude not yet started; `request` is what New task sent, kept so
 // that a task that failed to start can go back to the form.
 export interface Starting {
-  request: { repoId: number; name: string; branch: string; path: string; prompt: string; files: string[]; model: string; effort: string };
+  request: { repoId: number; name: string; branch: string; path: string; prompt: string; files: string[]; model: string; effort: string; workflow?: 'rpi' | undefined };
   error: string | null;
 }
 

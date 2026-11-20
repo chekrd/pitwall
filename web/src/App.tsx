@@ -35,7 +35,7 @@ export function App() {
     setBoard({ tasks: live.length, waiting: waiting.length, names: names.filter((n): n is string => !!n) });
   }, [store.sessions, store.repos, store.folders, waiting.length]);
 
-  useBoardKeys({ route, next: next.next?.id ?? null, repos: store.repos.length > 0, artifacts: !!sheetSession?.artifacts.length });
+  useBoardKeys({ route, next: next.next?.id ?? null, repos: store.repos.length > 0, artifacts: !!sheetSession?.artifacts.length, documents: !!sheetSession?.workflow });
 
   return (
     <>

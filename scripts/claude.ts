@@ -2,11 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { installRpi } from './plugins.ts';
 import { ARTIFACT_TOOL, ARTIFACT_TOOL_NAME, ASK_TOOL, ASK_TOOL_NAME, MCP_SERVER_NAME, OLD_MCP_SERVER_NAMES, OPEN_WORKTREE_TOOL_NAME, ORIGIN, ROOT, ROUND_TOOL_NAME } from '../server/config.ts';
 
 const SETTINGS = join(homedir(), '.claude', 'settings.json');
 
 const claude = (...args: string[]) => execFileSync('claude', args, { stdio: 'inherit' });
+const quietly = (args: string[]) => execFileSync('claude', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
 const HOOKS_URL = `${ORIGIN}/api/hooks/`;
 
@@ -71,12 +73,18 @@ function editSettings(connect: boolean) {
   writeFileSync(SETTINGS, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
+function addRpi() {
+  const rpi = installRpi(quietly);
+  (rpi.ok ? console.log : console.warn)(rpi.said);
+}
+
 switch (process.argv[2]) {
   case 'connect':
     for (const name of [MCP_SERVER_NAME, ...OLD_MCP_SERVER_NAMES]) removeServer(name);
     claude('mcp', 'add', '--scope', 'user', '--transport', 'http', MCP_SERVER_NAME, `${ORIGIN}/mcp`);
     editSettings(true);
     installSkills(true);
+    addRpi();
     console.log(`allowed ${TOOLS.join(', ')} and added Pitwall's hooks (${Object.keys(HOOKS).join(', ')}) in ${SETTINGS}; copied the skills ${SKILL_NAMES.join(', ')} to ${USER_SKILLS}\nRunning Claude sessions get the tools after a restart or /mcp reconnect.`);
     break;
   case 'disconnect':

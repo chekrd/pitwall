@@ -13,10 +13,12 @@ import { WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
 import { drift } from './claudeFormat.ts';
+import { documentFile, taskFolders, tasksWorkflows } from './documents.ts';
 import { listCommands } from './commands.ts';
 import { actionBodies, bodies, isAction, type ActionHandlers, type ActionName, type Responses, type RouteInput } from './contract.ts';
 import { HOST, PORT, ROOT, UPLOADS_DIR, WEB_DIST } from './config.ts';
 import { repos, roots, schedules, sessions, uxEvents } from './db.ts';
+import { contentType } from './rpi.ts';
 import { openDecision, Refusal } from './decision.ts';
 import { folderDiff } from './folderTasks.ts';
 import { fullDiff, listBranches, repoRoot, upstreamOf } from './git.ts';
@@ -29,7 +31,7 @@ import { UPLOAD_DIR_NAME, UPLOAD_IMAGE_NAME, UPLOAD_IMAGE_TYPES } from './upload
 import { checkUploads, MAX_BYTES, saveUpload } from './uploads.ts';
 import type { Usage } from './usage.ts';
 import { boardAnswer, boardTracker, cleanBatch, cleanEvent, type Data } from './uxlog.ts';
-import { folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
+import { documentRoots, folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
 
 const run = promisify(execFile);
 
@@ -78,10 +80,18 @@ const diffOf = (worktree: string, opts: { paths?: string[] } = {}) =>
   taskFolderOf(worktree) ? folderDiff(worktree, opts)
     : fullDiff(worktree, repoOfWorktree(worktree).base, opts);
 
-const withClearing = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id) })) });
+const decodedPath = (segments: string[]) => {
+  try {
+    return segments.map(decodeURIComponent).join('/');
+  } catch {
+    return null;
+  }
+};
+
+const withMarks = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: tasksWorkflows.of(s.id) })) });
 
 const stateWith = (usage: Usage | null) =>
-  ({ ...withClearing(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), terminalNotices: terminalNotices(), pitwall: ROOT });
+  ({ ...withMarks(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), terminalNotices: terminalNotices(), pitwall: ROOT });
 
 // What /api/state answers, and /ws/events sends on every change.
 export type State = ReturnType<typeof stateWith>;
@@ -282,6 +292,24 @@ export function createApp({ usage, ui }: AppDeps) {
     if (html === null) return c.text('artifact not found', 404);
     c.header('content-security-policy', ARTIFACT_CSP);
     return c.html(html);
+  });
+
+  app.get('/api/sessions/:id/documents', async (c) => {
+    const s = sessions.get(c.req.param('id'));
+    if (!s) return c.text('unknown task', 404);
+    return c.json((await taskFolders(s.worktree, documentRoots(s))) satisfies Responses['GET /api/sessions/:id/documents']);
+  });
+
+  // Mockups and images are an agent's work too: served as artifacts are, for an opaque origin that loads nothing.
+  app.get('/api/sessions/:id/documents/*', async (c) => {
+    const s = sessions.get(c.req.param('id'));
+    const raw = new URL(c.req.url).pathname.split('/').slice(5);
+    const path = s ? decodedPath(raw) : null;
+    const file = s && path ? await documentFile(s.worktree, documentRoots(s), path) : null;
+    const type = file && contentType(file);
+    const data = file && type ? await readFile(file).catch(() => null) : null;
+    if (!data || !type) return c.text('document not found', 404);
+    return c.body(new Uint8Array(data), 200, { 'content-type': type, 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff', 'cache-control': 'no-cache' });
   });
 
   app.get('/api/sessions/:id/conversation', async (c) => c.json((await S.conversation(c.req.param('id'))) satisfies Responses['GET /api/sessions/:id/conversation']));
