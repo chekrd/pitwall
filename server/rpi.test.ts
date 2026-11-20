@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BOARD_HANDOFF, nextSteps, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
+import { BOARD_HANDOFF, nextSteps, stepMessage, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
 
 const doc = (name: string, text: string, modifiedAt = 1000): DocumentEntry =>
   ({ path: `.pitwall/artifacts/t/${name}`, name, modifiedAt, size: text.length, ...parseDocument(name, text) });
@@ -166,4 +166,12 @@ test("the next steps rpi's workflow allows from each phase of each flow, as the 
     assert.deepEqual(steps('done', flow), [], `${flow}: every phase of the outline done`);
   }
   assert.equal(nextSteps(at('outline', 'tdd'), '/rpi:rpi')[0].command, `/rpi:rpi implement ${dir}`, 'in the invocation given');
+});
+
+test('an implement step names the model for the implementer, and the conversation\'s model when none is picked; other steps name none', () => {
+  const [implement] = nextSteps(at('outline', 'tdd'), '/rpi');
+  const [research] = nextSteps(at('questions', 'tdd'), '/rpi');
+  assert.equal(stepMessage(implement, 'opus'), `${implement.command}\nLaunch outline-implementer-agent with model: opus.\n\n${BOARD_HANDOFF}`);
+  assert.equal(stepMessage(implement, ''), `${implement.command}\n\n${BOARD_HANDOFF}`);
+  assert.equal(stepMessage(research, 'opus'), `${research.command}\n\n${BOARD_HANDOFF}`);
 });

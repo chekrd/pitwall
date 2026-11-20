@@ -203,10 +203,12 @@ export const comments: Check[] = [
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
       const sent = (command: string) => `${command}\n\n${BOARD_HANDOFF}`;
+      const byOpus = (command: string) => `${command}\nLaunch outline-implementer-agent with model: opus.\n\n${BOARD_HANDOFF}`;
       await page.goto(`${mock.url}/s/s-export/documents`);
       await page.until('the steps', () => !!document.querySelector('#task-sheet [data-next-steps] button'));
       assert.deepEqual(await page.eval(steps), ['*Implement the next phase']);
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-next-steps] input')), null, 'no choice to stay in the conversation');
+      assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('#task-sheet [data-implementer-model] select')?.selectedOptions[0]?.textContent), 'Opus', 'Opus implements unless another is picked');
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-unsent-comments]')?.textContent), '1 comment not sent');
       assert.match(await page.eval(explainOf, '#task-sheet [data-next-steps] button') ?? '', /“\/clear”, then, once Claude has started the new conversation, “\/rpi:rpi implement \.pitwall\/artifacts\/invoice-export”/);
       await shot('documents-next-steps');
@@ -215,13 +217,14 @@ export const comments: Check[] = [
       const [held] = await until('the held toast', () => page.eval(toastsOf, 'undo'));
       assert.equal(held.text.split('\n')[0], `Sending: /clear, then /rpi:rpi implement ${DIR}`);
       const [post] = await logged(mock, 'the step sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
-      assert.deepEqual(post.body, { key: null, text: sent(`/rpi:rpi implement ${DIR}`), fresh: true });
-      assert.deepEqual(await typedInto(mock, 's-export'), ['/clear', sent(`/rpi:rpi implement ${DIR}`)], 'in order, the command after the clear was taken');
+      assert.deepEqual(post.body, { key: null, text: byOpus(`/rpi:rpi implement ${DIR}`), fresh: true });
+      assert.deepEqual(await typedInto(mock, 's-export'), ['/clear', byOpus(`/rpi:rpi implement ${DIR}`)], 'in order, the command after the clear was taken');
       assert.notEqual((await stateOf(mock, 's-export')).conversation, before, 'a new conversation');
 
       await page.goto(`${mock.url}/s/s-search-page/overview`);
       await page.until('the steps in Overview', () => !!document.querySelector('#task-sheet [data-ux-section="workflow"] [data-next-steps] button'));
       assert.deepEqual(await page.eval(steps), ['*PRD (disabled)', 'Outline (disabled)', 'Implement (disabled)'], 'Claude is at work');
+      assert.ok(await page.eval(() => !!document.querySelector('#task-sheet [data-implementer-model]')), 'a model for the Implement step');
       await mock.post('/mock/patch', { id: 's-search-page', patch: { status: 'idle', activity: null } });
       await page.until('enabled', () => !document.querySelector('#task-sheet [data-next-steps] button:disabled'));
       await shot('overview-next-steps');
@@ -236,6 +239,32 @@ export const comments: Check[] = [
       const [error] = await until('the refusal', () => page.eval(toastsOf, 'error'), 15_000);
       assert.equal(error.text, 'Not sent to Docs search page: Claude did not start a new conversation after /clear, so “/rpi:rpi make an outline .pitwall/artifacts/search-page; flow: prd” was not sent\nShow');
       assert.deepEqual(await typedInto(mock, 's-search-page'), ['/clear', sent('/rpi:rpi make a PRD .pitwall/artifacts/search-page; flow: prd'), '/clear'], 'nothing after the /clear');
+    },
+  },
+  {
+    name: 'CM.3a the model picked by the Implement step goes with it, and with the task\'s model picked no model is named',
+    scenario: 'workflow',
+    clock: 'fast',
+    async run({ page, mock }) {
+      const pick = (value: string) => page.eval((v) => {
+        const s = document.querySelector<HTMLSelectElement>('#task-sheet [data-implementer-model] select')!;
+        s.value = v;
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+      }, value);
+      await mock.post('/mock/patch', { id: 's-search-page', patch: { status: 'idle', activity: null } });
+      await page.goto(`${mock.url}/s/s-search-page/overview`);
+      await page.until('enabled', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
+      await pick('fable');
+      await page.click('#task-sheet [data-next-steps] button', 'Implement');
+      await until('typed', async () => (await typedInto(mock, 's-search-page')).length === 2);
+      assert.deepEqual(await typedInto(mock, 's-search-page'),
+        ['/clear', `/rpi:rpi implement .pitwall/artifacts/search-page; flow: prd\nLaunch outline-implementer-agent with model: fable.\n\n${BOARD_HANDOFF}`]);
+
+      await page.until('enabled again', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
+      await pick('');
+      await page.click('#task-sheet [data-next-steps] button', 'Implement');
+      await until('typed again', async () => (await typedInto(mock, 's-search-page')).length === 4);
+      assert.equal((await typedInto(mock, 's-search-page'))[3], `/rpi:rpi implement .pitwall/artifacts/search-page; flow: prd\n\n${BOARD_HANDOFF}`);
     },
   },
   {

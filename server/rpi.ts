@@ -303,13 +303,23 @@ export interface NextStep {
   command: string;
   // The flow's usual next step, where rpi names one.
   usual: boolean;
+  implements: boolean;
+}
+
+export const IMPLEMENTER_MODELS = ['opus', 'sonnet', 'fable'] as const;
+export type ImplementerModel = (typeof IMPLEMENTER_MODELS)[number] | '';
+
+// rpi's outline-implementer-agent inherits the conversation's model; '' leaves it at that.
+export function stepMessage(step: NextStep, model: ImplementerModel) {
+  const pick = step.implements && model ? [`Launch outline-implementer-agent with model: ${model}.`] : [];
+  return [step.command, ...pick, '', BOARD_HANDOFF].join('\n');
 }
 
 // The steps rpi's workflow allows from the phase under way, each as the command rpi's own handoff gives for it. The
 // research questions and the research carry the flow on; a design step's handoff names it only from a PRD to its TDD.
 export function nextSteps(w: Pick<Workflow, 'folder' | 'flow' | 'current' | 'steps'>, invocation: string): NextStep[] {
   const step = (label: string, does: string, flow: Flow | null, usual = false): NextStep => ({
-    label, usual, command: `${invocation} ${does} ${w.folder}${flow ? `; flow: ${FLOW_WORDS[flow]}` : ''}`,
+    label, usual, implements: does === 'implement', command: `${invocation} ${does} ${w.folder}${flow ? `; flow: ${FLOW_WORDS[flow]}` : ''}`,
   });
   const onward = (flow: Flow | null) => [step('Outline', 'make an outline', flow), step('Implement', 'implement', flow)];
   switch (w.current) {

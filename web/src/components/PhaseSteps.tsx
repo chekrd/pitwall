@@ -1,10 +1,14 @@
-import { BOARD_HANDOFF, nextSteps, type NextStep } from '../../../server/rpi.ts';
+import { useState, type ReactNode } from 'react';
+import { IMPLEMENTER_MODELS, nextSteps, stepMessage, type ImplementerModel, type NextStep } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
 import { hold } from '../sends.ts';
 import type { Command, Session, Workflow } from '../types.ts';
+import { modelName } from '../util.ts';
 import { fileName, plural, useComments } from './Comments.tsx';
 import { useCommands } from './Composer.tsx';
 import { explain, SENDS } from './explain.ts';
+import { Icon } from './Icon.tsx';
+import picker from './ModelPicker.module.css';
 import styles from './PhaseSteps.module.css';
 
 // Why a step cannot go now, or null when it can: only at the end of a turn, as a command typed mid-turn would wait
@@ -28,13 +32,14 @@ const tip = (command: string) => ({
 export function PhaseSteps({ session, name, workflow, place }: { session: Session; name: string; workflow: Workflow; place: 'overview' | 'documents' }) {
   const commands = useCommands(session.worktree, true);
   const comments = useComments(session);
+  const [model, setModel] = useState<ImplementerModel>('opus');
   const steps = nextSteps(workflow, rpiInvocation(commands ?? []));
   if (!steps.length) return null;
   const blocked = sendBlocked(session, commands);
   const current = workflow.steps.find((s) => s.state === 'current')?.document;
   const open = current ? comments.filter((c) => c.ref.path === current).length : 0;
   const send = (step: NextStep) => {
-    const text = `${step.command}\n\n${BOARD_HANDOFF}`;
+    const text = stepMessage(step, model);
     void hold(session, { action: 'answer', body: { key: null, text, fresh: true }, label: `/clear, then ${step.command}`, command: true }, name, { box: false });
   };
   return (
@@ -45,10 +50,24 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
         </span>
       )}
       {steps.map((step) => (
-        <button key={step.label} type="button" data-variant={step.usual ? 'primary' : undefined} data-step={step.label} disabled={!!blocked} {...explain(blocked ? { does: blocked } : tip(step.command))} onClick={() => send(step)}>
-          {step.label}
-        </button>
+        <Pair key={step.label} with={step === steps.find((s) => s.implements) && (
+          <label className={picker.select} data-implementer-model data-explain="The model rpi's implementer writes the code with; the task's own model still reviews and fixes what it hands back">
+            <span className={picker.caption}>Implements with</span>
+            <select value={model} onChange={(e) => setModel(e.currentTarget.value as ImplementerModel)}>
+              {IMPLEMENTER_MODELS.map((m) => <option key={m} value={m}>{modelName(m)}</option>)}
+              <option value="">Task's model</option>
+            </select>
+            <Icon name="chevron-down" size={14} />
+          </label>
+        )}>
+          <button type="button" data-variant={step.usual ? 'primary' : undefined} data-step={step.label} disabled={!!blocked} {...explain(blocked ? { does: blocked } : tip(step.command))} onClick={() => send(step)}>
+            {step.label}
+          </button>
+        </Pair>
       ))}
     </div>
   );
 }
+
+const Pair = ({ with: lead, children }: { with: ReactNode; children: ReactNode }) =>
+  lead ? <span className={styles.pair}>{lead}{children}</span> : children;

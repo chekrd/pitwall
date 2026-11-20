@@ -9,5 +9,7 @@
     &[data-place="overview"] { margin-top: 12px; }
   }
 
+  .pair { display: inline-flex; align-items: center; gap: 8px; }
+
   .unsent { font-size: 12.5px; color: var(--prompt); }
 }
