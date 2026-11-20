@@ -3,6 +3,7 @@ import { basename, isAbsolute, join, resolve as pathResolve } from 'node:path';
 import type { RouteInput } from './contract.ts';
 import { schedules, sessions } from './db.ts';
 import { makeTaskFolder } from './folderTasks.ts';
+import { seedArchitecture } from './architecture.ts';
 import { addWorktree, excludeLocally, validBranch } from './git.ts';
 import { listCommands } from './commands.ts';
 import { RPI_DIR, rpiPrompt, taskDirName } from './rpi.ts';
@@ -94,6 +95,7 @@ async function startTask(req: NewTask) {
   const request = { repoId: repo.id, name, branch: branch ?? '', path: req.path ?? '', prompt: req.prompt ?? '', files, model: req.model ?? '', effort: req.effort ?? '', workflow: req.workflow };
   const { id, ready } = S.startAfter({ ...claude, prompt: first(newBranch), worktree: path, title: name, setup: repo.setupCommand }, request, 'Creating the worktree', async () => {
     await addWorktree(repo.path, { branch: newBranch, task: name, base: repo.baseBranch, root: repo.defaultWorktreeRoot, path });
+    await seedArchitecture(repo.path, path).catch((err) => console.warn('architecture copy', path, err));
     await refreshWorkspace();
   });
   return { path, sessionId: id, ready };

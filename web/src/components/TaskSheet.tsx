@@ -6,6 +6,7 @@ import { useStore } from '../store.ts';
 import type { RepoView, Session, Upstream } from '../types.ts';
 import { useBusy } from '../sends.ts';
 import { locate, sessionLabel, shownOf } from '../util.ts';
+import { Architecture } from './Architecture.tsx';
 import { artifactGroups, Artifacts } from './Artifacts.tsx';
 import { Conversation } from './Conversation.tsx';
 import { DiffView } from './DiffView.tsx';
@@ -56,7 +57,7 @@ export function TaskSheet({ route }: { route: Route }) {
   return (
     <section id={SHEET_DIALOG} ref={page} tabIndex={-1} className={styles.page} data-session={id} aria-label={name}>
       {link === 'connecting' && <p className={styles.connecting}>Connecting…</p>}
-      {session && <Body key={session.id} session={session} name={name} repos={repos} tab={sheet.tab} item={sheet.item} view={{ version: sheet.version, changes: sheet.changes }} />}
+      {session && <Body key={session.id} session={session} name={name} repos={repos} tab={sheet.tab} item={sheet.item} view={{ version: sheet.version, changes: sheet.changes, diagram: sheet.diagram }} />}
     </section>
   );
 }
@@ -67,7 +68,7 @@ interface BodyProps {
   repos: RepoView[];
   tab: Tab;
   item: string | null;
-  view: { version: number | null; changes: boolean };
+  view: { version: number | null; changes: boolean; diagram: string | null };
 }
 
 function Body({ session, name, repos, tab, item, view }: BodyProps) {
@@ -80,6 +81,7 @@ function Body({ session, name, repos, tab, item, view }: BodyProps) {
     { key: 'diff', label: 'Diff', kbd: '3' },
     ...(session.artifacts.length ? [{ key: 'artifacts' as const, label: `Artifacts (${artifactGroups(session.artifacts).length})`, kbd: '4' }] : []),
     ...(session.workflow ? [{ key: 'documents' as const, label: `Documents (${session.workflow.documents})`, kbd: '5' }] : []),
+    ...(session.architecture ? [{ key: 'architecture' as const, label: 'Architecture', kbd: '6' }] : []),
   ];
   const current = tabs.some((t) => t.key === tab) ? tab : 'overview';
 
@@ -134,6 +136,7 @@ function Body({ session, name, repos, tab, item, view }: BodyProps) {
         {current === 'artifacts' && <Artifacts session={session} item={item} changes={view.changes} />}
         {current === 'conversation' && <Conversation session={session} />}
         {current === 'documents' && <Documents session={session} name={name} item={item} view={view} />}
+        {current === 'architecture' && <Architecture session={session} item={item} view={view} />}
       </div>
     </>
   );

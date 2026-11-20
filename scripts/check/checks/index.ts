@@ -17,6 +17,7 @@ import { usageFindings } from './usageFindings.ts';
 import { versions } from './versions.ts';
 import { wall } from './wall.ts';
 import { workflow } from './workflow.ts';
+import { architecture } from './architecture.ts';
 
 export const checks: Check[] = [
   ...board,
@@ -37,4 +38,5 @@ export const checks: Check[] = [
   ...workflow,
   ...comments,
   ...versions,
+  ...architecture,
 ];

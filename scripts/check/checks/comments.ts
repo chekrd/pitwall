@@ -31,10 +31,24 @@ const endsOf = (text: string) => {
   return null;
 };
 
+// A drag over `text` once it stays put. The document may still be drawn again as the board's state arrives, moving the
+// text under the drag, so a drag that selected something else is tried again, as click() tries a click again.
 async function select(page: Page, text: string) {
-  const at = await page.until(`"${text}" in the document`, endsOf, text);
-  await page.drag(at.from, at.to);
-  assert.equal(await page.eval(() => getSelection()?.toString()), text);
+  let selected = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let last = '';
+    const at = await until(`"${text}" in the document, staying put`, async () => {
+      const ends = await page.eval(endsOf, text);
+      const now = JSON.stringify(ends);
+      const still = !!ends && now === last;
+      last = now;
+      return still && ends;
+    });
+    await page.drag(at.from, at.to);
+    selected = await page.eval(() => getSelection()?.toString() ?? '');
+    if (selected === text) return;
+  }
+  assert.equal(selected, text);
 }
 
 // The passages marked, by comment.

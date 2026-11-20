@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_QUOTE, MAX_REF_LINE, MAX_REF_LINES } from './codeRef.ts';
 import type { Snapshot, State } from './app.ts';
+import type { ArchitectureView } from './architecture.ts';
 import type { Command } from './commands.ts';
 import type { ConversationLog } from './conversations.ts';
 import type { FullDiff, Upstream } from './git.ts';
@@ -81,6 +82,8 @@ export const actionBodies = {
   }),
   'stop-aside': z.strictObject({ aside: z.string() }),
   'close-aside': z.strictObject({ aside: z.string() }),
+  'keep-architecture': z.strictObject({ model: z.string(), stamp: z.string() }),
+  'restore-architecture': z.strictObject({ undo: z.string() }),
 };
 
 // POST /api/sessions/:id/<action>.
@@ -93,6 +96,7 @@ export type ActionInput<A extends ActionName> = z.output<(typeof actionBodies)[A
 
 interface ActionAnswers {
   'ask-aside': { id: string };
+  'keep-architecture': { undo: string; files: number };
 }
 
 // Every other action answers 204.
@@ -154,6 +158,7 @@ export interface Responses {
   'POST /api/shell': void;
   'GET /api/sessions/:id/conversation': ConversationLog[];
   'GET /api/sessions/:id/documents': TaskFolder[];
+  'GET /api/sessions/:id/architecture': ArchitectureView;
   'GET /api/sessions/:id/versions': Pick<DocumentVersion, 'n' | 'at' | 'size'>[];
   'GET /api/sessions/:id/delete-worktree': WorktreeLoss;
   'POST /api/restart/resume': Resumed;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -95,4 +95,14 @@ test('a PR of a task across repos belongs to the worktree its command ran in, el
   assert.deepEqual(prWorktree(task, task.worktree, 'WEB'), { path: web, repo: 'web' });
   assert.equal(prWorktree(task, task.worktree, null), undefined);
   assert.deepEqual(prWorktree({ repoId: 1, worktree: '/w' }, '/elsewhere', 'web'), { path: '/w', repo: null });
+});
+
+test('a worktree a task across repos opens starts with its repository\'s architecture model', async () => {
+  const { folder, api } = await folderOfTwo();
+  mkdirSync(join(api, '.pitwall', 'architecture'), { recursive: true });
+  writeFileSync(join(api, '.pitwall', 'architecture', 'model.c4'), 'model {\n}\n');
+  const task = await makeTaskFolder(folder, 'modelled');
+  const opened = await openWorktree({ repo: 'api', task_folder: task });
+  assert.equal(readFileSync(join(opened.path, '.pitwall', 'architecture', 'model.c4'), 'utf8'), 'model {\n}\n');
+  assert.equal(existsSync(join((await openWorktree({ repo: 'web', task_folder: task })).path, '.pitwall')), false, 'none where the repository has none');
 });

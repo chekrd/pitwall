@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { modelRoots } from './architecture.ts';
 import { liveConversations, listConversations, type Conversation } from './conversations.ts';
 import { repos, roots, sessions, type Repo } from './db.ts';
 import { detectBase, listWorktrees, type Worktree } from './git.ts';
@@ -110,5 +111,8 @@ export function documentRoots(s: { repoId: number | null; worktree: string; cwd:
   const inside = s.cwd === s.worktree || s.cwd.startsWith(`${s.worktree}/`);
   return [...new Set(inside ? [...own, s.cwd] : own)];
 }
+
+// Where a task's architecture models are, each with its repository's main checkout.
+export const architectureRoots = (s: { repoId: number | null; worktree: string }) => modelRoots(s, cache);
 
 export const snapshot = () => ({ home: homedir(), roots: roots.all(), repos: cache, folders: folders(), sessions: sessions.all() });

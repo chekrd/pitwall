@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from 'react';
 
-export type Tab = 'overview' | 'diff' | 'artifacts' | 'conversation' | 'documents';
+export type Tab = 'overview' | 'diff' | 'artifacts' | 'conversation' | 'documents' | 'architecture';
 
-// What a tab shows of its item, from the query: a document's older version, or what changed in a version.
+// What a tab shows of its item, from the query: a document's older version, what changed in a version or in the
+// task's architecture, or the architecture's diagram on show.
 export interface View {
   version?: number | null | undefined;
   changes?: boolean | undefined;
+  diagram?: string | null | undefined;
 }
 
 export interface Sheet {
@@ -14,13 +16,14 @@ export interface Sheet {
   item: string | null;
   version: number | null;
   changes: boolean;
+  diagram: string | null;
 }
 
 export interface Route {
   sheet: Sheet | null;
 }
 
-const TABS: readonly string[] = ['overview', 'diff', 'artifacts', 'conversation', 'documents'];
+const TABS: readonly string[] = ['overview', 'diff', 'artifacts', 'conversation', 'documents', 'architecture'];
 
 const TASK_PATH = /^\/s\/([^/]+)(?:\/([^/]+)(?:\/([^/]+))?)?/;
 
@@ -54,7 +57,7 @@ function parse(href: string): Route {
   if (!match) return { sheet: null };
   const tab = (TABS.includes(match[2]) ? match[2] : 'overview') as Tab;
   const version = Number(url.searchParams.get('v'));
-  return { sheet: { id: match[1], tab, item: match[3] ?? null, version: Number.isInteger(version) && version > 0 ? version : null, changes: url.searchParams.has('changes') } };
+  return { sheet: { id: match[1], tab, item: match[3] ?? null, version: Number.isInteger(version) && version > 0 ? version : null, changes: url.searchParams.has('changes'), diagram: url.searchParams.get('view') || null } };
 }
 
 const current = () => parse(navigation.currentEntry?.url ?? location.href);
@@ -69,6 +72,7 @@ const WALL = '/';
 function query(view: View) {
   const q = new URLSearchParams();
   if (view.version) q.set('v', String(view.version));
+  if (view.diagram) q.set('view', view.diagram);
   if (view.changes) q.set('changes', '');
   const text = q.toString().replace(/=(?=&|$)/g, '');
   return text ? `?${text}` : '';
@@ -93,6 +97,12 @@ export function openSheet(id: string, tab: Tab = 'overview', item?: string | nul
 export function showTab(tab: Tab, item?: string | null, view?: View) {
   const { sheet } = current();
   if (sheet) go(sessionPath(sheet.id, tab, item, view), { history: 'replace' });
+}
+
+// Into another diagram of the architecture and out: a step of its own, which Back takes back.
+export function showDiagram(item: string | null, view: View) {
+  const { sheet } = current();
+  if (sheet) go(sessionPath(sheet.id, 'architecture', item, view), { history: 'push' });
 }
 
 // Stepping back into another document would load the board afresh and lose what the page shows, such as the toast

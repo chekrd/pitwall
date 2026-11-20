@@ -3,7 +3,7 @@ import type { Kind } from './answers.ts';
 // The board's keys as data: KEYS drives keyAction and the Keys dialog's rows, so the dialog cannot drift from what
 // the keys do. useKeys reads the DOM into a KeyContext; nothing here touches it.
 
-export type Tab = 'overview' | 'diff' | 'artifacts' | 'conversation' | 'documents';
+export type Tab = 'overview' | 'diff' | 'artifacts' | 'conversation' | 'documents' | 'architecture';
 
 export interface Key {
   key: string;
@@ -38,7 +38,7 @@ export interface Decision {
 
 export interface KeyContext {
   // `narrowed`: the Diff tab shows one file or one folder, which Esc steps back from.
-  sheet: { tab: Tab; artifacts: boolean; documents: boolean; narrowed: boolean } | null;
+  sheet: { tab: Tab; artifacts: boolean; documents: boolean; architecture: boolean; narrowed: boolean } | null;
   decision: Decision | null;
   // Another task waits for a decision.
   next: boolean;
@@ -107,10 +107,11 @@ export const KEYS: readonly Row[] = [
   { keys: 'N', help: 'New task', scopes: ['wall', 'sheet'], matches: named('n'), act: (ctx) => (ctx.repos ? { type: 'new-task' } : null) },
   { keys: 'B', help: 'Bug report: say what went wrong, and a Pitwall task fixes it', scopes: ['wall', 'sheet'], matches: named('b'), act: () => ({ type: 'bug' }) },
   {
-    keys: '1 / 2 / 3 / 4 / 5', help: 'In an open task: Overview, Conversation, Diff, Artifacts, Documents', scopes: ['sheet'], matches: (e) => digit(e) > 0 && digit(e) <= 5,
+    keys: '1 / 2 / 3 / 4 / 5 / 6', help: 'In an open task: Overview, Conversation, Diff, Artifacts, Documents, Architecture', scopes: ['sheet'], matches: (e) => digit(e) > 0 && digit(e) <= 6,
     act: (ctx, e) => {
-      const tab = ([null, 'overview', 'conversation', 'diff', 'artifacts', 'documents'] as const)[digit(e)];
-      return !tab || (tab === 'artifacts' && !ctx.sheet?.artifacts) || (tab === 'documents' && !ctx.sheet?.documents) ? null : { type: 'tab', tab };
+      const tab = ([null, 'overview', 'conversation', 'diff', 'artifacts', 'documents', 'architecture'] as const)[digit(e)];
+      return !tab || (tab === 'artifacts' && !ctx.sheet?.artifacts) || (tab === 'documents' && !ctx.sheet?.documents) || (tab === 'architecture' && !ctx.sheet?.architecture)
+        ? null : { type: 'tab', tab };
     },
   },
   { keys: 'J / K', help: 'In the diff: next or previous file', scopes: ['sheet'], repeats: true, matches: named('j', 'k'), act: (ctx, e) => (ctx.sheet?.tab === 'diff' ? { type: 'file', step: e.key.toLowerCase() === 'j' ? 1 : -1 } : null) },

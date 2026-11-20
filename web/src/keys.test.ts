@@ -4,7 +4,7 @@ import type { Kind } from './answers.ts';
 import { keyAction, KEYS, rowFor, typingLock, type Decision, type Key, type KeyContext, type Target } from './keys.ts';
 
 const page: Target = { editable: false, control: false, option: false, resizer: false };
-const overview = { tab: 'overview' as const, artifacts: false, documents: false, narrowed: false };
+const overview = { tab: 'overview' as const, artifacts: false, documents: false, architecture: false, narrowed: false };
 const decision = (kind: Kind, patch: Partial<Decision> = {}): Decision => ({ kind, details: kind === 'ask', primary: true, reply: kind !== 'menu', ...patch });
 const ctx = (patch: Partial<KeyContext> = {}): KeyContext =>
   ({ sheet: overview, decision: decision('ask'), next: true, guarded: false, held: false, repos: true, target: page, modal: null, popovers: [], tip: false, ...patch });
@@ -30,7 +30,7 @@ test('digits stay the tabs on a decision: options are pressed, not keyed', () =>
 
 test('D goes to the next decision from the Wall and from a task, when one waits', () => {
   assert.deepEqual(keyAction(wall(), key('d')), { type: 'next' });
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, narrowed: false } }), key('D')), { type: 'next' });
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, architecture: false, narrowed: false } }), key('D')), { type: 'next' });
   assert.equal(keyAction(wall({ next: false }), key('d')), null);
   assert.equal(keyAction(ctx({ guarded: true }), key('d')) !== null, true, 'no answer key, so no guard');
 });
@@ -42,7 +42,7 @@ test('the keys stay off while guarded (answer keys only), on auto-repeat, with M
 
   assert.equal(keyAction(ctx(), key('Enter', { repeat: true })), null);
   assert.equal(keyAction(ctx(), key('d', { repeat: true })), null);
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, narrowed: false } }), key('j', { repeat: true })), { type: 'file', step: 1 });
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, architecture: false, narrowed: false } }), key('j', { repeat: true })), { type: 'file', step: 1 });
 
   for (const mod of ['metaKey', 'ctrlKey', 'altKey'] as const) assert.equal(keyAction(ctx(), key('z', { [mod]: true })), null, mod);
   assert.equal(keyAction(ctx(), key('1', { isComposing: true })), null);
@@ -76,7 +76,7 @@ test('Enter or Space on a focused button is the button\'s; Space on a focused op
 test('Z takes back the last send anywhere, guarded or not', () => {
   assert.deepEqual(keyAction(ctx({ guarded: true }), key('Z')), { type: 'undo' });
   assert.deepEqual(keyAction(wall(), key('z')), { type: 'undo' });
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, narrowed: false } }), key('z')), { type: 'undo' });
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, architecture: false, narrowed: false } }), key('z')), { type: 'undo' });
 });
 
 test('in a task 1 to 5 switch tabs (4 when there are artifacts, 5 when there are documents), J and K act only on Diff, and Esc goes back', () => {
@@ -85,13 +85,15 @@ test('in a task 1 to 5 switch tabs (4 when there are artifacts, 5 when there are
   assert.deepEqual(keyAction(plain, key('2')), { type: 'tab', tab: 'conversation' });
   assert.deepEqual(keyAction(plain, key('3')), { type: 'tab', tab: 'diff' });
   assert.equal(keyAction(plain, key('4')), null);
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: true, documents: false, narrowed: false } }), key('4')), { type: 'tab', tab: 'artifacts' });
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: true, documents: false, architecture: false, narrowed: false } }), key('4')), { type: 'tab', tab: 'artifacts' });
   assert.equal(keyAction(plain, key('5')), null);
-  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: false, documents: true, narrowed: false } }), key('5')), { type: 'tab', tab: 'documents' });
-  assert.equal(keyAction(ctx({ sheet: { tab: 'overview', artifacts: false, documents: true, narrowed: false } }), key('4')), null, 'documents without artifacts');
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: false, documents: true, architecture: false, narrowed: false } }), key('5')), { type: 'tab', tab: 'documents' });
+  assert.equal(keyAction(ctx({ sheet: { tab: 'overview', artifacts: false, documents: true, architecture: false, narrowed: false } }), key('4')), null, 'documents without artifacts');
   assert.equal(keyAction(plain, key('6')), null);
+  assert.deepEqual(keyAction(ctx({ sheet: { tab: 'overview', artifacts: false, documents: false, architecture: true, narrowed: false } }), key('6')), { type: 'tab', tab: 'architecture' });
+  assert.equal(keyAction(plain, key('7')), null);
   assert.equal(keyAction(plain, key('j')), null);
-  const diff = ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, narrowed: false }, decision: null });
+  const diff = ctx({ sheet: { tab: 'diff', artifacts: false, documents: false, architecture: false, narrowed: false }, decision: null });
   assert.deepEqual(keyAction(diff, key('j')), { type: 'file', step: 1 });
   assert.deepEqual(keyAction(diff, key('K', { repeat: true })), { type: 'file', step: -1 });
   for (const k of ['v', 'Enter', 'ArrowRight', 'w', 'x', 'o']) assert.equal(keyAction(diff, key(k)), null, `${k} in the sheet`);
@@ -105,13 +107,13 @@ test('on the Wall N needs a repository, the tabs and the decision keys do nothin
   assert.equal(keyAction(wall({ repos: false }), key('n')), null);
   for (const k of ['1', 'Enter', 'w', ' ', 'j', 'v']) assert.equal(keyAction(wall(), key(k)), null, `${k} on the Wall`);
   assert.equal(keyAction(wall(), key('Escape')), null);
-  for (const at of [ctx({ held: true }), wall({ held: true }), ctx({ held: true, sheet: { tab: 'diff', artifacts: false, documents: false, narrowed: false } })]) {
+  for (const at of [ctx({ held: true }), wall({ held: true }), ctx({ held: true, sheet: { tab: 'diff', artifacts: false, documents: false, architecture: false, narrowed: false } })]) {
     assert.deepEqual(keyAction(at, key('Escape')), { type: 'undo' }, 'a held send goes back first');
   }
 });
 
 test('Esc has one order: a held send goes back first, then a tooltip is dismissed, then one file of the diff steps back to all files, then the task closes; a field keeps its own Esc', () => {
-  const file = { tab: 'diff' as const, artifacts: false, documents: false, narrowed: true };
+  const file = { tab: 'diff' as const, artifacts: false, documents: false, architecture: false, narrowed: true };
   assert.deepEqual(keyAction(ctx({ sheet: file, held: true, tip: true }), key('Escape')), { type: 'undo' }, 'hovering the Undo toast');
   assert.deepEqual(keyAction(ctx({ sheet: file, held: true }), key('Escape')), { type: 'undo' }, 'over one file of the diff');
   assert.deepEqual(keyAction(ctx({ sheet: file, tip: true }), key('Escape')), { type: 'close', what: 'tooltip' });
@@ -135,8 +137,8 @@ test('every row of the Keys table does something, so the Keys dialog lists exact
     Z: [ctx(), key('z')],
     N: [wall(), key('n')],
     B: [ctx(), key('b')],
-    '1 / 2 / 3 / 4 / 5': [ctx({ sheet: { tab: 'overview', artifacts: true, documents: false, narrowed: false } }), key('4')],
-    'J / K': [ctx({ sheet: { tab: 'diff', artifacts: true, documents: false, narrowed: false } }), key('k')],
+    '1 / 2 / 3 / 4 / 5 / 6': [ctx({ sheet: { tab: 'overview', artifacts: true, documents: false, architecture: false, narrowed: false } }), key('4')],
+    'J / K': [ctx({ sheet: { tab: 'diff', artifacts: true, documents: false, architecture: false, narrowed: false } }), key('k')],
     Esc: [ctx(), key('Escape')],
     '?': [wall(), key('?')],
   };

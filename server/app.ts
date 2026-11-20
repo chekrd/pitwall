@@ -11,6 +11,7 @@ import { bodyLimit } from 'hono/body-limit';
 import type { WSContext } from 'hono/ws';
 import { WebSocketServer } from 'ws';
 import { z } from 'zod';
+import { architectureView, keepArchitecture, KeepRefused, restoreArchitecture, tasksArchitecture } from './architecture.ts';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
 import { htmlText } from './htmlText.ts';
 import { drift } from './claudeFormat.ts';
@@ -32,7 +33,7 @@ import { UPLOAD_DIR_NAME, UPLOAD_IMAGE_NAME, UPLOAD_IMAGE_TYPES } from './upload
 import { checkUploads, MAX_BYTES, saveUpload } from './uploads.ts';
 import type { Usage } from './usage.ts';
 import { boardAnswer, boardTracker, cleanBatch, cleanEvent, type Data } from './uxlog.ts';
-import { documentRoots, folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
+import { architectureRoots, documentRoots, folders, notify, onChange, refreshWorkspace, repoView, snapshot, taskFolderOf, workspace } from './workspace.ts';
 
 const run = promisify(execFile);
 
@@ -89,7 +90,7 @@ const decodedPath = (segments: string[]) => {
   }
 };
 
-const withMarks = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: tasksWorkflows.of(s.id) })) });
+const withMarks = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: tasksWorkflows.of(s.id), architecture: tasksArchitecture.of(s.id) })) });
 
 const stateWith = (usage: Usage | null) =>
   ({ ...withMarks(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), terminalNotices: terminalNotices(), pitwall: ROOT });
@@ -97,6 +98,13 @@ const stateWith = (usage: Usage | null) =>
 // What /api/state answers, and /ws/events sends on every change.
 export type State = ReturnType<typeof stateWith>;
 export type Snapshot = State & { uiEntry: string | null };
+
+function modelOf(id: string, key: string) {
+  const s = sessions.get(id);
+  const model = s && architectureRoots(s).find((m) => m.key === key);
+  if (!model) throw new Invalid('this task has no such architecture model');
+  return model;
+}
 
 const actions: ActionHandlers<string> = {
   answer: async (id, b) => { await S.answer(id, b); },
@@ -119,6 +127,8 @@ const actions: ActionHandlers<string> = {
   'ask-aside': (id, b) => ({ id: S.askAside(id, b) }),
   'stop-aside': (id, b) => { S.stopAside(id, b.aside); },
   'close-aside': async (id, b) => { await S.closeAside(id, b.aside); },
+  'keep-architecture': async (id, b) => keepArchitecture(modelOf(id, b.model), b.stamp),
+  'restore-architecture': async (_id, b) => { await restoreArchitecture(b.undo); },
 };
 
 const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'answer-round', 'decline-menu', 'dismiss']);
@@ -158,7 +168,7 @@ export function createApp({ usage, ui }: AppDeps) {
   // A refusal is the page acting on a decision that moved on, not a fault. Node's own errors carry a code too.
   app.onError((err, c) => {
     const refused = err instanceof Refusal;
-    const invalid = refused || err instanceof Invalid;
+    const invalid = refused || err instanceof Invalid || err instanceof KeepRefused;
     if (!invalid) console.error(c.req.method, c.req.path, err);
     return c.json({ error: err instanceof Error ? err.message : String(err), ...(refused && { code: err.code }) }, invalid ? 400 : 500);
   });
@@ -331,6 +341,15 @@ export function createApp({ usage, ui }: AppDeps) {
     const data = file && type ? await readFile(file).catch(() => null) : null;
     if (!data || !type) return c.text('document not found', 404);
     return c.body(new Uint8Array(data), 200, { 'content-type': type, 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff', 'cache-control': 'no-cache' });
+  });
+
+  // The task's architecture model laid out by LikeC4, with its errors and what it changes against the project's.
+  app.get('/api/sessions/:id/architecture', async (c) => {
+    const s = sessions.get(c.req.param('id'));
+    const model = s && architectureRoots(s).find((m) => m.key === (c.req.query('model') ?? ''));
+    const view = model ? await architectureView(model) : null;
+    if (!view) return c.text('no architecture model', 404);
+    return c.json(view satisfies Responses['GET /api/sessions/:id/architecture']);
   });
 
   app.get('/api/sessions/:id/conversation', async (c) => c.json((await S.conversation(c.req.param('id'))) satisfies Responses['GET /api/sessions/:id/conversation']));

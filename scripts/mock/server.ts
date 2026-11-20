@@ -32,6 +32,7 @@ import { nextRun, parseSchedule, repeats, scheduler, taskPrompt, type Schedule, 
 import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
+import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
 import { contentType, currentVersion, RPI_DIR, rpiPrompt, taskDirName } from '../../server/rpi.ts';
 import { htmlText } from '../../server/htmlText.ts';
@@ -184,6 +185,7 @@ const storeOf = () => {
   return workflows({ versionsDir: (task) => join(dir, task) });
 };
 let docs = storeOf();
+let architecture = architectures();
 let seeded: Promise<unknown> = Promise.resolve();
 let written: string[] = [];
 let artifactHtml = new Map<string, string>();
@@ -198,9 +200,9 @@ function seedVersions(store: typeof docs, versions: Scenario['documentVersions']
   })));
 }
 
-function writeDocuments(documents: Scenario['documents'] = {}) {
+function writeDocuments(documents: Scenario['documents'] = {}, models: Scenario['architecture'] = {}) {
   for (const root of written) rmSync(join(root, '.pitwall'), { recursive: true, force: true });
-  written = Object.keys(documents);
+  written = [...new Set([...Object.keys(documents), ...Object.keys(models)])];
   for (const [root, folders] of Object.entries(documents)) {
     for (const [folder, files] of Object.entries(folders)) {
       const dir = join(root, RPI_DIR, folder);
@@ -208,13 +210,21 @@ function writeDocuments(documents: Scenario['documents'] = {}) {
       for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
     }
   }
+  for (const [root, files] of Object.entries(models)) {
+    mkdirSync(join(root, ARCHITECTURE_DIR), { recursive: true });
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(root, ARCHITECTURE_DIR, name), text);
+  }
 }
 
 async function refreshDocuments() {
   const store = docs;
+  const models = architecture;
   await seeded;
-  const changed = await store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' })));
-  if (changed && store === docs) push();
+  const [changed, modelsChanged] = await Promise.all([
+    store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' }))),
+    models.refresh(state.sessions.map((s) => ({ id: s.id, models: modelRoots(s, state.repos) }))),
+  ]);
+  if ((changed && store === docs) || (modelsChanged && models === architecture)) push();
 }
 setInterval(() => void refreshDocuments().catch((err) => console.warn('documents', err)), 1000);
 
@@ -230,7 +240,7 @@ function snapshot(): State {
     return { home: HOME, roots: state.roots, repos: state.repos, sessions: old } as unknown as State;
   }
   return {
-    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id) })),
+    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id), architecture: architecture.of(s.id) })),
     usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, terminalNotices, pitwall: `${HOME}/git/github/pitwall`,
   };
 }
@@ -282,7 +292,8 @@ function load(name: string) {
   state = make(Date.now());
   // A version folder of an earlier load is left to the HOME's removal, as a read of that load may still be writing it.
   docs = storeOf();
-  writeDocuments(state.documents);
+  architecture = architectures();
+  writeDocuments(state.documents, state.architecture);
   artifactHtml = new Map(Object.entries(state.artifactHtml ?? {}));
   seeded = seedVersions(docs, state.documentVersions).catch((err) => console.warn('document versions', err));
   void refreshDocuments();
@@ -525,6 +536,15 @@ const actions: ActionHandlers<Session> = {
   'ask-aside': (s, body) => ({ id: asides.ask(s.id, body) }),
   'stop-aside': (s, body) => asides.stop(s.id, body.aside),
   'close-aside': (s, body) => asides.close(s.id, body.aside),
+  'keep-architecture': async (s, body) => {
+    const kept = await keepArchitecture(modelOf(s, body.model), body.stamp);
+    await refreshDocuments();
+    return kept;
+  },
+  'restore-architecture': async (_s, body) => {
+    await restoreArchitecture(body.undo);
+    await refreshDocuments();
+  },
   dismiss: (s, body) => {
     checkDecision(s, body.key);
     closeQuestion({ get: find, update }, s.id, body.key ?? null);
@@ -988,6 +1008,29 @@ routes.push(['GET', /^\/api\/sessions\/([^/]+)\/documents\/(.+)$/, async ({ para
   if (!file || !type) throw new HttpError(404, 'document not found');
   return new Page(await readFile(file), { 'content-type': type, 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff' });
 }]);
+const modelOf = (s: Session, key: string) => {
+  const model = modelRoots(s, state.repos).find((m) => m.key === key);
+  if (!model) throw new Error('this task has no such architecture model');
+  return model;
+};
+api('GET /api/sessions/:id/architecture', async ({ params, url }) => {
+  const view = await architectureView(modelOf(must(params[0]), url.searchParams.get('model') ?? ''));
+  if (!view) throw new HttpError(404, 'no architecture model');
+  return view;
+});
+// Writes a file of a checkout's architecture model, as Claude would (no text removes it), and reads the models again at once.
+route('POST', '/mock/architecture', async ({ body }) => {
+  const root = String(body.root);
+  if (!state.repos.some((r) => r.worktrees.some((w) => w.path === root))) throw new Error('not a checkout of the scenario');
+  const file = join(root, ARCHITECTURE_DIR, String(body.name));
+  if (!/^[^/]+\.c4$/.test(String(body.name))) throw new Error('a .c4 file directly in the folder');
+  await mkdir(join(root, ARCHITECTURE_DIR), { recursive: true });
+  if (!written.includes(root)) written.push(root);
+  if (typeof body.text === 'string') await writeFile(file, body.text);
+  else rmSync(file, { force: true });
+  await refreshDocuments();
+  return NONE;
+});
 // Writes a file under a worktree's .pitwall/artifacts, as Claude would, and reads the documents again at once.
 route('POST', '/mock/document', async ({ body }) => {
   const s = must(String(body.id));

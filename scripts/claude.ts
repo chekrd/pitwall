@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { installRpi } from './plugins.ts';
+import { installSkills as installUserSkills, SKILL_NAMES } from './skills.ts';
 import { ARTIFACT_TOOL, ARTIFACT_TOOL_NAME, ASK_TOOL, ASK_TOOL_NAME, MCP_SERVER_NAME, OLD_MCP_SERVER_NAMES, OPEN_WORKTREE_TOOL_NAME, ORIGIN, ROOT, ROUND_TOOL_NAME } from '../server/config.ts';
 
 const SETTINGS = join(homedir(), '.claude', 'settings.json');
@@ -27,26 +28,9 @@ const HOOKS: Record<string, { matcher?: string; hooks: ReturnType<typeof post> }
 const OLD_TOOL_NAMES = OLD_MCP_SERVER_NAMES.flatMap((n) => [ASK_TOOL, ARTIFACT_TOOL].map((t) => `mcp__${n}__${t}`));
 const TOOLS = [ASK_TOOL_NAME, ROUND_TOOL_NAME, ARTIFACT_TOOL_NAME, OPEN_WORKTREE_TOOL_NAME];
 
-// The skills that work through Pitwall's tools, kept as user skills so that every session has them.
 const SKILLS = join(ROOT, 'config', 'skills');
 const USER_SKILLS = join(homedir(), '.claude', 'skills');
-const SKILL_NAMES = ['grill-me'];
-// Marks a skill folder as Pitwall's, so that disconnecting removes only what connecting put there.
-const OURS = '.pitwall';
-
-function installSkills(connect: boolean) {
-  for (const name of SKILL_NAMES) {
-    const to = join(USER_SKILLS, name);
-    if (existsSync(to) && !existsSync(join(to, OURS))) {
-      console.warn(`${to} is a skill of your own, left as it is; remove it to get Pitwall's ${name}`);
-      continue;
-    }
-    rmSync(to, { recursive: true, force: true });
-    if (!connect) continue;
-    cpSync(join(SKILLS, name), to, { recursive: true });
-    writeFileSync(join(to, OURS), '');
-  }
-}
+const installSkills = (connect: boolean) => installUserSkills(connect, { from: SKILLS, to: USER_SKILLS, pitwall: ROOT });
 
 const removeServer = (name: string) => {
   try {

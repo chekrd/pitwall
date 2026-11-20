@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import { seedArchitecture } from './architecture.ts';
 import { OPEN_WORKTREE_TOOL_NAME } from './config.ts';
 import { addWorktree, fullDiff, validBranch, type DiffStat, type FullDiff } from './git.ts';
 import { folders, refreshWorkspace, repoView, taskFolderOf, taskWorktrees } from './workspace.ts';
@@ -38,6 +39,7 @@ export async function openWorktree(input: { repo: string; task_folder: string })
   const path = await addWorktree(repo.path, {
     branch: task.name, task: task.name, base: repo.baseBranch, root: join(task.folder.path, 'worktrees'), path: join(task.path, repo.name),
   });
+  await seedArchitecture(repo.path, path).catch((err) => console.warn('architecture copy', path, err));
   await refreshWorkspace();
   return { path, branch: task.name, base: repoView(repo.id)?.base ?? repo.base, setup: repo.setupCommand };
 }

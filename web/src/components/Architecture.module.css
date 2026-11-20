@@ -1,0 +1,107 @@
+@layer components {
+  .page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  .bar {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+
+  .models {
+    display: flex;
+    gap: 4px;
+    button { height: 30px; padding: 0 10px; font-size: 13px; background: none; }
+    button[aria-current="true"] { border-color: var(--line-2); background: var(--raised); }
+  }
+
+  .trail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    min-width: 0;
+    color: var(--muted);
+    span { display: inline-flex; align-items: center; gap: 6px; }
+    span button { height: 30px; padding: 0 8px; border-color: transparent; background: none; font-size: 13.5px; font-weight: 500; color: var(--text-2); }
+    span button:hover { background: var(--hover); }
+    select { height: 32px; max-width: 100%; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--card); color: var(--text); font: 600 13.5px/1 var(--font); }
+  }
+
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-2);
+    cursor: pointer;
+    input { margin: 0; accent-color: var(--accent-ink); }
+  }
+
+  .keep { margin-left: auto; height: 32px; padding: 0 12px; font-size: 13px; }
+
+  .body { flex: 1; min-height: 0; display: flex; }
+
+  .canvas { position: relative; flex: 1; min-width: 0; min-height: 0; }
+
+  .empty { flex: 1; padding: 32px 24px; color: var(--muted); }
+
+  .errors {
+    flex: 1;
+    overflow: auto;
+    padding: 24px;
+    h3 { font-size: 17px; font-weight: 650; }
+    p { margin-top: 6px; color: var(--text-2); }
+    ul { margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    li { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--danger); border-radius: 10px; background: var(--card); }
+    code { font: 12.5px/1.4 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+    span { line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  }
+
+  .changes {
+    flex: none;
+    width: 300px;
+    overflow: auto;
+    padding: 16px 18px;
+    border-left: 1px solid var(--line);
+    font-size: 13.5px;
+    section + section { margin-top: 16px; }
+    h3 { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    ul { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    li { line-height: 1.4; overflow-wrap: anywhere; padding-left: 10px; border-left: 3px solid var(--line-2); }
+    [data-change-kind="added"] li { border-left-color: var(--ok); }
+    [data-change-kind="changed"] li { border-left-color: var(--prompt-line); }
+    [data-change-kind="removed"] li { border-left-color: var(--danger); }
+    [data-change-kind="removed"] strong { text-decoration: line-through; text-decoration-color: var(--muted); }
+    strong { font-weight: 600; }
+    span { color: var(--muted); }
+  }
+
+  .muted { color: var(--muted); }
+
+  .dialog {
+    width: min(540px, calc(100% - 32px));
+    padding: 24px 26px;
+    border-color: var(--line-2);
+    font-size: 15px;
+    &[open] { display: flex; flex-direction: column; gap: 12px; }
+    h2 { font-size: 22px; font-weight: 650; line-height: 1.25; }
+    p { line-height: 1.5; }
+    .muted { font-size: 14px; }
+    footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+    footer button { height: 42px; padding: 0 16px; border-radius: 13px; font-size: 15px; }
+    footer button:not([data-variant]) { background: none; }
+  }
+
+  .path { font-size: 13px; color: var(--text-2); word-break: break-all; }
+
+  @media (max-width: 720px) {
+    .bar { padding: 10px 16px; }
+    .keep { margin-left: 0; }
+    .body { flex-direction: column; }
+    .changes { width: auto; max-height: 40%; border-left: 0; border-top: 1px solid var(--line); }
+  }
+}

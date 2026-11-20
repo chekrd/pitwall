@@ -5,6 +5,7 @@ import { pauseMark } from '../../server/pause.ts';
 import type { RepoView } from '../../server/workspace.ts';
 import { addFromTemplate, queue, repos, ROOTS, session, titleOf, type Template } from './fixtures.ts';
 import { HOME } from './home.ts';
+import { BROKEN_MODEL, RETRIES_MODEL, STANDING_MODEL } from './architectureModels.ts';
 import { EXPORT_FLOW, EXPORT_FLOW_PAGES, rpiDocuments, rpiVersions } from './rpiDocs.ts';
 
 export type Flag = 'lossFails' | 'resumeFails';
@@ -21,6 +22,8 @@ export interface Scenario {
   documentVersions?: Record<string, Record<string, string[]>>;
   // The HTML of artifacts by id, for those that have their own; any other shows a page made from its title.
   artifactHtml?: Record<string, string>;
+  // Files the mock writes into its HOME under .pitwall/architecture: by checkout and name.
+  architecture?: Record<string, Record<string, string>>;
 }
 
 const MIN = 60_000;
@@ -250,6 +253,19 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
     scenario.documents = rpiDocuments(HOME);
     scenario.documentVersions = rpiVersions();
     scenario.artifactHtml = Object.fromEntries(EXPORT_FLOW_PAGES.map((html, i) => [`art-export-${i + 1}`, html]));
+    return scenario;
+  },
+
+  // Billing's main checkout holds the project's architecture model; Retry failed webhooks changes it in its worktree,
+  // and Fix invoice PDF rounding has a copy that does not parse.
+  architecture: (now) => {
+    const scenario = base(now, queue(now));
+    const worktree = (id: string) => scenario.sessions.find((s) => s.id === id)!.worktree;
+    scenario.architecture = {
+      [`${HOME}/code/billing-api`]: STANDING_MODEL,
+      [worktree('s-hooks')]: RETRIES_MODEL,
+      [worktree('s-invoice')]: BROKEN_MODEL,
+    };
     return scenario;
   },
 
