@@ -211,9 +211,10 @@ export async function openFromWall(page: Page, mock: Mock, id: string) {
 }
 
 // A task's page loaded straight from its URL, over the Wall.
+// The sheet's frame shows before the board's first state arrives, and keys pressed until then find no repositories.
 export async function openSheetOf(page: Page, mock: Mock, id: string) {
   await page.goto(`${mock.url}/s/${id}/overview`);
-  await page.until(`the sheet of ${id}`, sheetOpen);
+  await page.until(`the sheet of ${id}, the board live`, () => !!document.querySelector('#task-sheet') && !!document.querySelector('[data-link="live"]'));
 }
 
 // The labels of the open ⋯ menu.
