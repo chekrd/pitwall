@@ -21,6 +21,7 @@ import { DecisionBody } from './DecisionBody.tsx';
 import { Icon } from './Icon.tsx';
 import { Later, LaterActions } from './Later.tsx';
 import { PhaseSteps } from './PhaseSteps.tsx';
+import { RpiGuideButton } from './RpiGuide.tsx';
 import { PhaseStrip } from './Workflow.tsx';
 import { LatestReply } from './LatestReply.tsx';
 import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
@@ -499,7 +500,10 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
         <aside className={styles.aside}>
           {session.workflow && (
             <section aria-label="Workflow" data-ux-section="workflow">
-              <h3 className={styles.label} data-explain="The phases of the task's rpi workflow, read from its documents in .pitwall/artifacts; each with a document opens it in Documents">Workflow</h3>
+              <div className={styles.labelRow}>
+                <h3 className={styles.label} data-explain="The phases of the task's rpi workflow, read from its documents in .pitwall/artifacts; each with a document opens it in Documents">Workflow</h3>
+                <RpiGuideButton workflow={session.workflow} />
+              </div>
               <PhaseStrip session={session.id} workflow={session.workflow} />
               <PhaseSteps session={session} name={name} workflow={session.workflow} place="overview" />
             </section>

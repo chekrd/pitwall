@@ -18,6 +18,7 @@ import { Icon } from './Icon.tsx';
 import { Markdown } from './Markdown.tsx';
 import { PhaseSteps, sendBlocked } from './PhaseSteps.tsx';
 import { toast } from './Toasts.tsx';
+import { RpiGuideButton } from './RpiGuide.tsx';
 import { documentItem, PhaseStrip } from './Workflow.tsx';
 
 export const documentUrl = (session: string, path: string) => `/api/sessions/${session}/documents/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -89,6 +90,7 @@ export function Documents({ session, name, item, view }: { session: Session; nam
       {workflow && (
         <div className={styles.strip}>
           <PhaseStrip session={session.id} workflow={workflow} />
+          <RpiGuideButton workflow={workflow} />
           <PhaseSteps session={session} name={name} workflow={workflow} place="documents" />
         </div>
       )}

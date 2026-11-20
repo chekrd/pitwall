@@ -5,6 +5,7 @@ import { DeleteWorktreeDialog } from './components/DeleteWorktreeDialog.tsx';
 import { KeysDialog } from './components/KeysDialog.tsx';
 import { NewTaskDialog } from './components/NewTaskForm.tsx';
 import { RestartBanner } from './components/RestartBanner.tsx';
+import { RpiGuide } from './components/RpiGuide.tsx';
 import { TaskSheet } from './components/TaskSheet.tsx';
 import { TerminalNoticeBanner } from './components/TerminalNoticeBanner.tsx';
 import { Toasts } from './components/Toasts.tsx';
@@ -53,6 +54,7 @@ export function App() {
       <NewTaskDialog repos={store.repos} />
       <WorkspaceDialog roots={store.roots} repos={store.repos} sessions={store.sessions} />
       <KeysDialog />
+      <RpiGuide />
       <BugReportDialog />
       <DeleteWorktreeDialog />
       <Toasts />

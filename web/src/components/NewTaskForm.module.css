@@ -272,6 +272,8 @@
 
   .extra > .hint { flex: none; }
 
+  .hintRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+
   .segments {
     display: inline-flex;
     height: 32px;

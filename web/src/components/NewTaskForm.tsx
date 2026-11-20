@@ -14,6 +14,7 @@ import { ModelPicker, modelOptionsOf, useModelChoices } from './ModelPicker.tsx'
 import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
 import { RPI_DIR, taskDirName } from '../../../server/rpi.ts';
 import { Icon } from './Icon.tsx';
+import { RpiGuideButton } from './RpiGuide.tsx';
 import styles from './NewTaskForm.module.css';
 
 interface Fields {
@@ -659,9 +660,12 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
             </div>
           )}
           {rpi && (
-            <p className={styles.hint} data-workflow-hint>
-              Starts Claude on <code>/rpi</code> with the prompt; its documents go to <code>{rpiDir}</code>{pickedFolder ? ' in the task folder' : ', which git is told to ignore'}.
-            </p>
+            <div className={styles.hintRow}>
+              <p className={styles.hint} data-workflow-hint>
+                Starts Claude on <code>/rpi</code> with the prompt; its documents go to <code>{rpiDir}</code>{pickedFolder ? ' in the task folder' : ', which git is told to ignore'}.
+              </p>
+              <RpiGuideButton workflow={null} />
+            </div>
           )}
           {scheduling && (
             <p className={styles.hint} data-when-hint>

@@ -25,6 +25,16 @@ const pickModel = (value: string) => {
 const headingIs = (want: string) => document.querySelector('#task-sheet [data-document-body] h1')?.textContent === want;
 const bodyText = () => document.querySelector<HTMLElement>('#task-sheet [data-document-body]')?.innerText ?? '';
 
+const guideOpen = () => !!document.querySelector<HTMLDialogElement>('dialog#rpi-guide')?.open;
+const guideClosed = () => !document.querySelector<HTMLDialogElement>('dialog#rpi-guide')?.open;
+const guideMarks = () => {
+  const here = (attr: string) => [...document.querySelectorAll<HTMLElement>(`dialog#rpi-guide [${attr}][data-here]`)].map((el) => el.getAttribute(attr));
+  const chip = document.querySelector<HTMLElement>('dialog#rpi-guide [data-guide-flow] li[data-here]');
+  return { phase: here('data-guide-phase'), design: here('data-guide-design'), flow: here('data-guide-flow'), chip: chip?.textContent ?? null };
+};
+const focusOn = (selector: string) => !!document.activeElement?.matches(selector);
+const OPENER = '#task-sheet [data-rpi-guide-open]';
+
 export const workflow: Check[] = [
   {
     name: 'RPI.1 New task › More › Workflow is None until RPI is picked; with RPI the task starts on one /rpi command naming its task directory, .pitwall/artifacts/<branch with / as ->, the hint says where its documents go, and the choice is kept for the next New task and a reload. The model starts at Opus with None and at Fable with RPI, following the workflow until one is picked, which then stays until the task is created',
@@ -179,7 +189,7 @@ export const workflow: Check[] = [
     async run({ page, mock, shot }) {
       await openSheetOf(page, mock, 's-search-page');
       await page.until('the strip on Overview', () => !!document.querySelector('#task-sheet [data-phase-strip] li'));
-      assert.deepEqual(await page.eval(strip), ['Questions:done', 'Research:current', 'PRD:next', 'Technical Design:next', 'Outline:next', 'Implement:next']);
+      assert.deepEqual(await page.eval(strip), ['Questions:done', 'Research:current', 'PRD:next', 'Technical design:next', 'Outline:next', 'Implement:next']);
       const heights = await page.eval(() => [...document.querySelectorAll('#task-sheet [data-phase-strip] li')].map((li) => li.getBoundingClientRect().height));
       assert.equal(new Set(heights).size, 1, `one line each: ${heights.join(', ')}`);
       await shot('overview-rpi-prd');
@@ -225,6 +235,84 @@ export const workflow: Check[] = [
         return strip.bottom <= nav.top + 1 && nav.bottom <= body.top + 1 && body.right <= innerWidth;
       }));
       await shot('documents-narrow');
+    },
+  },
+  {
+    name: 'RPI.6 How RPI works opens one guide from Overview\'s Workflow and from Documents\' strip, with the task\'s flow and phase marked; Esc closes only the guide and gives focus back to the control that opened it; nothing comes from another host',
+    scenario: 'workflow',
+    async run({ page, mock, shot }) {
+      await openSheetOf(page, mock, 's-search-page');
+      await page.until('the strip on Overview', () => !!document.querySelector('#task-sheet [data-phase-strip] li'));
+      await page.click(`#task-sheet section[aria-label="Workflow"] [data-rpi-guide-open]`, 'How RPI works');
+      await page.until('the guide', guideOpen);
+      assert.deepEqual(await page.eval(guideMarks), { phase: ['research'], design: [], flow: ['prd'], chip: 'Research' });
+      assert.equal(await page.eval(() => document.querySelector('dialog#rpi-guide h2')?.textContent), 'How RPI works');
+      await shot('rpi-guide');
+      await page.eval(() => document.querySelector('#rpi-guide-flows')!.scrollIntoView({ block: 'start' }));
+      await shot('rpi-guide-flows');
+      await page.key('Escape');
+      await page.until('the guide closed', guideClosed);
+      await page.until('focus back on the control', focusOn, `#task-sheet section[aria-label="Workflow"] [data-rpi-guide-open]`);
+      assert.equal(await page.eval(() => location.pathname), '/s/s-search-page/overview', 'Esc closed only the guide');
+
+      await openSheetOf(page, mock, 's-export');
+      await page.key('5');
+      await page.until('Documents', () => location.pathname.startsWith('/s/s-export/documents') && !!document.querySelector('#task-sheet [data-document-body] h1'));
+      await page.until('the control by the strip', () => !!document.querySelector('#task-sheet [data-phase-strip] ~ [data-rpi-guide-open]'));
+      await shot('documents-rpi-guide-control');
+      await page.click('#task-sheet [data-phase-strip] ~ [data-rpi-guide-open]');
+      await page.until('the guide', guideOpen);
+      assert.deepEqual(await page.eval(guideMarks), { phase: ['implement'], design: [], flow: ['design-discussion'], chip: 'Implement' });
+      await page.click('dialog#rpi-guide header button', 'Close');
+      await page.until('the guide closed', guideClosed);
+      await page.until('focus back on the control', focusOn, '#task-sheet [data-phase-strip] ~ [data-rpi-guide-open]');
+      assert.ok((await page.eval(() => location.pathname)).startsWith('/s/s-export/documents'), 'still on Documents');
+      assert.deepEqual(page.requests.filter((u) => new URL(u).hostname !== '127.0.0.1' && !u.startsWith('data:')), [], 'nothing from another host');
+    },
+  },
+  {
+    name: 'RPI.7 New task shows How RPI works beside the RPI hint; the guide opens over New task with nothing marked, and Esc closes only the guide, leaving New task open with focus on the control',
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      assert.equal(await page.eval(() => !!document.querySelector('#new-task [data-rpi-guide-open]')), false, 'not with None');
+      await page.click('#new-task [data-workflow] label', 'RPI');
+      await page.until('the control by the hint', () => !!document.querySelector('#new-task [data-workflow-hint] ~ [data-rpi-guide-open]'));
+      await shot('new-task-rpi-guide-control');
+      await page.click('#new-task [data-rpi-guide-open]');
+      await page.until('the guide', guideOpen);
+      assert.deepEqual(await page.eval(guideMarks), { phase: [], design: [], flow: [], chip: null });
+      await page.key('Escape');
+      await page.until('the guide closed', guideClosed);
+      await page.until('focus back on the control', focusOn, '#new-task [data-rpi-guide-open]');
+      assert.equal(await page.eval(() => !!document.querySelector<HTMLDialogElement>('dialog#new-task')?.open), true, 'New task stays open');
+    },
+  },
+  {
+    name: 'RPI.8 narrow: the guide fits the window, its header stays in view as it scrolls, and neither the page nor the guide scrolls sideways',
+    scenario: 'workflow',
+    narrow: true,
+    async run({ page, mock, shot }) {
+      await openSheetOf(page, mock, 's-export');
+      await page.click(OPENER, 'How RPI works');
+      await page.until('the guide', guideOpen);
+      assert.deepEqual((await page.eval(sidewaysScroll)).filter((el) => el === 'the page' || el.startsWith('dialog.')), [], 'neither the page nor the guide');
+      assert.deepEqual(await page.eval(() => {
+        const dialog = document.querySelector('dialog#rpi-guide')!;
+        const r = dialog.getBoundingClientRect();
+        const out = [...dialog.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().right > r.right + 1).map((e) => e.tagName);
+        return { inside: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, out };
+      }), { inside: true, out: [] }, 'inside the window, and its content inside it');
+      await shot('rpi-guide-narrow');
+      const header = await page.eval(() => {
+        const dialog = document.querySelector<HTMLElement>('dialog#rpi-guide')!;
+        dialog.scrollTop = dialog.scrollHeight;
+        const top = dialog.getBoundingClientRect().top;
+        return { scrolled: dialog.scrollTop > 0, header: Math.abs(dialog.querySelector('header')!.getBoundingClientRect().top - top) <= 2 };
+      });
+      assert.deepEqual(header, { scrolled: true, header: true });
+      await shot('rpi-guide-narrow-end');
     },
   },
 ];
