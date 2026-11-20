@@ -1,4 +1,5 @@
 import type { CodeRef, DocumentRef, Parked } from './db.ts';
+import { BOARD_HANDOFF } from './rpi.ts';
 
 // Also imported by the UI, so nothing imported here may load the server.
 
@@ -41,7 +42,7 @@ export function documentCommentsMessage(invocation: string, path: string, drafts
     if (r.heading) return [`Under “${r.heading}”${older ? ` (${older})` : ''}:\n${commented(r, text)}`];
     return [older ? `${older[0].toUpperCase()}${older.slice(1)}:\n${commented(r, text)}` : commented(r, text)];
   });
-  return [`${invocation} update ${path}`, ...parts].join('\n\n');
+  return [`${invocation} update ${path}`, ...parts, BOARD_HANDOFF].join('\n\n');
 }
 
 // What Claude gets for a draft: the lines or the passage it was written about, when it was, then the draft. `latest`

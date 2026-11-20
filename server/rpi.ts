@@ -285,10 +285,15 @@ export function taskDirName(branch: string | null | undefined, name: string) {
 
 // One message: Claude Code reads a slash command's arguments to the end of the message, and the task directory stays
 // on the command's own line, as rpi's own next commands put it.
+// rpi ends each phase by asking for its next command to be run in a new session; on the board a button does that.
+export const BOARD_HANDOFF = 'Pitwall starts each next phase from its own buttons, in a new conversation: end with what to review and which phase comes next, without a command to run or a word about starting a new session.';
+
+export const withoutHandoff = (text: string) => text.replace(BOARD_HANDOFF, '').trim();
+
 export function rpiPrompt(prompt: string, dir: string, invocation = '/rpi') {
   const [first = '', ...rest] = prompt.trim().split('\n');
   const head = first.trim() ? `${invocation} ${first.trim()}; task directory: ${dir}` : `${invocation} task directory: ${dir}`;
-  return [head, ...rest].join('\n');
+  return [head, ...rest, '', BOARD_HANDOFF].join('\n');
 }
 
 const FLOW_WORDS: Record<Flow, string> = { 'design-discussion': 'design discussion', prd: 'prd', tdd: 'tdd', 'research-only': 'research only' };

@@ -34,7 +34,7 @@ import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
-import { contentType, currentVersion, RPI_DIR, rpiPrompt, taskDirName } from '../../server/rpi.ts';
+import { contentType, currentVersion, RPI_DIR, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
 import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
@@ -674,7 +674,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
   const working = !!o.prompt;
   state.sessions.push({
     id, conversation: id, history: [], repoId, worktree, cwd: worktree, pid: 41_000 + state.sessions.length, tty: '/dev/ttys041', title: o.title || null,
-    firstPrompt: o.prompt || null, status: working ? 'working' : 'idle', question: null, diffstat: null,
+    firstPrompt: withoutHandoff(o.prompt ?? '') || null, status: working ? 'working' : 'idle', question: null, diffstat: null,
     lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, waitingFor: null, dismissedAsk: null, round: null, dismissedRound: null, prs: [],
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [],
     model: o.model || null, effort: o.effort || null, context: null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, starting: null, parked: [], asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,

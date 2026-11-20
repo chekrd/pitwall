@@ -3,6 +3,7 @@ import { logged, openDecision, POSTED_MS, stateOf, tiles, toastsOf, type Check }
 import type { Mock } from '../mock.ts';
 import type { Page } from '../cdp.ts';
 import { until } from '../cdp.ts';
+import { BOARD_HANDOFF } from '../../../server/rpi.ts';
 
 const DIR = '.pitwall/artifacts/invoice-export';
 const DESIGN = `${DIR}/04-design-discussion-invoice-export.md`;
@@ -84,8 +85,6 @@ const STALE = comment('p-export-batch', OUTLINE, 'Phase 2: GET /invoices/export 
 
 const steps = () => [...document.querySelectorAll<HTMLButtonElement>('#task-sheet [data-next-steps] button')]
   .map((b) => `${b.dataset.variant === 'primary' ? '*' : ''}${b.textContent}${b.disabled ? ' (disabled)' : ''}`);
-
-const fresh = () => document.querySelector<HTMLInputElement>('#task-sheet [data-next-steps] input[type="checkbox"]')?.checked ?? null;
 
 const explainOf = (selector: string) => document.querySelector(selector)?.getAttribute('data-explain') ?? null;
 
@@ -185,6 +184,7 @@ export const comments: Check[] = [
         `/rpi:rpi update ${DESIGN}`,
         `Under “Stream or build the file first?”:\n> ${PASSAGE}\n\nSay what a failed stream leaves behind.`,
         `Under “Resolved Design Questions”:\n> ${units}\n\nKeep minor units in the file too.`,
+        BOARD_HANDOFF,
       ].join('\n\n');
       const [post] = await logged(mock, 'the comments sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
       assert.deepEqual(post.body, { key: null, text: message, drafts: ['c-stream', 'c-units'] });
@@ -197,15 +197,16 @@ export const comments: Check[] = [
     },
   },
   {
-    name: "CM.3 by the phase strip the Documents tab offers rpi's next steps for the flow: with Fresh conversation, on by default and remembered, /clear goes first and the command once Claude has started the new conversation; without it the command alone; a /clear never taken sends nothing more and says so; while Claude works they are disabled",
+    name: "CM.3 by the phase strip Overview and the Documents tab offer rpi's next steps for the flow, each /clear first and the command, with the note that the board moves the phases, once Claude has started the new conversation; a /clear never taken sends nothing more and says so; while Claude works they are disabled",
     scenario: 'workflow',
     clock: 'fast',
     expectedErrors: [/status of 400/],
     async run({ page, mock, shot }) {
+      const sent = (command: string) => `${command}\n\n${BOARD_HANDOFF}`;
       await page.goto(`${mock.url}/s/s-export/documents`);
       await page.until('the steps', () => !!document.querySelector('#task-sheet [data-next-steps] button'));
       assert.deepEqual(await page.eval(steps), ['*Implement the next phase']);
-      assert.equal(await page.eval(fresh), true, 'Fresh conversation is on by default');
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-next-steps] input')), null, 'no choice to stay in the conversation');
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-unsent-comments]')?.textContent), '1 comment not sent');
       assert.match(await page.eval(explainOf, '#task-sheet [data-next-steps] button') ?? '', /“\/clear”, then, once Claude has started the new conversation, “\/rpi:rpi implement \.pitwall\/artifacts\/invoice-export”/);
       await shot('documents-next-steps');
@@ -214,35 +215,27 @@ export const comments: Check[] = [
       const [held] = await until('the held toast', () => page.eval(toastsOf, 'undo'));
       assert.equal(held.text.split('\n')[0], `Sending: /clear, then /rpi:rpi implement ${DIR}`);
       const [post] = await logged(mock, 'the step sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
-      assert.deepEqual(post.body, { key: null, text: `/rpi:rpi implement ${DIR}`, fresh: true });
-      assert.deepEqual(await typedInto(mock, 's-export'), ['/clear', `/rpi:rpi implement ${DIR}`], 'in order, the command after the clear was taken');
+      assert.deepEqual(post.body, { key: null, text: sent(`/rpi:rpi implement ${DIR}`), fresh: true });
+      assert.deepEqual(await typedInto(mock, 's-export'), ['/clear', sent(`/rpi:rpi implement ${DIR}`)], 'in order, the command after the clear was taken');
       assert.notEqual((await stateOf(mock, 's-export')).conversation, before, 'a new conversation');
 
-      await page.click('#task-sheet [data-next-steps] label', 'Fresh conversation');
-      assert.equal(await page.eval(fresh), false);
-      await page.goto(`${mock.url}/s/s-export/documents`);
-      await page.until('the steps again', () => !!document.querySelector('#task-sheet [data-next-steps] button'));
-      assert.equal(await page.eval(fresh), false, 'remembered');
-      await page.click('#task-sheet [data-next-steps] button', 'Implement the next phase');
-      await logged(mock, 'the step sent alone', (e) => e.action === 'answer' && e.sessionId === 's-export' && !e.body.fresh, POSTED_MS);
-      assert.deepEqual(await typedInto(mock, 's-export'), ['/clear', `/rpi:rpi implement ${DIR}`, `/rpi:rpi implement ${DIR}`]);
-
-      await page.goto(`${mock.url}/s/s-search-page/documents`);
-      await page.until('the steps of the search page', () => !!document.querySelector('#task-sheet [data-next-steps] button'));
+      await page.goto(`${mock.url}/s/s-search-page/overview`);
+      await page.until('the steps in Overview', () => !!document.querySelector('#task-sheet [data-ux-section="workflow"] [data-next-steps] button'));
       assert.deepEqual(await page.eval(steps), ['*PRD (disabled)', 'Outline (disabled)', 'Implement (disabled)'], 'Claude is at work');
       await mock.post('/mock/patch', { id: 's-search-page', patch: { status: 'idle', activity: null } });
       await page.until('enabled', () => !document.querySelector('#task-sheet [data-next-steps] button:disabled'));
+      await shot('overview-next-steps');
       await page.click('#task-sheet [data-next-steps] button', 'PRD');
-      await logged(mock, 'the PRD step', (e) => e.action === 'answer' && e.sessionId === 's-search-page', POSTED_MS);
-      assert.deepEqual(await typedInto(mock, 's-search-page'), ['/rpi:rpi make a PRD .pitwall/artifacts/search-page; flow: prd']);
+      await logged(mock, 'the PRD step', (e) => e.action === 'answer' && e.sessionId === 's-search-page' && e.body.fresh === true, POSTED_MS);
+      assert.deepEqual(await until('typed', async () => (await typedInto(mock, 's-search-page')).length === 2 && typedInto(mock, 's-search-page')),
+        ['/clear', sent('/rpi:rpi make a PRD .pitwall/artifacts/search-page; flow: prd')]);
 
       await mock.post('/mock/clear-ignored', { on: true });
-      await page.click('#task-sheet [data-next-steps] label', 'Fresh conversation');
-      assert.equal(await page.eval(fresh), true);
+      await page.until('enabled again', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
       await page.click('#task-sheet [data-next-steps] button', 'Outline');
       const [error] = await until('the refusal', () => page.eval(toastsOf, 'error'), 15_000);
       assert.equal(error.text, 'Not sent to Docs search page: Claude did not start a new conversation after /clear, so “/rpi:rpi make an outline .pitwall/artifacts/search-page; flow: prd” was not sent\nShow');
-      assert.deepEqual(await typedInto(mock, 's-search-page'), ['/rpi:rpi make a PRD .pitwall/artifacts/search-page; flow: prd', '/clear'], 'nothing after the /clear');
+      assert.deepEqual(await typedInto(mock, 's-search-page'), ['/clear', sent('/rpi:rpi make a PRD .pitwall/artifacts/search-page; flow: prd'), '/clear'], 'nothing after the /clear');
     },
   },
   {

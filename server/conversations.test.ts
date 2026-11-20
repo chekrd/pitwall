@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { BOARD_HANDOFF } from './rpi.ts';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -170,6 +171,14 @@ test('the conversation pairs each prompt with what Claude wrote after its last t
     ['Which way?', 'Two ways.', Date.parse(at(6))],
   ]);
   assert.deepEqual(await exchanges(join(dir, 'gone.jsonl')), []);
+});
+
+test("an rpi command the board sent shows without the board's note to rpi", async () => {
+  const human = (content: string, minute: number) => ({ ...prompt(content, minute), origin: { kind: 'human' } });
+  const m = await meta([
+    human(`<command-message>rpi:rpi</command-message>\n<command-name>/rpi:rpi</command-name>\n<command-args>research .pitwall/artifacts/cart; flow: prd\n\n${BOARD_HANDOFF}</command-args>`, 0),
+  ]);
+  assert.equal(m.firstPrompt, '/rpi:rpi research .pitwall/artifacts/cart; flow: prd');
 });
 
 test('the developer wrote what Claude Code marks as theirs: a skill command and pasted text count, another session\'s message does not', async () => {

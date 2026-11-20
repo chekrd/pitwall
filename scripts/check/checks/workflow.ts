@@ -40,7 +40,7 @@ export const workflow: Check[] = [
       assert.deepEqual([created.body.workflow, created.body.prompt, created.body.branch], ['rpi', 'Add a CSV export of the invoices\nFinance wants a month per file.', 'feature/csv-export']);
       const id = await page.until('its page', () => /^\/s\/([^/]+)\/overview$/.exec(location.pathname)?.[1] ?? null);
       assert.equal((await stateOf(mock, id)).firstPrompt,
-        '/rpi:rpi Add a CSV export of the invoices; task directory: .pitwall/artifacts/feature-csv-export\nFinance wants a month per file.');
+        '/rpi:rpi Add a CSV export of the invoices; task directory: .pitwall/artifacts/feature-csv-export\nFinance wants a month per file.', 'shown without the note to rpi');
 
       await openNewTask(page);
       assert.equal(await page.until('the choice kept', picked), 'RPI');

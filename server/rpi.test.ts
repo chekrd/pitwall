@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { nextSteps, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
+import { BOARD_HANDOFF, nextSteps, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
 
 const doc = (name: string, text: string, modifiedAt = 1000): DocumentEntry =>
   ({ path: `.pitwall/artifacts/t/${name}`, name, modifiedAt, size: text.length, ...parseDocument(name, text) });
@@ -108,13 +108,13 @@ test('the summary is of the folder last written to, counts every document and ch
   assert.notEqual(touched.stamp, w.stamp);
 });
 
-test("New task's RPI prompt: one /rpi command with the task directory on its first line, the rest of the prompt after it", () => {
+test("New task's RPI prompt: one /rpi command with the task directory on its first line, the rest of the prompt after it, then that the board moves the phases", () => {
   assert.equal(rpiPrompt('Add retries to webhook delivery', '.pitwall/artifacts/webhook-retries'),
-    '/rpi Add retries to webhook delivery; task directory: .pitwall/artifacts/webhook-retries');
+    '/rpi Add retries to webhook delivery; task directory: .pitwall/artifacts/webhook-retries' + `\n\n${BOARD_HANDOFF}`);
   assert.equal(rpiPrompt('  Add retries\n\nFailed ones are lost today.\n\n/Users/me/Library/Caches/pitwall/uploads/u1/log.txt  ', '.pitwall/artifacts/r'),
-    '/rpi Add retries; task directory: .pitwall/artifacts/r\n\nFailed ones are lost today.\n\n/Users/me/Library/Caches/pitwall/uploads/u1/log.txt');
-  assert.equal(rpiPrompt('', '.pitwall/artifacts/r'), '/rpi task directory: .pitwall/artifacts/r');
-  assert.equal(rpiPrompt('Add retries', '.pitwall/artifacts/r', '/rpi:rpi'), '/rpi:rpi Add retries; task directory: .pitwall/artifacts/r', 'the invocation the commands list');
+    '/rpi Add retries; task directory: .pitwall/artifacts/r\n\nFailed ones are lost today.\n\n/Users/me/Library/Caches/pitwall/uploads/u1/log.txt' + `\n\n${BOARD_HANDOFF}`);
+  assert.equal(rpiPrompt('', '.pitwall/artifacts/r'), '/rpi task directory: .pitwall/artifacts/r' + `\n\n${BOARD_HANDOFF}`);
+  assert.equal(rpiPrompt('Add retries', '.pitwall/artifacts/r', '/rpi:rpi'), '/rpi:rpi Add retries; task directory: .pitwall/artifacts/r' + `\n\n${BOARD_HANDOFF}`, 'the invocation the commands list');
   assert.equal(taskDirName('feature/webhook-retries', 'retries'), 'feature-webhook-retries');
   assert.equal(taskDirName('', 'Webhook Retries!'), 'webhook-retries');
   assert.equal(taskDirName(null, '***'), 'task');

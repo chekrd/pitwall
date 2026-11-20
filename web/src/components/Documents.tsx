@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { documentCommentsMessage } from '../../../server/codeRef.ts';
-import { currentVersion, nextSteps, TYPE_LABELS, type NextStep, type VersionState } from '../../../server/rpi.ts';
+import { currentVersion, TYPE_LABELS, type VersionState } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
 import { api } from '../api.ts';
 import { SHEET_DIALOG } from '../keys.ts';
 import { changedSince, markRead, useReadVersions } from '../readVersions.ts';
 import { sessionPath, showTab, type View } from '../router.ts';
 import { hold } from '../sends.ts';
-import type { Command, DocumentEntry, Session, SupportingFile, TaskFolder, Workflow } from '../types.ts';
+import type { DocumentEntry, Session, SupportingFile, TaskFolder } from '../types.ts';
 import { ago } from '../util.ts';
 import { Changes, VersionPicker } from './Changes.tsx';
 import { CommentNote, fileName, markPassages, pickedIn, plural, shownComment, useComments, useWantedComment, type Comment, type Marked, type Picked } from './Comments.tsx';
 import { useCommands } from './Composer.tsx';
 import styles from './Documents.module.css';
-import { explain, SENDS, type Explanation } from './explain.ts';
+import { explain, SENDS } from './explain.ts';
 import { Icon } from './Icon.tsx';
 import { Markdown } from './Markdown.tsx';
+import { PhaseSteps, sendBlocked } from './PhaseSteps.tsx';
 import { toast } from './Toasts.tsx';
 import { documentItem, PhaseStrip } from './Workflow.tsx';
 
@@ -31,76 +32,6 @@ function relativeTo(doc: string, to: string) {
 }
 
 type Shown = { kind: 'document'; entry: DocumentEntry } | { kind: 'file'; entry: SupportingFile };
-
-// Why what the Documents tab sends cannot go now, or null when it can: only at the end of a turn, as a command
-// typed mid-turn would wait for the turn's end, and one typed under a question would answer it.
-function sendBlocked(s: Session, commands: readonly Command[] | null) {
-  if (s.archived) return 'The task is archived; unarchive it first.';
-  if (s.status === 'exited') return "The task's Claude has ended; continue it first.";
-  if (s.status === 'working') return 'Claude is at work; this can go once its turn has ended.';
-  if (s.status === 'waiting' || s.menu) return 'Claude is showing a question in its terminal, which this would answer: answer it first.';
-  if (!commands) return "Reading Claude's commands…";
-  return null;
-}
-
-const FRESH = 'pitwall:rpi-fresh';
-
-function useFresh() {
-  const [fresh, setFresh] = useState(() => {
-    try {
-      return localStorage.getItem(FRESH) !== '0';
-    } catch {
-      return true;
-    }
-  });
-  const choose = (on: boolean) => {
-    setFresh(on);
-    try {
-      localStorage.setItem(FRESH, on ? '1' : '0');
-    } catch {
-      // A page without storage keeps it in memory only.
-    }
-  };
-  return [fresh, choose] as const;
-}
-
-function stepTip(command: string, fresh: boolean): Explanation {
-  if (!fresh) return SENDS.prompt(command);
-  return { ...SENDS.prompt(`/clear”, then, once Claude has started the new conversation, “${command}`), sees: "a new conversation: /clear leaves this one behind, and rpi reads the task's documents" };
-}
-
-// rpi's next steps from the phase under way, each sent as rpi's own command for the task's folder and flow; with Fresh
-// conversation, after a /clear, as rpi runs each phase in a context of its own.
-function NextSteps({ session, name, workflow, commands, comments }: { session: Session; name: string; workflow: Workflow; commands: readonly Command[] | null; comments: Comment[] }) {
-  const [fresh, setFresh] = useFresh();
-  const steps = nextSteps(workflow, rpiInvocation(commands ?? []));
-  if (!steps.length) return null;
-  const blocked = sendBlocked(session, commands);
-  const current = workflow.steps.find((s) => s.state === 'current')?.document;
-  const open = current ? comments.filter((c) => c.ref.path === current).length : 0;
-  const send = (step: NextStep) => {
-    const label = fresh ? `/clear, then ${step.command}` : step.command;
-    void hold(session, { action: 'answer', body: { key: null, text: step.command, ...(fresh && { fresh: true }) }, label, command: true }, name, { box: false });
-  };
-  return (
-    <div className={styles.next} data-next-steps>
-      {open > 0 && (
-        <span className={styles.unsent} data-unsent-comments data-explain={`The ${fileName(current!)} document has comments under Later that Claude has not had yet`}>
-          {plural(open, 'comment')} not sent
-        </span>
-      )}
-      {steps.map((step) => (
-        <button key={step.label} type="button" data-variant={step.usual ? 'primary' : undefined} data-step={step.label} disabled={!!blocked} {...explain(blocked ? { does: blocked } : stepTip(step.command, fresh))} onClick={() => send(step)}>
-          {step.label}
-        </button>
-      ))}
-      <label className={styles.fresh} data-explain="Starts the next step in a new conversation with /clear, as rpi recommends a context of its own for each phase; the documents carry what it needs">
-        <input type="checkbox" checked={fresh} onChange={(e) => setFresh(e.currentTarget.checked)} />
-        Fresh conversation
-      </label>
-    </div>
-  );
-}
 
 // The task's rpi documents, as they stand on disk: read when the tab opens and again whenever the snapshot's stamp
 // says a file changed.
@@ -158,7 +89,7 @@ export function Documents({ session, name, item, view }: { session: Session; nam
       {workflow && (
         <div className={styles.strip}>
           <PhaseStrip session={session.id} workflow={workflow} />
-          <NextSteps session={session} name={name} workflow={workflow} commands={commands} comments={comments} />
+          <PhaseSteps session={session} name={name} workflow={workflow} place="documents" />
         </div>
       )}
       <div className={styles.documents}>

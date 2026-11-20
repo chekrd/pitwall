@@ -27,7 +27,7 @@ import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
 import { tasksWorkflows } from './documents.ts';
-import { currentVersion } from './rpi.ts';
+import { currentVersion, withoutHandoff } from './rpi.ts';
 
 const run = promisify(execFile);
 
@@ -60,7 +60,7 @@ function addTask(opts: NewClaude, status: Session['status']) {
   const id = randomUUID();
   sessions.insert({
     id, repoId: opts.repoId, worktree: opts.worktree, cwd: opts.worktree, pid: null, tty: null,
-    title: opts.title || null, firstPrompt: opts.prompt || null, status,
+    title: opts.title || null, firstPrompt: withoutHandoff(opts.prompt ?? '') || null, status,
   });
   sessions.update(id, { scheduled: opts.scheduled ?? null, ...opts.running });
   return id;

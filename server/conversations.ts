@@ -12,6 +12,7 @@ import { tildeIn } from './home.ts';
 import { linksIn, type Found } from './links.ts';
 import { proseRound, type Round } from './rounds.ts';
 import { readEntries, readEntriesWhole } from './transcriptRead.ts';
+import { withoutHandoff } from './rpi.ts';
 
 const run = promisify(execFile);
 const CLAUDE_DIR = join(homedir(), '.claude');
@@ -153,11 +154,12 @@ const fromElsewhere = (text: string) => /^<(?!pasted_content\b)/.test(text) || /
 
 const SLASH_COMMAND = /^<command-message>[^<]*<\/command-message>\s*<command-name>([^<]*)<\/command-name>\s*(?:<command-args>([\s\S]*)<\/command-args>)?\s*$/;
 
-// The message as the developer typed it: a skill's slash command with its arguments, pasted text without its tags.
+// The message as the developer typed it: a skill's slash command with its arguments, pasted text without its tags,
+// without the note the board adds for rpi.
 function typed(text: string) {
   const command = text.match(SLASH_COMMAND);
-  if (command) return `${command[1]} ${command[2] ?? ''}`.trim();
-  return text.replace(/<\/?pasted_content[^>\n]*>\n?/g, '').trim();
+  const shown = command ? `${command[1]} ${command[2] ?? ''}` : text.replace(/<\/?pasted_content[^>\n]*>\n?/g, '');
+  return withoutHandoff(shown);
 }
 
 // Claude Code names who wrote an entry in its origin, 'human' for the developer. An entry that has one goes by it, as

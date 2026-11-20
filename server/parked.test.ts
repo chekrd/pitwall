@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cutQuote, documentCommentsMessage, draftMessage, MAX_QUOTE } from './codeRef.ts';
+import { BOARD_HANDOFF } from './rpi.ts';
 import { actionBodies } from './contract.ts';
 import type { Parked, Session } from './db.ts';
 import { addParked, editParked, endsOnQuestion, removeParked, turnEnds } from './parked.ts';
@@ -185,8 +186,9 @@ test("a document's comments go as one rpi command: update and the path on its fi
     `/rpi:rpi update ${DESIGN}`,
     'Under “Stream or build the file first?”:\n> Streaming starts the download at once;\n> building first can report a row count.\n\nSay what a failed stream leaves behind.',
     'Under “Resolved Design Questions”:\n> Amounts are written in major units with two decimals\n\nKeep minor units in the file too.',
+    BOARD_HANDOFF,
   ].join('\n\n'));
-  assert.equal(documentCommentsMessage('/rpi', DESIGN, [{ text: 'Why?', ref: { ...units, heading: null } }]), `/rpi update ${DESIGN}\n\n> Amounts are written in major units with two decimals\n\nWhy?`);
+  assert.equal(documentCommentsMessage('/rpi', DESIGN, [{ text: 'Why?', ref: { ...units, heading: null } }]), `/rpi update ${DESIGN}\n\n> Amounts are written in major units with two decimals\n\nWhy?\n\n${BOARD_HANDOFF}`);
 });
 
 test('a passage is kept trimmed, its blank lines at most one, and cut with an ellipsis at 600 characters', () => {
@@ -220,7 +222,7 @@ test('a comment carries the version it was written on; only one on a version old
     `/rpi update ${DESIGN}`,
     `Under “Stream or build the file first?” (${moved}):\n> Streaming starts the download at once;\n> building first can report a row count.`, 'Why?',
     'Written on version 1; the document is at version 3 now, so the passage may have moved:\n> Amounts are written in major units with two decimals', 'And?',
-    'Under “Resolved Design Questions”:\n> Amounts are written in major units with two decimals', 'Now.',
+    'Under “Resolved Design Questions”:\n> Amounts are written in major units with two decimals', 'Now.', BOARD_HANDOFF,
   ]);
   const parked: Parked[] = [{ id: 'c', text: 'Why?', auto: true, armedAt: 150, at: 0, ref: onTwo }];
   const w = turnEnds((task, path) => (task === 's' && path === DESIGN ? 3 : null));
