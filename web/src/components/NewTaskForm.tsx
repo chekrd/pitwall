@@ -25,7 +25,8 @@ interface Fields {
   branch: string;
   path: string;
   existing: boolean;
-  model: string;
+  // null until one is picked, standing for the workflow's model.
+  model: string | null;
   effort: string;
   // RPI starts Claude on HumanLayer's /rpi with the prompt, which writes its documents into the task's .pitwall folder.
   workflow: 'none' | 'rpi';
@@ -49,8 +50,16 @@ const DIALOG = 'new-task';
 const STORED = 'pitwall:new-task';
 const CHOICES = 'pitwall:new-task-choices';
 const WHEN = { start: 'now', at: '', time: '09:00', days: [1, 2, 3, 4, 5] } as const satisfies Partial<Fields>;
-const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: '', effort: '', workflow: 'none', more: false, ...WHEN, days: [...WHEN.days] };
-const choicesOf = ({ repoId, folder, existing, model, effort, workflow, more }: Fields) => ({ repoId, folder, existing, model, effort, workflow, more });
+const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: null, effort: '', workflow: 'none', more: false, ...WHEN, days: [...WHEN.days] };
+const choicesOf = ({ repoId, folder, existing, effort, workflow, more }: Fields) => ({ repoId, folder, existing, effort, workflow, more });
+const WORKFLOW_MODEL = { none: 'opus', rpi: 'fable' } as const;
+
+// When Claude Code picks the workflow's model by itself, that model has no option of its own but the first.
+function modelOf(f: Fields, choices: Parameters<typeof modelOptionsOf>[0]) {
+  if (f.model !== null) return f.model;
+  const want = WORKFLOW_MODEL[f.workflow];
+  return modelOptionsOf(choices).some(([v]) => v === want) ? want : '';
+}
 
 const NAME = /^[A-Za-z0-9._/-]+$/;
 // Monday first.
@@ -84,14 +93,14 @@ const read = (storage: () => Storage, key: string) => {
 };
 
 function stored(): Fields {
-  const { prompt, branch, path, time, days } = read(() => sessionStorage, STORED);
-  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '', time: time ?? WHEN.time, days: days ?? [...WHEN.days] };
+  const { prompt, branch, path, model, time, days } = read(() => sessionStorage, STORED);
+  const draft = { prompt: prompt ?? '', branch: branch ?? '', path: path ?? '', model: model ?? null, time: time ?? WHEN.time, days: days ?? [...WHEN.days] };
   return { ...EMPTY, ...read(() => localStorage, CHOICES), ...draft };
 }
 
-// A prompt begun and closed is there when New task opens again, and a reload keeps it; the name starts empty and Start
-// on Now each time.
-// The repository, the mode, the model and effort and whether More is open outlast the tab, as the next task usually
+// A prompt begun and closed is there when New task opens again, and a reload keeps it, as does a model picked for it;
+// the name starts empty and Start on Now each time.
+// The repository, the mode, the workflow, the effort and whether More is open outlast the tab, as the next task usually
 // starts where the last one did.
 let fields = stored();
 // They share the branch list too: both are mounted at once, and one read serves them.
@@ -108,8 +117,8 @@ const notify = () => {
 function edit(patch: Partial<Fields>) {
   fields = { ...fields, ...patch };
   try {
-    const { prompt, branch, path, time, days } = fields;
-    sessionStorage.setItem(STORED, JSON.stringify({ prompt, branch, path, time, days }));
+    const { prompt, branch, path, model, time, days } = fields;
+    sessionStorage.setItem(STORED, JSON.stringify({ prompt, branch, path, model, time, days }));
     localStorage.setItem(CHOICES, JSON.stringify(choicesOf(fields)));
   } catch {
     // A page without storage keeps them in memory only.
@@ -411,6 +420,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   }, [repo.id, opening]);
   const choices = useModelChoices(target.key, pickedFolder ? `/api/folders/models?path=${encodeURIComponent(pickedFolder.path)}` : `/api/repos/${repo.id}/models`);
   const existing = f.existing && !pickedFolder;
+  const model = modelOf(f, choices);
 
   const name = f.name.trim();
   const branch = f.branch.trim();
@@ -427,16 +437,17 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const [error, create, pending] = useActionState(async () => {
     const now = fields;
     const files = readyPaths(draftOf(ATTACHED));
+    const model = modelOf(now, choices);
     const chose = {
-      mode: pickedFolder ? 'folder' : now.existing ? 'existing-branch' : 'worktree', model: !!now.model, effort: !!now.effort,
+      mode: pickedFolder ? 'folder' : now.existing ? 'existing-branch' : 'worktree', model: !!model, effort: !!now.effort,
       branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length, files: files.length, workflow: now.workflow,
     };
     const workflow = now.workflow === 'rpi' ? { workflow: 'rpi' as const } : {};
     try {
       if (now.start !== 'now') {
         const task = pickedFolder
-          ? { kind: 'folder' as const, folder: pickedFolder.path, prompt: now.prompt, files, model: now.model, effort: now.effort, ...workflow }
-          : { kind: 'repo' as const, repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model: now.model, effort: now.effort, ...workflow };
+          ? { kind: 'folder' as const, folder: pickedFolder.path, prompt: now.prompt, files, model, effort: now.effort, ...workflow }
+          : { kind: 'repo' as const, repoId: repo.id, existingBranch: now.existing, branch: now.branch.trim(), path: untilde(now.path.trim(), home), prompt: now.prompt, files, model, effort: now.effort, ...workflow };
         const schedule = await api('POST', '/api/schedules', { name: now.existing && !pickedFolder ? '' : now.name.trim(), task, when: whenOf(now)! });
         edit({ ...EMPTY, ...choicesOf(now), repoId: pickedFolder ? now.repoId : repo.id, branch: now.existing && !pickedFolder ? defaultBranch(repo) : '' });
         clearAttached();
@@ -447,7 +458,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       }
       if (pickedFolder) {
         const result = await api('POST', '/api/folder-tasks', {
-          folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, files, model: now.model, effort: now.effort, ...workflow,
+          folder: pickedFolder.path, name: now.name.trim(), prompt: now.prompt, files, model, effort: now.effort, ...workflow,
         });
         edit({ ...EMPTY, ...choicesOf(now) });
         clearAttached();
@@ -464,7 +475,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         prompt: now.prompt,
         files,
         existingBranch: now.existing,
-        model: now.model,
+        model,
         effort: now.effort,
         ...workflow,
       });
@@ -494,7 +505,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
 
   const rpi = f.workflow === 'rpi';
   const rpiDir = `${RPI_DIR}/${taskDirName(existing ? branch : pickedFolder ? name : branch || name, name)}`;
-  const chosen = [rpi && 'RPI', when && describeWhen(when), f.model && modelOptionsOf(choices).find(([v]) => v === f.model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
+  const chosen = [rpi && 'RPI', when && describeWhen(when), model && modelOptionsOf(choices).find(([v]) => v === model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
   const workflowControl = (
     <div className={styles.when} data-workflow>
@@ -511,7 +522,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
     </div>
   );
 
-  const modelControl = <ModelPicker choices={choices} model={f.model} effort={f.effort} onChange={edit} />;
+  const modelControl = <ModelPicker choices={choices} model={model} effort={f.effort} onChange={edit} />;
 
   const startControl = (
     <div className={styles.when} data-when>

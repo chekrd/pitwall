@@ -205,7 +205,7 @@ export const comments: Check[] = [
       const sent = (command: string) => `${command}\n\n${BOARD_HANDOFF}`;
       const byOpus = (command: string) => `${command}\nLaunch outline-implementer-agent with model: opus.\n\n${BOARD_HANDOFF}`;
       await page.goto(`${mock.url}/s/s-export/documents`);
-      await page.until('the steps', () => !!document.querySelector('#task-sheet [data-next-steps] button'));
+      await page.until('the steps', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
       assert.deepEqual(await page.eval(steps), ['*Implement the next phase']);
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-next-steps] input')), null, 'no choice to stay in the conversation');
       assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('#task-sheet [data-implementer-model] select')?.selectedOptions[0]?.textContent), 'Opus', 'Opus implements unless another is picked');

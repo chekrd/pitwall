@@ -12,18 +12,29 @@ const strip = () => [...document.querySelectorAll<HTMLElement>('#task-sheet [dat
 const listed = () => [...document.querySelectorAll<HTMLElement>('#task-sheet nav[aria-label="Documents"] button')]
   .map((b) => [b.querySelector('strong')?.textContent, b.querySelector('span')?.textContent?.split(' · ')[0], b.getAttribute('aria-current') === 'true']);
 
+const modelShown = () => document.querySelector<HTMLSelectElement>('#new-task [data-more-options] select')?.selectedOptions[0]?.textContent ?? null;
+
+const modelIs = (want: string) => document.querySelector<HTMLSelectElement>('#new-task [data-more-options] select')?.selectedOptions[0]?.textContent === want;
+
+const pickModel = (value: string) => {
+  const select = document.querySelector<HTMLSelectElement>('#new-task [data-more-options] select')!;
+  select.value = value;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
 const headingIs = (want: string) => document.querySelector('#task-sheet [data-document-body] h1')?.textContent === want;
 const bodyText = () => document.querySelector<HTMLElement>('#task-sheet [data-document-body]')?.innerText ?? '';
 
 export const workflow: Check[] = [
   {
-    name: 'RPI.1 New task › More › Workflow is None until RPI is picked; with RPI the task starts on one /rpi command naming its task directory, .pitwall/artifacts/<branch with / as ->, the hint says where its documents go, and the choice is kept for the next New task and a reload',
+    name: 'RPI.1 New task › More › Workflow is None until RPI is picked; with RPI the task starts on one /rpi command naming its task directory, .pitwall/artifacts/<branch with / as ->, the hint says where its documents go, and the choice is kept for the next New task and a reload. The model starts at Opus with None and at Fable with RPI, following the workflow until one is picked, which then stays until the task is created',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
       await openNewTask(page);
       const picked = () => document.querySelector<HTMLInputElement>('#new-task [data-workflow] input:checked')?.parentElement?.textContent ?? null;
       assert.equal(await page.until('the Workflow choice', picked), 'None');
+      await page.until('Opus with None', modelIs, 'Opus 5.5');
       await page.type('Add a CSV export of the invoices\nFinance wants a month per file.');
       await pickRepo(page, 'billing');
       await page.click('dialog#new-task input[placeholder="fix-login-redirect"]');
@@ -34,10 +45,11 @@ export const workflow: Check[] = [
       await page.click('#new-task [data-workflow] label', 'RPI');
       assert.equal(await page.until('the RPI hint', () => document.querySelector('#new-task [data-workflow-hint]')?.textContent ?? null),
         'Starts Claude on /rpi with the prompt; its documents go to .pitwall/artifacts/feature-csv-export, which git is told to ignore.');
+      await page.until('Fable with RPI', modelIs, 'Fable 5.1');
       await shot('new-task-rpi');
       await page.key('Enter', { meta: true });
       const [created] = await logged(mock, 'the new task', (e) => e.method === 'POST' && e.path === '/api/worktrees');
-      assert.deepEqual([created.body.workflow, created.body.prompt, created.body.branch], ['rpi', 'Add a CSV export of the invoices\nFinance wants a month per file.', 'feature/csv-export']);
+      assert.deepEqual([created.body.workflow, created.body.prompt, created.body.branch, created.body.model], ['rpi', 'Add a CSV export of the invoices\nFinance wants a month per file.', 'feature/csv-export', 'fable']);
       const id = await page.until('its page', () => /^\/s\/([^/]+)\/overview$/.exec(location.pathname)?.[1] ?? null);
       assert.equal((await stateOf(mock, id)).firstPrompt,
         '/rpi:rpi Add a CSV export of the invoices; task directory: .pitwall/artifacts/feature-csv-export\nFinance wants a month per file.', 'shown without the note to rpi');
@@ -49,6 +61,14 @@ export const workflow: Check[] = [
       await page.until('the tiles', tiles);
       await openNewTask(page);
       assert.equal(await page.until('the choice kept over a reload', picked), 'RPI');
+      await page.until('Fable again', modelIs, 'Fable 5.1');
+      await page.click('#new-task [data-workflow] label', 'None');
+      await page.until('Opus again with None', modelIs, 'Opus 5.5');
+      await shot('new-task-none');
+      await page.eval(pickModel, 'sonnet');
+      await page.click('#new-task [data-workflow] label', 'RPI');
+      await page.until('the RPI hint again', () => !!document.querySelector('#new-task [data-workflow-hint]'));
+      assert.equal(await page.eval(modelShown), 'Sonnet 5.5', 'a model picked stays when the workflow changes');
       await page.click('#new-task [data-workflow] label', 'None');
       await page.click('dialog#new-task textarea');
       await page.type('No workflow');
@@ -56,9 +76,11 @@ export const workflow: Check[] = [
       await page.type('plain-task');
       await page.key('Enter', { meta: true });
       const [plain] = await logged(mock, 'the plain task', (e) => e.method === 'POST' && e.path === '/api/worktrees' && e.body.name === 'plain-task');
-      assert.equal(plain.body.workflow, undefined);
+      assert.deepEqual([plain.body.workflow, plain.body.model], [undefined, 'sonnet']);
       const other = await page.until('its page', () => /^\/s\/([^/]+)\/overview$/.exec(location.pathname)?.[1] ?? null);
       assert.equal((await stateOf(mock, other)).firstPrompt, 'No workflow');
+      await openNewTask(page);
+      await page.until('Opus for the next task', modelIs, 'Opus 5.5');
     },
   },
   {
@@ -149,6 +171,18 @@ export const workflow: Check[] = [
       assert.match(await served.text(), /Export invoices/);
       await page.click('#task-sheet [data-phase-strip] a', 'Research');
       await page.until('a phase of the strip opens its document', headingIs, 'Research: Invoice CSV export');
+    },
+  },
+  {
+    name: 'RPI.3b the PRD flow\'s strip names its technical design in full, each phase on one line',
+    scenario: 'workflow',
+    async run({ page, mock, shot }) {
+      await openSheetOf(page, mock, 's-search-page');
+      await page.until('the strip on Overview', () => !!document.querySelector('#task-sheet [data-phase-strip] li'));
+      assert.deepEqual(await page.eval(strip), ['Questions:done', 'Research:current', 'PRD:next', 'Technical Design:next', 'Outline:next', 'Implement:next']);
+      const heights = await page.eval(() => [...document.querySelectorAll('#task-sheet [data-phase-strip] li')].map((li) => li.getBoundingClientRect().height));
+      assert.equal(new Set(heights).size, 1, `one line each: ${heights.join(', ')}`);
+      await shot('overview-rpi-prd');
     },
   },
   {

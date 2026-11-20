@@ -53,7 +53,7 @@ export const PHASE_LABELS: Record<Phase, string> = {
   design: 'Design',
   'design-discussion': 'Design discussion',
   prd: 'PRD',
-  tdd: 'TDD',
+  tdd: 'Technical Design',
   outline: 'Outline',
   implement: 'Implement',
 };
@@ -64,7 +64,7 @@ export const TYPE_LABELS: Record<DocType, string> = {
   research: 'Research',
   'design-discussion': 'Design discussion',
   prd: 'PRD',
-  tdd: 'TDD',
+  tdd: 'Technical Design',
   outline: 'Outline',
 };
 
@@ -328,14 +328,14 @@ export function nextSteps(w: Pick<Workflow, 'folder' | 'flow' | 'current' | 'ste
     case 'research':
       if (w.flow === 'design-discussion') return [step('Design discussion', 'make a design discussion', w.flow, true), ...onward(w.flow)];
       if (w.flow === 'prd') return [step('PRD', 'make a PRD', w.flow, true), ...onward(w.flow)];
-      if (w.flow === 'tdd') return [step('TDD', 'make a TDD', w.flow, true), ...onward(w.flow)];
+      if (w.flow === 'tdd') return [step('Technical Design', 'make a TDD', w.flow, true), ...onward(w.flow)];
       if (w.flow === 'research-only') return [{ ...step('Implement', 'implement', w.flow), usual: true }, step('Outline', 'make an outline', w.flow)];
       return [
-        step('Design discussion', 'make a design discussion', 'design-discussion'), step('PRD', 'make a PRD', 'prd'), step('TDD', 'make a TDD', 'tdd'),
+        step('Design discussion', 'make a design discussion', 'design-discussion'), step('PRD', 'make a PRD', 'prd'), step('Technical Design', 'make a TDD', 'tdd'),
         step('Implement', 'implement', 'research-only'),
       ];
     case 'prd':
-      return [step('TDD', 'make a TDD', 'prd', true), ...onward(null)];
+      return [step('Technical Design', 'make a TDD', 'prd', true), ...onward(null)];
     case 'design-discussion':
     case 'tdd':
       return [{ ...step('Outline', 'make an outline', null), usual: true }, step('Implement', 'implement', null)];

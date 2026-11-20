@@ -150,14 +150,14 @@ test("the next steps rpi's workflow allows from each phase of each flow, as the 
     `Implement: /rpi implement ${dir}; flow: design discussion`,
   ]);
   assert.deepEqual(steps('research', 'prd'), [`*PRD: /rpi make a PRD ${dir}; flow: prd`, `Outline: /rpi make an outline ${dir}; flow: prd`, `Implement: /rpi implement ${dir}; flow: prd`]);
-  assert.deepEqual(steps('research', 'tdd'), [`*TDD: /rpi make a TDD ${dir}; flow: tdd`, `Outline: /rpi make an outline ${dir}; flow: tdd`, `Implement: /rpi implement ${dir}; flow: tdd`]);
+  assert.deepEqual(steps('research', 'tdd'), [`*Technical Design: /rpi make a TDD ${dir}; flow: tdd`, `Outline: /rpi make an outline ${dir}; flow: tdd`, `Implement: /rpi implement ${dir}; flow: tdd`]);
   assert.deepEqual(steps('research', 'research-only'), [`*Implement: /rpi implement ${dir}; flow: research only`, `Outline: /rpi make an outline ${dir}; flow: research only`]);
   assert.deepEqual(steps('research', null), [
     `Design discussion: /rpi make a design discussion ${dir}; flow: design discussion`, `PRD: /rpi make a PRD ${dir}; flow: prd`,
-    `TDD: /rpi make a TDD ${dir}; flow: tdd`, `Implement: /rpi implement ${dir}; flow: research only`,
+    `Technical Design: /rpi make a TDD ${dir}; flow: tdd`, `Implement: /rpi implement ${dir}; flow: research only`,
   ], 'with no flow named, each flow\'s first step');
   assert.deepEqual(steps('design-discussion', 'design-discussion'), [`*Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
-  assert.deepEqual(steps('prd', 'prd'), [`*TDD: /rpi make a TDD ${dir}; flow: prd`, `Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
+  assert.deepEqual(steps('prd', 'prd'), [`*Technical Design: /rpi make a TDD ${dir}; flow: prd`, `Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
   assert.deepEqual(steps('tdd', 'prd'), [`*Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`], 'the TDD after a PRD');
   assert.deepEqual(steps('tdd', 'tdd'), [`*Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
   for (const flow of ['design-discussion', 'prd', 'tdd', 'research-only'] as const) {
