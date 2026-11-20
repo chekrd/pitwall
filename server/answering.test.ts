@@ -22,7 +22,7 @@ const menu = { toolUseId: 'm1', at: 2, questions: [{ question: 'Colour?', header
 
 // A session behind a fake terminal. With `hold`, each send waits until the test lets it finish or fail; with
 // `pressFails`, every press of keys fails with it.
-function world(s: Session, { hold = false, pressFails }: { hold?: boolean; pressFails?: Error } = {}) {
+function world(s: Session, { hold = false, pressFails, clearedMs }: { hold?: boolean; pressFails?: Error; clearedMs?: number } = {}) {
   let row = s;
   let notified = 0;
   const typed: string[] = [];
@@ -45,8 +45,9 @@ function world(s: Session, { hold = false, pressFails }: { hold?: boolean; press
     },
     notify: () => void notified++,
     decided: (id) => void decided.push(id),
-    isCommand: async (_s, text) => text.startsWith('!') || text.split(' ')[0] === '/review',
+    isCommand: async (_s, text) => text.startsWith('!') || ['/review', '/rpi:rpi'].includes(text.split(' ')[0]),
     checkUploads: async (files) => (files as string[] | undefined) ?? [],
+    ...(clearedMs !== undefined && { clearedMs }),
   });
   return { answers, store, row: () => row, notified: () => notified, typed, pressed, targets, decided, sends };
 }
@@ -364,4 +365,55 @@ test('a reply written instead of the answers closes the round, and Dismiss puts 
   const d = world(session({ round }));
   d.answers.dismiss('s', 'r:r1');
   assert.deepEqual([d.typed, d.row().round, d.row().dismissedRound, decisionKey(d.row())], [[], null, 'r1', null]);
+});
+
+const RESEARCH = '/rpi:rpi research .pitwall/artifacts/csv-export; flow: prd';
+
+test('a command in a fresh conversation types /clear, waits for the conversation it starts, then types the command into it, nothing typed between', async () => {
+  const w = world(session({ conversation: 'c1' }), { hold: true });
+  const sent = w.answers.answer('s', { key: null, text: RESEARCH, fresh: true });
+  const other = w.answers.answer('s', { key: null, text: 'And the README' });
+  await flush();
+  assert.deepEqual(w.typed, ['/clear']);
+  w.sends[0].done();
+  await new Promise((done) => setTimeout(done, 250));
+  assert.deepEqual(w.typed, ['/clear'], 'not before Claude has taken it');
+  w.store.update('s', { conversation: 'c2' });
+  await new Promise((done) => setTimeout(done, 150));
+  assert.deepEqual(w.typed, ['/clear', RESEARCH]);
+  assert.deepEqual(w.targets.map((t) => t.conversation), ['c1', 'c2'], 'the command goes to the new conversation');
+  w.sends[1].done();
+  await sent;
+  await flush();
+  assert.deepEqual(w.typed, ['/clear', RESEARCH, 'And the README'], 'another send waits for both');
+  w.sends[2].done();
+  await other;
+});
+
+test('a /clear that fails, or that Claude never takes, sends nothing more', async () => {
+  const failing = world(session({ conversation: 'c1' }), { hold: true });
+  const sent = failing.answers.answer('s', { key: null, text: RESEARCH, fresh: true });
+  await flush();
+  failing.sends[0].fail(new Error("can't find pane"));
+  await assert.rejects(sent, /can't find pane/);
+  assert.deepEqual(failing.typed, ['/clear']);
+
+  const ignored = world(session({ conversation: 'c1' }), { clearedMs: 300 });
+  await assert.rejects(ignored.answers.answer('s', { key: null, text: RESEARCH, fresh: true }),
+    { message: `Claude did not start a new conversation after /clear, so “${RESEARCH}” was not sent` });
+  assert.deepEqual(ignored.typed, ['/clear']);
+
+  const ended = world(session({ conversation: 'c1' }), { hold: true });
+  const gone = ended.answers.answer('s', { key: null, text: RESEARCH, fresh: true });
+  await flush();
+  ended.store.update('s', { conversation: 'c2', status: 'exited' });
+  ended.sends[0].done();
+  await assert.rejects(gone, /this session has ended/);
+  assert.deepEqual(ended.typed, ['/clear']);
+});
+
+test('only a command starts in a fresh conversation; a message is refused untyped', async () => {
+  const w = world(session({}));
+  await assert.rejects(w.answers.answer('s', { key: null, text: 'Research it', fresh: true }), /only a command/);
+  assert.deepEqual(w.typed, []);
 });

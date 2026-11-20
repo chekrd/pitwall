@@ -45,6 +45,19 @@
     }
   }
 
+  .quote {
+    margin: 0;
+    max-height: 8lh;
+    overflow: auto;
+    padding: 2px 0 2px 10px;
+    border-left: 3px solid var(--comment-line);
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--text-2);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+
   .where {
     padding: 0;
     border: 0;

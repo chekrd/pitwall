@@ -24,7 +24,12 @@ export interface Reply {
   choice?: string | undefined;
   text?: string | undefined;
   files?: string[] | undefined;
+  // A command that goes in a conversation of its own: /clear first, and the command once Claude has started that one.
+  fresh?: boolean | undefined;
 }
+
+export const CLEAR = '/clear';
+export const CLEARED_MS = 15_000;
 
 interface Typing {
   claim?: { seen: string | null | undefined; text: string };
@@ -56,7 +61,7 @@ export function closeQuestion(store: AnswerStore, id: string, key: string | null
   else if (s?.round && key === `r:${s.round.key}`) store.update(id, { round: null, dismissedRound: s.round.key });
 }
 
-export function answering({ store, send, keys, notify, decided, isCommand, checkUploads }: AnsweringDeps) {
+export function answering({ store, send, keys, notify, decided, isCommand, checkUploads, clearedMs = CLEARED_MS }: AnsweringDeps & { clearedMs?: number }) {
   const turns = new Map<string, Promise<void>>();
 
   const must = (id: string) => {
@@ -113,10 +118,12 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
     if (!reply.choice && !text && !files.length) throw new Error('empty answer');
     // Slash commands and `!` shell commands go in verbatim and are not an answer to the question.
     const command = commands && !reply.choice && !files.length && (await isCommand(must(id), text));
+    if (reply.fresh && !command) throw new Error('only a command starts in a fresh conversation');
     await inTurn(id, () => {
       if (!wanted()) throw new Called('this send was called off');
       const s = must(id);
       const to = promptTarget(s);
+      if (command && reply.fresh) return { type: () => afresh(id, to, text) };
       if (command) return { type: () => send(to, text) };
       checkDecision(s, reply.key);
       const about = s.question && reply.key === `q:${s.question.toolUseId}` ? `Re: "${s.question.title}"` : '';
@@ -125,6 +132,21 @@ export function answering({ store, send, keys, notify, decided, isCommand, check
       const prompt = /^[!/]/.test(said) ? `My reply: ${said}` : said;
       return { claim: { seen: reply.key, text: answerText(reply.choice, text, files.length) }, type: () => send(to, prompt, files) };
     });
+  }
+
+  // Within one turn of the session, so nothing else is typed between the two. The command waits for the board to see
+  // the conversation /clear started, as typing it sooner could land while Claude Code is still clearing, and a /clear
+  // that failed or was never taken sends nothing more.
+  async function afresh(id: string, to: Target, text: string) {
+    await send(to, CLEAR);
+    const until = Date.now() + clearedMs;
+    let s = must(id);
+    while (s.conversation === to.conversation) {
+      if (Date.now() > until) throw new Error(`Claude did not start a new conversation after /clear, so “${text.split('\n')[0]}” was not sent`);
+      await new Promise((done) => setTimeout(done, 100));
+      s = must(id);
+    }
+    await send(promptTarget(s), text);
   }
 
   async function answerMenu(id: string, body: { toolUseId: string; answers: MenuAnswer[] }) {

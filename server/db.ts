@@ -85,11 +85,21 @@ export interface Answered {
 // Lines of the task's diff a draft was written about. `side` is the version they are in: `new` is the worktree's,
 // `old` the base branch's, for lines the diff removed.
 export interface CodeRef {
+  kind?: 'code';
   path: string;
   side: 'old' | 'new';
   start: number;
   end: number;
   lines: string[];
+}
+
+// A passage of one of the task's rpi documents a comment was written about: the document's path from the task's own
+// folder, as the documents' routes take it, the nearest heading above the passage and the passage itself.
+export interface DocumentRef {
+  kind: 'document';
+  path: string;
+  heading: string | null;
+  quote: string;
 }
 
 // A message written for the task's Claude to send later. `armedAt` is when Send when it's my turn was switched on.
@@ -99,7 +109,7 @@ export interface Parked {
   auto: boolean;
   armedAt: number | null;
   at: number;
-  ref?: CodeRef;
+  ref?: CodeRef | DocumentRef;
 }
 
 // A question asked on the side: a fork of the task's conversation answers it, and the task's Claude never sees it.

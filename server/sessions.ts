@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { answering, Called } from './answering.ts';
 import { listCommands } from './commands.ts';
+import { knowsCommand, slashName } from './slash.ts';
 import { conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, signal, transcriptFile, type ConversationLog, type LiveProcess } from './conversations.ts';
 import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
@@ -222,9 +223,7 @@ export async function focus(id: string) {
 }
 
 async function isCommand(s: Session, text: string) {
-  if (text.startsWith('!')) return true;
-  const name = text.match(/^\/(\S+)/)?.[1];
-  return !!name && (await listCommands(s.worktree)).some((c) => c.name === name);
+  return text.startsWith('!') || (!!slashName(text) && knowsCommand(await listCommands(s.worktree), text));
 }
 
 const answers = answering({ store: sessions, send: terminal.send, keys: terminal.keys, notify, decided: notify, isCommand, checkUploads });

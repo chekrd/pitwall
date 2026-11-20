@@ -4,7 +4,9 @@ import type { RouteInput } from './contract.ts';
 import { schedules, sessions } from './db.ts';
 import { makeTaskFolder } from './folderTasks.ts';
 import { addWorktree, excludeLocally, validBranch } from './git.ts';
+import { listCommands } from './commands.ts';
 import { RPI_DIR, rpiPrompt, taskDirName } from './rpi.ts';
+import { rpiInvocation } from './slash.ts';
 import { ALIASES, EFFORTS, ranHeadless, resolver, settingsFor } from './models.ts';
 import { scheduler, taskPrompt, type Scheduled, type TaskRequest } from './schedule.ts';
 import * as S from './sessions.ts';
@@ -51,8 +53,11 @@ async function startTask(req: NewTask) {
   const name = req.name.trim();
   const files = await checkUploads(req.files);
   const text = taskPrompt(req.prompt ?? '', files);
-  // The task folder rpi writes to: a branch's name is known before its worktree is.
-  const first = (branch: string) => (req.workflow === 'rpi' ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`) : text || undefined);
+  // The task folder rpi writes to: a branch's name is known before its worktree is. The commands a checkout lists are
+  // its repository's own and the user's, so the main checkout or the folder tells how rpi is invoked.
+  const checkout = req.kind === 'folder' ? req.folder : repoView(req.repoId)?.path;
+  const rpi = req.workflow === 'rpi' ? rpiInvocation(checkout ? await listCommands(checkout) : []) : '';
+  const first = (branch: string) => (rpi ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`, rpi) : text || undefined);
   if (req.kind === 'folder') {
     if (!name) throw new Error('name is required');
     const prompt = first(name);

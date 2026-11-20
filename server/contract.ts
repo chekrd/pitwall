@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_REF_LINE, MAX_REF_LINES } from './codeRef.ts';
+import { MAX_QUOTE, MAX_REF_LINE, MAX_REF_LINES } from './codeRef.ts';
 import type { Snapshot, State } from './app.ts';
 import type { Command } from './commands.ts';
 import type { ConversationLog } from './conversations.ts';
@@ -40,7 +40,10 @@ const when = z.union([z.strictObject({ at: z.number() }), z.strictObject({ time:
 const optionalPaused = z.strictObject({ paused: z.boolean().optional() });
 
 export const actionBodies = {
-  answer: z.strictObject({ key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: z.array(z.string()).optional() }),
+  answer: z.strictObject({
+    key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: z.array(z.string()).optional(),
+    fresh: z.boolean().optional(),
+  }),
   dismiss: z.strictObject({ key }),
   rename: z.strictObject({ title: z.string() }),
   'decline-menu': z.strictObject({ toolUseId: z.string() }),
@@ -58,10 +61,13 @@ export const actionBodies = {
   'dismiss-clear-error': none,
   park: z.strictObject({
     text: z.string(), auto: z.boolean().optional(),
-    ref: z.strictObject({
-      path: z.string().min(1).max(1000), side: z.enum(['old', 'new']), start: z.number().int().min(1), end: z.number().int().min(1),
-      lines: z.array(z.string().max(MAX_REF_LINE)).max(MAX_REF_LINES),
-    }).refine((r) => r.start <= r.end, 'the lines run backwards').optional(),
+    ref: z.union([
+      z.strictObject({
+        path: z.string().min(1).max(1000), side: z.enum(['old', 'new']), start: z.number().int().min(1), end: z.number().int().min(1),
+        lines: z.array(z.string().max(MAX_REF_LINE)).max(MAX_REF_LINES),
+      }).refine((r) => r.start <= r.end, 'the lines run backwards'),
+      z.strictObject({ kind: z.literal('document'), path: z.string().min(1).max(1000), heading: z.string().max(500).nullable(), quote: z.string().min(1).max(MAX_QUOTE) }),
+    ]).optional(),
   }),
   'edit-park': z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }),
   unpark: z.strictObject({ draft: z.string() }),

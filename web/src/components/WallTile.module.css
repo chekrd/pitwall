@@ -114,5 +114,7 @@
     .work + & { margin-top: 0; }
   }
 
+  .later { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+
   .where { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); color: var(--muted); }
 }

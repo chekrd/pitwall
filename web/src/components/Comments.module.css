@@ -1,0 +1,47 @@
+@layer components {
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--line-2);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    font-family: var(--font);
+    color: var(--text);
+  }
+
+  .quote {
+    margin: 0;
+    max-height: 4lh;
+    overflow: hidden;
+    padding-left: 10px;
+    border-left: 3px solid var(--comment-line);
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--muted);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+
+  .field {
+    width: 100%;
+    min-height: 44px;
+    max-height: 30vh;
+    field-sizing: content;
+    resize: none;
+    padding: 2px 0;
+    border: 0;
+    outline: none;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  .spacer { flex: 1; }
+}

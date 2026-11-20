@@ -36,6 +36,9 @@
     --prompt: light-dark(#7d4b00, #ffb547);
     --prompt-tint: light-dark(#fff4e2, rgb(255 181 71 / 0.08));
     --prompt-line: light-dark(#c98a2e, rgb(255 181 71 / 0.55));
+    --comment-tint: light-dark(#fcebc9, rgb(255 181 71 / 0.17));
+    --comment-lit: light-dark(#f7d48f, rgb(255 181 71 / 0.34));
+    --comment-line: light-dark(#c98a2e, rgb(255 181 71 / 0.7));
     --idle: light-dark(#1a1712, #f4efe7);
     --idle-line: light-dark(rgb(26 23 18 / 0.38), rgb(244 239 231 / 0.4));
     --work: light-dark(#4c6079, #9db1c7);

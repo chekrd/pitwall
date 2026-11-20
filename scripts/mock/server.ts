@@ -10,7 +10,8 @@ import { extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { z } from 'zod';
-import { answering, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
+import { answering, CLEAR, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
+import type { Target } from '../../server/delivery.ts';
 import { clearings } from '../../server/clearing.ts';
 import { exchanges, fileMeta } from '../../server/conversations.ts';
 import {
@@ -33,6 +34,7 @@ import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
 import { contentType, RPI_DIR, rpiPrompt, taskDirName } from '../../server/rpi.ts';
+import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
 import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
@@ -118,6 +120,10 @@ const timers = new Set<NodeJS.Timeout>();
 const pauses = new Set<() => void>();
 const uploads = new Set<string>();
 const log: Entry[] = [];
+// What the board typed into each session's terminal, in order.
+const typed: { session: string | null; text: string }[] = [];
+// While set, a /clear typed into a session is never taken: no new conversation starts.
+let clearIgnored = false;
 // What the page's usage recorder posted, its batches' events in order, as the server stores them.
 const uxEvents: (UxEvent & { page: string })[] = [];
 let failNext: { error: string; code?: string } | null = null;
@@ -249,6 +255,8 @@ function load(name: string) {
   terminalNotices = [];
   schedules = [];
   transcripts.clear();
+  typed.length = 0;
+  clearIgnored = false;
   state = make(Date.now());
   docs = workflows();
   writeDocuments(state.documents);
@@ -351,12 +359,30 @@ function checkUploads(paths: unknown) {
 }
 
 // As the server's listCommands(worktree): the repository's own commands and skills first, then the user's and built-in ones.
+const commandsOfRepo = (id: number) => [...PROJECT_COMMANDS[state.repos.find((r) => r.id === id)?.name ?? ''] ?? [], ...COMMANDS];
 const commandsIn = (worktree: string) => {
   const repo = state.repos.find((r) => r.worktrees.some((w) => w.path === worktree));
-  return [...(repo && PROJECT_COMMANDS[repo.name]) || [], ...COMMANDS];
+  return repo ? commandsOfRepo(repo.id) : COMMANDS;
 };
 
-const isCommand = (s: Session, text: string) => text.startsWith('!') || commandsIn(s.worktree).some((c) => c.name === text.match(/^\/(\S+)/)?.[1]);
+// Shorter than the server's, so a check can wait one out.
+const CLEARED_MS_MOCK = 3000;
+
+const isCommand = (s: Session, text: string) => text.startsWith('!') || knowsCommand(commandsIn(s.worktree), text);
+
+// The board typing into a session's terminal; a /clear there starts a new conversation that takes the task over, as
+// the server's sync sees it a moment later.
+function typeInto(to: Target, text: string) {
+  const s = state.sessions.find((x) => x.tty === to.tty && x.pid === to.pid);
+  typed.push({ session: s?.id ?? null, text });
+  if (s && text === CLEAR && !clearIgnored) {
+    later(TYPING_MS + 400, () => {
+      const now = find(s.id);
+      if (now) update(now.id, { ...handOver(now, randomUUID(), Date.now()), status: 'idle' });
+    });
+  }
+  return pause(TYPING_MS);
+}
 
 // One per scenario: a send still waiting its turn when another scenario loads is refused, not run on the new one.
 function answeringFor(scenario: Scenario) {
@@ -366,8 +392,9 @@ function answeringFor(scenario: Scenario) {
   };
   return answering({
     store: { get, update },
-    send: () => pause(TYPING_MS),
+    send: typeInto,
     keys: () => pause(TYPING_MS),
+    clearedMs: CLEARED_MS_MOCK,
     notify: push,
     decided: (id) => (find(id)?.answered?.text === DECLINED ? declined(id) : claudeWorks(id)),
     isCommand: async (s, text) => isCommand(s, text),
@@ -768,7 +795,8 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const effort = req.effort || MODELS.efforts[req.model ?? ''] || undefined;
   const name = (req.name ?? '').trim();
   const text = taskPrompt(req.prompt ?? '', checkUploads(req.files));
-  const first = (branch: string) => (req.workflow === 'rpi' ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`) : text);
+  const rpi = rpiInvocation(req.kind === 'folder' ? COMMANDS : commandsOfRepo(req.repoId));
+  const first = (branch: string) => (req.workflow === 'rpi' ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`, rpi) : text);
   if (req.kind === 'folder') {
     const folder = folders().find((f) => f.path === req.folder);
     if (!folder) throw new Error('unknown folder');
@@ -1187,8 +1215,14 @@ route('GET', '/mock/log', ({ url }) => {
   if (url.searchParams.has('clear')) {
     log.length = 0;
     uxEvents.length = 0;
+    typed.length = 0;
   }
   return entries;
+});
+route('GET', '/mock/typed', () => [...typed]);
+route('POST', '/mock/clear-ignored', ({ body }) => {
+  clearIgnored = body.on !== false;
+  return { on: clearIgnored };
 });
 route('GET', '/mock/ux', () => uxEvents.map((e) => ({ ...e, data: e.data === null ? null : JSON.parse(e.data) })));
 

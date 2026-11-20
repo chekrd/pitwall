@@ -2,6 +2,7 @@ import type { Check } from '../helpers.ts';
 import { board } from './board.ts';
 import { builds } from './builds.ts';
 import { clientShell } from './clientShell.ts';
+import { comments } from './comments.ts';
 import { decisions } from './decisions.ts';
 import { dialogs } from './dialogs.ts';
 import { layout } from './layout.ts';
@@ -33,4 +34,5 @@ export const checks: Check[] = [
   ...schedulesLater,
   ...rounds,
   ...workflow,
+  ...comments,
 ];

@@ -274,10 +274,52 @@ export function taskDirName(branch: string | null | undefined, name: string) {
 
 // One message: Claude Code reads a slash command's arguments to the end of the message, and the task directory stays
 // on the command's own line, as rpi's own next commands put it.
-export function rpiPrompt(prompt: string, dir: string) {
+export function rpiPrompt(prompt: string, dir: string, invocation = '/rpi') {
   const [first = '', ...rest] = prompt.trim().split('\n');
-  const head = first.trim() ? `/rpi ${first.trim()}; task directory: ${dir}` : `/rpi task directory: ${dir}`;
+  const head = first.trim() ? `${invocation} ${first.trim()}; task directory: ${dir}` : `${invocation} task directory: ${dir}`;
   return [head, ...rest].join('\n');
+}
+
+const FLOW_WORDS: Record<Flow, string> = { 'design-discussion': 'design discussion', prd: 'prd', tdd: 'tdd', 'research-only': 'research only' };
+
+export interface NextStep {
+  label: string;
+  command: string;
+  // The flow's usual next step, where rpi names one.
+  usual: boolean;
+}
+
+// The steps rpi's workflow allows from the phase under way, each as the command rpi's own handoff gives for it. The
+// research questions and the research carry the flow on; a design step's handoff names it only from a PRD to its TDD.
+export function nextSteps(w: Pick<Workflow, 'folder' | 'flow' | 'current' | 'steps'>, invocation: string): NextStep[] {
+  const step = (label: string, does: string, flow: Flow | null, usual = false): NextStep => ({
+    label, usual, command: `${invocation} ${does} ${w.folder}${flow ? `; flow: ${FLOW_WORDS[flow]}` : ''}`,
+  });
+  const onward = (flow: Flow | null) => [step('Outline', 'make an outline', flow), step('Implement', 'implement', flow)];
+  switch (w.current) {
+    case 'questions':
+      return [step('Research', 'research', w.flow, true)];
+    case 'research':
+      if (w.flow === 'design-discussion') return [step('Design discussion', 'make a design discussion', w.flow, true), ...onward(w.flow)];
+      if (w.flow === 'prd') return [step('PRD', 'make a PRD', w.flow, true), ...onward(w.flow)];
+      if (w.flow === 'tdd') return [step('TDD', 'make a TDD', w.flow, true), ...onward(w.flow)];
+      if (w.flow === 'research-only') return [{ ...step('Implement', 'implement', w.flow), usual: true }, step('Outline', 'make an outline', w.flow)];
+      return [
+        step('Design discussion', 'make a design discussion', 'design-discussion'), step('PRD', 'make a PRD', 'prd'), step('TDD', 'make a TDD', 'tdd'),
+        step('Implement', 'implement', 'research-only'),
+      ];
+    case 'prd':
+      return [step('TDD', 'make a TDD', 'prd', true), ...onward(null)];
+    case 'design-discussion':
+    case 'tdd':
+      return [{ ...step('Outline', 'make an outline', null), usual: true }, step('Implement', 'implement', null)];
+    case 'outline':
+      return [step('Implement', 'implement', null, true)];
+    case 'implement':
+      return [step('Implement the next phase', 'implement', null, true)];
+    default:
+      return [];
+  }
 }
 
 export const isDocument = (name: string) => /\.md$/i.test(name);

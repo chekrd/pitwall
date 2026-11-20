@@ -132,7 +132,7 @@ function Body({ session, name, repos, tab, item }: BodyProps) {
         {current === 'diff' && <DiffView session={session} at={item} />}
         {current === 'artifacts' && <Artifacts session={session} item={item} />}
         {current === 'conversation' && <Conversation session={session} />}
-        {current === 'documents' && <Documents session={session} item={item} />}
+        {current === 'documents' && <Documents session={session} name={name} item={item} />}
       </div>
     </>
   );

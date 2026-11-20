@@ -231,6 +231,8 @@ export const COMMANDS: Command[] = [
   { name: 'simplify', description: 'Simplify the changed code' },
   { name: 'rename', description: 'Rename this session' },
   { name: 'model', description: 'Switch the model' },
+  // HumanLayer's rpi plugin, whose skill Claude Code lists under its plugin's name.
+  { name: 'rpi:rpi', description: 'Research, design, and implement' },
 ];
 
 // A repository's own, from the .claude folder checked in with it, so every worktree of it has them.

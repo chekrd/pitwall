@@ -71,15 +71,20 @@ const rpiTasks = (now: number) => [
   session({
     id: 's-export', repoId: 2, worktree: RPI_WORKTREES[0][1], tty: '/dev/ttys023', pid: 83120,
     title: 'Export invoices as CSV',
-    firstPrompt: '/rpi Finance wants to download a month of invoices as CSV; task directory: .pitwall/artifacts/invoice-export',
+    firstPrompt: '/rpi:rpi Finance wants to download a month of invoices as CSV; task directory: .pitwall/artifacts/invoice-export',
     status: 'idle', createdAt: now - 3 * 60 * MIN, updatedAt: now - 4 * MIN,
     lastMessage: 'Phase 1 is done: the CSV writer formats one invoice per row, and `pnpm test csv` passes. Phase 2 streams a month from `GET /invoices/export`.',
     lastTurn: 't-export-5',
+    // A comment on the outline whose passage has been rewritten since, so it is no longer marked.
+    parked: [{
+      id: 'p-export-batch', text: 'Name the batch size, and why it is 500.', auto: false, armedAt: null, at: now - 30 * MIN,
+      ref: { kind: 'document', path: '.pitwall/artifacts/invoice-export/05-structure-outline-invoice-export.md', heading: 'Phase 2: GET /invoices/export streams a month', quote: 'Stream 500 invoices at a time' },
+    }],
   }),
   session({
     id: 's-search-page', repoId: 4, worktree: RPI_WORKTREES[1][1], tty: '/dev/ttys024', pid: 83190,
     title: 'Docs search page',
-    firstPrompt: '/rpi Readers cannot find a page unless they know its section; task directory: .pitwall/artifacts/search-page',
+    firstPrompt: '/rpi:rpi Readers cannot find a page unless they know its section; task directory: .pitwall/artifacts/search-page',
     status: 'working', createdAt: now - 40 * MIN, updatedAt: now - MIN, activity: { step: 'Read: src/pages/[...slug].astro', since: now - 2 * MIN },
   }),
 ];

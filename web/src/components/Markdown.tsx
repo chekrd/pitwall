@@ -108,5 +108,5 @@ export function Markdown({ source, href }: { source: string; href?: (to: string,
     if (hasDiagram) draw(el, langs, dark, () => live);
     return () => { live = false; };
   }, [source, home, href, dark, hasDiagram]);
-  return <div ref={ref} className={styles.markdown} />;
+  return <div ref={ref} className={styles.markdown} data-markdown />;
 }

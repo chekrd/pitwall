@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type TaskFolder } from './rpi.ts';
+import { nextSteps, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
 
 const doc = (name: string, text: string, modifiedAt = 1000): DocumentEntry =>
   ({ path: `.pitwall/artifacts/t/${name}`, name, modifiedAt, size: text.length, ...parseDocument(name, text) });
@@ -114,7 +114,56 @@ test("New task's RPI prompt: one /rpi command with the task directory on its fir
   assert.equal(rpiPrompt('  Add retries\n\nFailed ones are lost today.\n\n/Users/me/Library/Caches/pitwall/uploads/u1/log.txt  ', '.pitwall/artifacts/r'),
     '/rpi Add retries; task directory: .pitwall/artifacts/r\n\nFailed ones are lost today.\n\n/Users/me/Library/Caches/pitwall/uploads/u1/log.txt');
   assert.equal(rpiPrompt('', '.pitwall/artifacts/r'), '/rpi task directory: .pitwall/artifacts/r');
+  assert.equal(rpiPrompt('Add retries', '.pitwall/artifacts/r', '/rpi:rpi'), '/rpi:rpi Add retries; task directory: .pitwall/artifacts/r', 'the invocation the commands list');
   assert.equal(taskDirName('feature/webhook-retries', 'retries'), 'feature-webhook-retries');
   assert.equal(taskDirName('', 'Webhook Retries!'), 'webhook-retries');
   assert.equal(taskDirName(null, '***'), 'task');
+});
+
+// The documents of a task folder up to `upTo`, in the flow `flow` as the research questions name it.
+function at(upTo: 'questions' | 'research' | 'design-discussion' | 'prd' | 'tdd' | 'outline' | 'implement' | 'done', flow: Flow | null) {
+  const order = ['questions', 'research', 'design', 'outline', 'implement', 'done'];
+  const design = upTo === 'design-discussion' || upTo === 'prd' || upTo === 'tdd' ? upTo : null;
+  const reached = (p: string) => order.indexOf(p) <= order.indexOf(design ? 'design' : upTo);
+  const docs = [doc('02-research-questions-x.md', `${fm('research-questions', flow ? `flow: ${flow}\n` : '')}# Q`)];
+  if (reached('research')) docs.push(doc('03-research-x.md', `${fm('research')}# R`));
+  if (design === 'tdd' && flow === 'prd') docs.push(doc('04-prd-x.md', `${fm('prd')}# P`));
+  if (design) docs.push(doc(`05-${design}-x.md`, `${fm(design)}# D`));
+  if (reached('outline')) {
+    const box = (n: number) => (upTo === 'done' || (upTo === 'implement' && n === 1) ? 'x' : ' ');
+    docs.push(doc('06-structure-outline-x.md', `${fm('structure-outline')}# O\n\n## Implementation Overview\n\n- [${box(1)}] Phase 1: a\n- [${box(2)}] Phase 2: b\n`));
+  }
+  return { folder: '.pitwall/artifacts/x', ...stepsOf(docs) };
+}
+
+const steps = (upTo: Parameters<typeof at>[0], flow: Flow | null) => nextSteps(at(upTo, flow), '/rpi').map((s) => `${s.usual ? '*' : ''}${s.label}: ${s.command}`);
+
+test("the next steps rpi's workflow allows from each phase of each flow, as the commands its own handoffs give, the flow's usual one first", () => {
+  const dir = '.pitwall/artifacts/x';
+  for (const [flow, word] of [['design-discussion', 'design discussion'], ['prd', 'prd'], ['tdd', 'tdd'], ['research-only', 'research only']] as const) {
+    assert.deepEqual(steps('questions', flow), [`*Research: /rpi research ${dir}; flow: ${word}`], flow);
+  }
+  assert.deepEqual(steps('questions', null), [`*Research: /rpi research ${dir}`], 'no flow named yet');
+  assert.deepEqual(steps('research', 'design-discussion'), [
+    `*Design discussion: /rpi make a design discussion ${dir}; flow: design discussion`,
+    `Outline: /rpi make an outline ${dir}; flow: design discussion`,
+    `Implement: /rpi implement ${dir}; flow: design discussion`,
+  ]);
+  assert.deepEqual(steps('research', 'prd'), [`*PRD: /rpi make a PRD ${dir}; flow: prd`, `Outline: /rpi make an outline ${dir}; flow: prd`, `Implement: /rpi implement ${dir}; flow: prd`]);
+  assert.deepEqual(steps('research', 'tdd'), [`*TDD: /rpi make a TDD ${dir}; flow: tdd`, `Outline: /rpi make an outline ${dir}; flow: tdd`, `Implement: /rpi implement ${dir}; flow: tdd`]);
+  assert.deepEqual(steps('research', 'research-only'), [`*Implement: /rpi implement ${dir}; flow: research only`, `Outline: /rpi make an outline ${dir}; flow: research only`]);
+  assert.deepEqual(steps('research', null), [
+    `Design discussion: /rpi make a design discussion ${dir}; flow: design discussion`, `PRD: /rpi make a PRD ${dir}; flow: prd`,
+    `TDD: /rpi make a TDD ${dir}; flow: tdd`, `Implement: /rpi implement ${dir}; flow: research only`,
+  ], 'with no flow named, each flow\'s first step');
+  assert.deepEqual(steps('design-discussion', 'design-discussion'), [`*Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
+  assert.deepEqual(steps('prd', 'prd'), [`*TDD: /rpi make a TDD ${dir}; flow: prd`, `Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
+  assert.deepEqual(steps('tdd', 'prd'), [`*Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`], 'the TDD after a PRD');
+  assert.deepEqual(steps('tdd', 'tdd'), [`*Outline: /rpi make an outline ${dir}`, `Implement: /rpi implement ${dir}`]);
+  for (const flow of ['design-discussion', 'prd', 'tdd', 'research-only'] as const) {
+    assert.deepEqual(steps('outline', flow), [`*Implement: /rpi implement ${dir}`], flow);
+    assert.deepEqual(steps('implement', flow), [`*Implement the next phase: /rpi implement ${dir}`], flow);
+    assert.deepEqual(steps('done', flow), [], `${flow}: every phase of the outline done`);
+  }
+  assert.equal(nextSteps(at('outline', 'tdd'), '/rpi:rpi')[0].command, `/rpi:rpi implement ${dir}`, 'in the invocation given');
 });

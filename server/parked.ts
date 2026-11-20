@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { draftMessage } from './codeRef.ts';
-import type { CodeRef, Parked, Session } from './db.ts';
+import type { Parked, Session } from './db.ts';
 import { decisionKey } from './decision.ts';
 
 export const MAX_PARKED = 50;
@@ -13,7 +13,7 @@ function cleanText(text: string) {
   return t;
 }
 
-export function addParked(list: readonly Parked[], body: { text: string; auto?: boolean | undefined; ref?: CodeRef | undefined }, now = Date.now()): Parked[] {
+export function addParked(list: readonly Parked[], body: { text: string; auto?: boolean | undefined; ref?: Parked['ref'] | undefined }, now = Date.now()): Parked[] {
   if (list.length >= MAX_PARKED) throw new Error(`a task holds at most ${MAX_PARKED} drafts`);
   const auto = body.auto === true;
   return [...list, { id: randomUUID(), text: cleanText(body.text), auto, armedAt: auto ? now : null, at: now, ...(body.ref && { ref: body.ref }) }];

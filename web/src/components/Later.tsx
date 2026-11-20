@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import { editDraft, useDraft } from './Composer.tsx';
-import { draftMessage, refLines } from '../../../server/codeRef.ts';
+import { draftMessage, isDocumentRef, refLines } from '../../../server/codeRef.ts';
 import { sessionAction } from '../api.ts';
 import { spotOf } from '../diffLines.ts';
 import { showTab } from '../router.ts';
@@ -9,6 +9,7 @@ import { hold, useSends } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { ActionBody, CodeRef, Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES, ownAsides } from './Asides.tsx';
+import { fileName, openComment, type Comment } from './Comments.tsx';
 import { explain, TIPS, type Explanation } from './explain.ts';
 import { ModelPicker, useModelChoices, useStoredPick } from './ModelPicker.tsx';
 import styles from './Later.module.css';
@@ -70,6 +71,20 @@ function Lines({ at }: { at: CodeRef }) {
   );
 }
 
+function Passage({ session, comment }: { session: Session; comment: Comment }) {
+  const { path, heading, quote } = comment.ref;
+  return (
+    <figure className={styles.ref} data-ref data-document-ref>
+      <figcaption>
+        <button type="button" className={styles.where} data-explain={`Opens ${path} at this passage, marked; Claude gets it with the comment`} onClick={() => openComment(session, comment)}>
+          <code>{fileName(path)}</code>{heading && <> · {heading}</>}
+        </button>
+      </figcaption>
+      <blockquote className={styles.quote}>{quote}</blockquote>
+    </figure>
+  );
+}
+
 function Item({ session, draft, name, canSend, sendTip }: { session: Session; draft: Parked; name: string; canSend: boolean; sendTip: Explanation }) {
   const [editing, setEditing] = useState<string | null>(null);
   const save = () => {
@@ -87,7 +102,7 @@ function Item({ session, draft, name, canSend, sendTip }: { session: Session; dr
   };
   return (
     <li className={styles.item} data-parked={draft.id}>
-      {draft.ref && <Lines at={draft.ref} />}
+      {isDocumentRef(draft.ref) ? <Passage session={session} comment={draft as Comment} /> : draft.ref && <Lines at={draft.ref} />}
       {editing === null ? (
         <p className={styles.text}>{draft.text}</p>
       ) : (

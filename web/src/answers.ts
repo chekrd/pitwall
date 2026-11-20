@@ -1,4 +1,5 @@
 import { decisionKey, menuAnswerText } from '../../server/decision.ts';
+import { knowsCommand } from '../../server/slash.ts';
 import { answeredCount, isAnswered, roundAnswerLabel, roundTitle } from '../../server/rounds.ts';
 import type { Body, Request } from './outbox.ts';
 import type { Command, Menu, MenuAnswer, RoundAnswers, Session } from './types.ts';
@@ -139,9 +140,7 @@ export function choose(s: Session, label: string, composer?: Composer): Request 
 // check.
 export function isCommand(text: string, files: number, commands: readonly Command[] | null) {
   if (files || !commands) return false;
-  if (text.startsWith('!')) return true;
-  const name = text.match(/^\/(\S+)/)?.[1];
-  return !!name && commands.some((c) => c.name === name);
+  return text.startsWith('!') || knowsCommand(commands, text);
 }
 
 // What Enter in a composer sends: an answer to the decision it shows (`key`), or a plain message (null).

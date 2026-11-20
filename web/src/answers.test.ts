@@ -107,6 +107,7 @@ test('a draft counts as a command only once the command list has loaded, and the
   assert.equal(isCommand('!git status', 0, null), false);
   assert.equal(isCommand('/compact', 0, commands), true);
   assert.equal(isCommand('/plugin:review 12', 0, commands), true);
+  assert.equal(isCommand('/review 12', 0, commands), true, "a plugin's command by its bare name");
   assert.equal(isCommand('!git status', 0, commands), true);
   assert.equal(isCommand('/etc/hosts is wrong', 0, commands), false);
   assert.equal(isCommand('/compact', 1, commands), false, 'with a file it is a message');

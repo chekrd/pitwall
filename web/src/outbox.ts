@@ -18,6 +18,8 @@ export interface Body {
   replies?: RoundAnswers;
   // Drafts the send carries, which leave the task once it went out.
   drafts?: string[];
+  // A command typed after a /clear, once Claude has started the new conversation.
+  fresh?: boolean;
 }
 
 export interface Request {
