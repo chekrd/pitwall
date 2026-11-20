@@ -78,7 +78,8 @@ const PHASES: Entry[] = [
   {
     id: 'implement',
     name: 'Implement',
-    writes: 'Code and tests, by rpi\'s implementer. With an outline, one phase at a time, each ticked off in the outline; without one, the whole change in one run.',
+    writes:
+      'Code and tests, though not by the conversation itself: it hands the work to rpi\'s implementer, a subagent that starts with an empty context and reads only the documents, then checks what comes back. With an outline, each phase goes to a new implementer and is ticked off in the outline; without one, the whole change goes to one implementer in one run.',
     check: 'The checks it ran, then test it yourself. It pauses for the manual checks of a phase.',
     not: 'Redesign. Where the code and the design disagree on the result, it asks you.',
   },
@@ -205,7 +206,7 @@ export function RpiGuide() {
           </li>
           <li>
             Every step sends <code>/clear</code>, then rpi's command for the task's folder, so each phase starts in a new conversation; only{' '}
-            <strong>Implement the next phase</strong> stays in the conversation, as the implementation under way goes on. Steps go only at the end of a turn.
+            <strong>Implement the next phase</strong> stays in the conversation: each outline phase goes to a new implementer anyway, and the conversation keeps what you said while checking the last one. Steps go only at the end of a turn.
           </li>
           <li>Select a passage in Documents to comment on it; <strong>Send comments</strong> has rpi update that document from them.</li>
           <li><strong>Implements with</strong>, beside Implement, picks the model rpi's implementer writes the code with; the task's own model reviews what it hands back.</li>
