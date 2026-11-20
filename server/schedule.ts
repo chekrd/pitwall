@@ -1,3 +1,5 @@
+import { RPI_NEEDS_WORKTREE } from './rpi.ts';
+
 // What New task posts, kept to start the same task later.
 export type TaskRequest =
   | { kind: 'repo'; repoId: number; existingBranch: boolean; branch: string; path: string; prompt: string; files?: string[] | undefined; model: string; effort: string; workflow?: Workflow | undefined }
@@ -82,6 +84,7 @@ export function parseSchedule(body: { name?: string; task?: unknown; when?: unkn
   const task = body.task as TaskRequest;
   if (task?.kind !== 'repo' && task?.kind !== 'folder') throw new Error('unknown task');
   if (!(task.prompt ?? '').trim()) throw new Error('a scheduled task needs a prompt');
+  if (task.kind === 'repo' && task.existingBranch && task.workflow === 'rpi') throw new Error(RPI_NEEDS_WORKTREE);
   const name = (body.name ?? '').trim() || (task.kind === 'repo' && task.existingBranch ? task.branch.trim().replaceAll('/', '-') : '');
   if (!NAME.test(name)) throw new Error('name the task: letters, digits, dot, hyphen and underscore');
   const w = body.when as Partial<{ at: number; time: string; days: number[] }>;

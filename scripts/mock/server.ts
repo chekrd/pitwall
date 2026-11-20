@@ -34,7 +34,7 @@ import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
-import { contentType, currentVersion, RPI_DIR, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
+import { contentType, currentVersion, RPI_DIR, RPI_NEEDS_WORKTREE, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
 import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
@@ -172,6 +172,7 @@ const taskWorktrees = (taskFolder: string) =>
 
 // As the server's documentRoots().
 const documentRoots = (s: Session) => {
+  if (state.repos.find((r) => r.id === s.repoId)?.worktrees.some((w) => w.isMain && w.path === s.worktree)) return [];
   const own = s.repoId === null ? [s.worktree, ...taskWorktrees(s.worktree).map(({ worktree }) => worktree.path)] : [s.worktree];
   return [...new Set(s.cwd === s.worktree || s.cwd.startsWith(`${s.worktree}/`) ? [...own, s.cwd] : own)];
 };
@@ -844,6 +845,7 @@ function startTask(req: TaskRequest & { name: string; scheduled?: Scheduled }) {
   const effort = req.effort || MODELS.efforts[req.model ?? ''] || undefined;
   const name = (req.name ?? '').trim();
   const text = taskPrompt(req.prompt ?? '', checkUploads(req.files));
+  if (req.workflow === 'rpi' && req.kind === 'repo' && req.existingBranch) throw new Error(RPI_NEEDS_WORKTREE);
   const rpi = rpiInvocation(req.kind === 'folder' ? COMMANDS : commandsOfRepo(req.repoId));
   const first = (branch: string) => (req.workflow === 'rpi' ? rpiPrompt(text, `${RPI_DIR}/${taskDirName(branch, name)}`, rpi) : text);
   if (req.kind === 'folder') {

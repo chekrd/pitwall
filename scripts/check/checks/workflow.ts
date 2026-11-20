@@ -290,6 +290,33 @@ export const workflow: Check[] = [
     },
   },
   {
+    name: 'RPI.9 RPI runs in a new worktree only: picking it under Current checkout switches New task to New worktree, picking Current checkout sets the workflow back to None, and the server refuses RPI on the current checkout',
+    async run({ page, mock, shot }) {
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      const mode = () => document.querySelector<HTMLInputElement>('dialog#new-task input[name="mode"]:checked')?.parentElement?.textContent ?? null;
+      const picked = () => document.querySelector<HTMLInputElement>('#new-task [data-workflow] input:checked')?.parentElement?.textContent ?? null;
+      await page.click('dialog#new-task label', 'Current checkout');
+      await page.until('Current checkout', () => document.querySelector<HTMLInputElement>('dialog#new-task input[name="mode"]:checked')?.parentElement?.textContent === 'Current checkout');
+      await page.click('#new-task [data-workflow] label', 'RPI');
+      await page.until('New worktree with RPI', () => document.querySelector<HTMLInputElement>('dialog#new-task input[name="mode"]:checked')?.parentElement?.textContent === 'New worktree'
+        && !!document.querySelector('dialog#new-task input[placeholder="fix-login-redirect"]') && !!document.querySelector('#new-task [data-workflow-hint]'));
+      await shot('new-task-rpi-switches-to-worktree');
+      await page.click('dialog#new-task label', 'Current checkout');
+      await page.until('None under Current checkout', () => document.querySelector<HTMLInputElement>('#new-task [data-workflow] input:checked')?.parentElement?.textContent === 'None'
+        && !document.querySelector('#new-task [data-workflow-hint]'));
+      assert.deepEqual([await page.eval(mode), await page.eval(picked)], ['Current checkout', 'None']);
+      await page.key('Escape');
+      const refused = await fetch(`${mock.url}/api/worktrees`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ repoId: 1, name: '', branch: 'main', prompt: 'p', existingBranch: true, workflow: 'rpi' }),
+      });
+      assert.equal(refused.ok, false);
+      assert.match(await refused.text(), /RPI runs in a new worktree/);
+    },
+  },
+  {
     name: 'RPI.8 narrow: the guide fits the window, its header stays in view as it scrolls, and neither the page nor the guide scrolls sideways',
     scenario: 'workflow',
     narrow: true,

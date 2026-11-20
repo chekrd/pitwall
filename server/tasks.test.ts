@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { repos, sessions } from './db.ts';
 import { pause, pauseState, settleStarting, startAfter, startFailed } from './sessions.ts';
 import { startRepoTask } from './tasks.ts';
-import { refreshWorkspace } from './workspace.ts';
+import { documentRoots, refreshWorkspace } from './workspace.ts';
 
 const run = promisify(execFile);
 const request = { repoId: 1, name: 'n', branch: '', path: '', prompt: 'p', files: [], model: '', effort: '' };
@@ -53,7 +53,15 @@ test('what New task can be told at once is refused in the form, and no task come
   await assert.rejects(startRepoTask({ repoId, name: 'ok', branch: 'also..bad' }), /also\.\.bad cannot name a branch/);
   await assert.rejects(startRepoTask({ repoId, name: 'ok', path: 'relative/path' }), /must be absolute/);
   await assert.rejects(startRepoTask({ repoId, name: '' }), /name is required/);
+  await assert.rejects(startRepoTask({ repoId, name: '', existingBranch: true, branch: 'main', prompt: 'p', workflow: 'rpi' }), /RPI runs in a new worktree/);
   assert.deepEqual(sessions.all().filter((s) => s.repoId === repoId), []);
+});
+
+test("a task in a repository's main checkout has no documents, as the tasks there share it; one in its own worktree has its worktree's", async () => {
+  const { root, id: repoId } = await repoWithoutOrigin();
+  const main = join(root, 'app');
+  assert.deepEqual(documentRoots({ repoId, worktree: main, cwd: main }), []);
+  assert.deepEqual(documentRoots({ repoId, worktree: join(main, 'sub'), cwd: join(main, 'sub') }), [join(main, 'sub')]);
 });
 
 test('a task whose preparation a restart cut off is marked as failed, one that already failed keeps its reason, and Pause leaves both alone', async () => {

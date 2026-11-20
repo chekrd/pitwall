@@ -3,6 +3,9 @@
 
 export const RPI_DIR = '.pitwall/artifacts';
 
+// A checkout other tasks share would show its documents on all of them.
+export const RPI_NEEDS_WORKTREE = 'RPI runs in a new worktree: pick New worktree';
+
 export type DocType = 'request' | 'research-questions' | 'research' | 'design-discussion' | 'prd' | 'tdd' | 'outline';
 export type Flow = 'design-discussion' | 'prd' | 'tdd' | 'research-only';
 // `design` stands in for the design step while the flow is not known yet.

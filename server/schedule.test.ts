@@ -40,6 +40,7 @@ test('a schedule needs a prompt, a name, and a time to come or days to repeat on
   const task = { kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Review open PRs', model: '', effort: '' };
   assert.throws(() => parseSchedule({ name: 'x', task: { ...task, prompt: ' ' }, when: { at: MON(9) } }, MON(8)), /prompt/);
   assert.throws(() => parseSchedule({ name: 'a b', task, when: { at: MON(9) } }, MON(8)), /name/);
+  assert.throws(() => parseSchedule({ name: 'x', task: { ...task, existingBranch: true, branch: 'main', workflow: 'rpi' }, when: { at: MON(9) } }, MON(8)), /RPI runs in a new worktree/);
   assert.throws(() => parseSchedule({ name: 'x', task, when: { at: MON(7) } }, MON(8)), /passed/);
   assert.throws(() => parseSchedule({ name: 'x', task, when: { at: MON(9) + 30_000 } }, MON(8)), /whole minute/);
   assert.throws(() => parseSchedule({ name: 'x', task, when: { time: '9:00', days: [1] } }, MON(8)), /when/);

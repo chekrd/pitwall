@@ -58,7 +58,7 @@ const WORKFLOW_MODEL = { none: 'opus', rpi: 'fable' } as const;
 // When Claude Code picks the workflow's model by itself, that model has no option of its own but the first.
 function modelOf(f: Fields, choices: Parameters<typeof modelOptionsOf>[0]) {
   if (f.model !== null) return f.model;
-  const want = WORKFLOW_MODEL[f.workflow];
+  const want = WORKFLOW_MODEL[f.existing && !f.folder ? 'none' : f.workflow];
   return modelOptionsOf(choices).some(([v]) => v === want) ? want : '';
 }
 
@@ -443,7 +443,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       mode: pickedFolder ? 'folder' : now.existing ? 'existing-branch' : 'worktree', model: !!model, effort: !!now.effort,
       branch: !!now.branch.trim(), path: !!now.path.trim(), promptChars: now.prompt.trim().length, files: files.length, workflow: now.workflow,
     };
-    const workflow = now.workflow === 'rpi' ? { workflow: 'rpi' as const } : {};
+    const workflow = now.workflow === 'rpi' && (pickedFolder || !now.existing) ? { workflow: 'rpi' as const } : {};
     try {
       if (now.start !== 'now') {
         const task = pickedFolder
@@ -504,8 +504,8 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const where = (b: Branch) => (!b.worktree ? '' : b.worktree === main?.path ? 'main checkout' : 'own worktree');
   const folder = repo.path.split('/').at(-1);
 
-  const rpi = f.workflow === 'rpi';
-  const rpiDir = `${RPI_DIR}/${taskDirName(existing ? branch : pickedFolder ? name : branch || name, name)}`;
+  const rpi = f.workflow === 'rpi' && !existing;
+  const rpiDir = `${RPI_DIR}/${taskDirName(pickedFolder ? name : branch || name, name)}`;
   const chosen = [rpi && 'RPI', when && describeWhen(when), model && modelOptionsOf(choices).find(([v]) => v === model)?.[1], f.effort && effortName(f.effort)].filter(Boolean).join(' · ');
 
   const workflowControl = (
@@ -514,8 +514,8 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
       <fieldset className={styles.segments}>
         <legend>Workflow</legend>
         {(['none', 'rpi'] as const).map((w) => (
-          <label key={w} data-explain={w === 'rpi' ? "HumanLayer's rpi: research, then design and an outline as documents you review, then the implementation" : 'Claude starts on the prompt as it is'}>
-            <input type="radio" name="workflow" checked={f.workflow === w} onChange={() => edit({ workflow: w })} />
+          <label key={w} data-explain={w === 'rpi' ? "HumanLayer's rpi: research, then design and an outline as documents you review, then the implementation. It runs in a new worktree, so its documents stay the task's own" : 'Claude starts on the prompt as it is'}>
+            <input type="radio" name="workflow" checked={(w === 'rpi') === rpi} onChange={() => edit(w === 'rpi' && existing ? { workflow: w, existing: false, branch: '' } : { workflow: w })} />
             {w === 'rpi' ? 'RPI' : 'None'}
           </label>
         ))}
@@ -577,7 +577,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         {!pickedFolder && (
           <fieldset className={styles.mode}>
             <legend>Where Claude runs</legend>
-            <label><input type="radio" name="mode" checked={f.existing} onChange={() => edit({ existing: true, branch: defaultBranch(repo) })} />Current checkout</label>
+            <label><input type="radio" name="mode" checked={f.existing} onChange={() => edit({ existing: true, branch: defaultBranch(repo), workflow: 'none' })} />Current checkout</label>
             <label><input type="radio" name="mode" checked={!f.existing} onChange={() => edit({ existing: false, branch: '' })} />New worktree</label>
           </fieldset>
         )}
