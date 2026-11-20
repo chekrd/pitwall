@@ -203,7 +203,10 @@ export function RpiGuide() {
             The highlighted next step is the flow's usual one; the others are shortcuts rpi allows. Right after the research with no flow chosen, none is
             highlighted.
           </li>
-          <li>Every step sends <code>/clear</code>, then rpi's command for the task's folder, so each phase starts in a new conversation. Steps go only at the end of a turn.</li>
+          <li>
+            Every step sends <code>/clear</code>, then rpi's command for the task's folder, so each phase starts in a new conversation; only{' '}
+            <strong>Implement the next phase</strong> stays in the conversation, as the implementation under way goes on. Steps go only at the end of a turn.
+          </li>
           <li>Select a passage in Documents to comment on it; <strong>Send comments</strong> has rpi update that document from them.</li>
           <li><strong>Implements with</strong>, beside Implement, picks the model rpi's implementer writes the code with; the task's own model reviews what it hands back.</li>
         </ul>

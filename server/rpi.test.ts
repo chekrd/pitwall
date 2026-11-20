@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BOARD_HANDOFF, nextSteps, stepMessage, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
+import { BOARD_HANDOFF, nextSteps, stepMessage, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, withoutHandoff, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
 
 const doc = (name: string, text: string, modifiedAt = 1000): DocumentEntry =>
   ({ path: `.pitwall/artifacts/t/${name}`, name, modifiedAt, size: text.length, ...parseDocument(name, text) });
@@ -166,6 +166,19 @@ test("the next steps rpi's workflow allows from each phase of each flow, as the 
     assert.deepEqual(steps('done', flow), [], `${flow}: every phase of the outline done`);
   }
   assert.equal(nextSteps(at('outline', 'tdd'), '/rpi:rpi')[0].command, `/rpi:rpi implement ${dir}`, 'in the invocation given');
+});
+
+test("every step starts a new conversation but the outline's next phase, which carries on the implementation under way", () => {
+  for (const upTo of ['questions', 'research', 'prd', 'tdd', 'outline'] as const) {
+    assert.ok(nextSteps(at(upTo, 'prd'), '/rpi').every((s) => s.fresh), upTo);
+  }
+  assert.deepEqual(nextSteps(at('implement', 'prd'), '/rpi').map((s) => s.fresh), [false]);
+});
+
+test('the note the board adds for rpi is left out as it is worded now and as it was first worded', () => {
+  const first = 'Pitwall starts each next phase from its own buttons, in a new conversation: end with what to review and which phase comes next, without a command to run or a word about starting a new session.';
+  assert.equal(withoutHandoff(`/rpi research x\n\n${first}`), '/rpi research x');
+  assert.equal(withoutHandoff(`/rpi research x\n\n${BOARD_HANDOFF}`), '/rpi research x');
 });
 
 test('an implement step names the model for the implementer, and the conversation\'s model when none is picked; other steps name none', () => {

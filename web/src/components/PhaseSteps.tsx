@@ -22,13 +22,12 @@ export function sendBlocked(s: Session, commands: readonly Command[] | null) {
   return null;
 }
 
-const tip = (command: string) => ({
-  ...SENDS.prompt(`/clear”, then, once Claude has started the new conversation, “${command}`),
-  sees: "a new conversation: /clear leaves this one behind, and rpi reads the task's documents",
-});
+const tip = (step: NextStep) => step.fresh
+  ? { ...SENDS.prompt(`/clear”, then, once Claude has started the new conversation, “${step.command}`), sees: "a new conversation: /clear leaves this one behind, and rpi reads the task's documents" }
+  : SENDS.prompt(step.command);
 
-// rpi's next steps from the phase under way, each sent as rpi's own command for the task's folder and flow, always
-// after a /clear, as rpi runs each phase in a context of its own.
+// rpi's next steps from the phase under way, each sent as rpi's own command for the task's folder and flow, after a
+// /clear when it starts a phase, as rpi runs each phase in a context of its own.
 export function PhaseSteps({ session, name, workflow, place }: { session: Session; name: string; workflow: Workflow; place: 'overview' | 'documents' }) {
   const commands = useCommands(session.worktree, true);
   const comments = useComments(session);
@@ -40,7 +39,8 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
   const open = current ? comments.filter((c) => c.ref.path === current).length : 0;
   const send = (step: NextStep) => {
     const text = stepMessage(step, model);
-    void hold(session, { action: 'answer', body: { key: null, text, fresh: true }, label: `/clear, then ${step.command}`, command: true }, name, { box: false });
+    const body = step.fresh ? { key: null, text, fresh: true } : { key: null, text };
+    void hold(session, { action: 'answer', body, label: step.fresh ? `/clear, then ${step.command}` : step.command, command: true }, name, { box: false });
   };
   return (
     <div className={styles.steps} data-place={place} data-next-steps>
@@ -60,7 +60,7 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
             <Icon name="chevron-down" size={14} />
           </label>
         )}>
-          <button type="button" data-variant={step.usual ? 'primary' : undefined} data-step={step.label} disabled={!!blocked} {...explain(blocked ? { does: blocked } : tip(step.command))} onClick={() => send(step)}>
+          <button type="button" data-variant={step.usual ? 'primary' : undefined} data-step={step.label} disabled={!!blocked} {...explain(blocked ? { does: blocked } : tip(step))} onClick={() => send(step)}>
             {step.label}
           </button>
         </Pair>

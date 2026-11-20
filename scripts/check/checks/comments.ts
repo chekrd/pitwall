@@ -197,7 +197,7 @@ export const comments: Check[] = [
     },
   },
   {
-    name: "CM.3 by the phase strip Overview and the Documents tab offer rpi's next steps for the flow, each /clear first and the command, with the note that the board moves the phases, once Claude has started the new conversation; a /clear never taken sends nothing more and says so; while Claude works they are disabled",
+    name: "CM.3 by the phase strip Overview and the Documents tab offer rpi's next steps for the flow, each /clear first and the command, with the note that the board moves the phases, once Claude has started the new conversation, but Implement the next phase in the conversation under way; a /clear never taken sends nothing more and says so; while Claude works they are disabled",
     scenario: 'workflow',
     clock: 'fast',
     expectedErrors: [/status of 400/],
@@ -210,16 +210,16 @@ export const comments: Check[] = [
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-next-steps] input')), null, 'no choice to stay in the conversation');
       assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('#task-sheet [data-implementer-model] select')?.selectedOptions[0]?.textContent), 'Opus', 'Opus implements unless another is picked');
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-unsent-comments]')?.textContent), '1 comment not sent');
-      assert.match(await page.eval(explainOf, '#task-sheet [data-next-steps] button') ?? '', /“\/clear”, then, once Claude has started the new conversation, “\/rpi:rpi implement \.pitwall\/artifacts\/invoice-export”/);
+      assert.match(await page.eval(explainOf, '#task-sheet [data-next-steps] button') ?? '', /Sends Claude, with 5 s to undo: “\/rpi:rpi implement \.pitwall\/artifacts\/invoice-export”/);
       await shot('documents-next-steps');
       const before = (await stateOf(mock, 's-export')).conversation;
       await page.click('#task-sheet [data-next-steps] button', 'Implement the next phase');
       const [held] = await until('the held toast', () => page.eval(toastsOf, 'undo'));
-      assert.equal(held.text.split('\n')[0], `Sending: /clear, then /rpi:rpi implement ${DIR}`);
+      assert.equal(held.text.split('\n')[0], `Sending: /rpi:rpi implement ${DIR}`);
       const [post] = await logged(mock, 'the step sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
-      assert.deepEqual(post.body, { key: null, text: byOpus(`/rpi:rpi implement ${DIR}`), fresh: true });
-      assert.deepEqual(await typedInto(mock, 's-export'), ['/clear', byOpus(`/rpi:rpi implement ${DIR}`)], 'in order, the command after the clear was taken');
-      assert.notEqual((await stateOf(mock, 's-export')).conversation, before, 'a new conversation');
+      assert.deepEqual(post.body, { key: null, text: byOpus(`/rpi:rpi implement ${DIR}`) });
+      assert.deepEqual(await typedInto(mock, 's-export'), [byOpus(`/rpi:rpi implement ${DIR}`)], 'no /clear');
+      assert.equal((await stateOf(mock, 's-export')).conversation, before, 'the same conversation');
 
       await page.goto(`${mock.url}/s/s-search-page/overview`);
       await page.until('the steps in Overview', () => !!document.querySelector('#task-sheet [data-ux-section="workflow"] [data-next-steps] button'));
