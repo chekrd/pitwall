@@ -143,10 +143,14 @@ test('share keeps each part equal to the one before as that very object: a sessi
   assert.deepEqual(Object.keys(share({ a: 1 }, { a: 1, b: undefined })), ['a', 'b'], 'a key that came is kept');
 });
 
-test('the context reads as a share of the window, a 1M one for a [1m] model or past 200k tokens, amber from 50 % and red from 80 %', () => {
-  assert.deepEqual(contextUse({ context: 84_200, model: 'claude-opus-5-5' }), { percent: 42, level: 'low', tokens: '84k of 200k tokens' });
-  assert.deepEqual(contextUse({ context: 84_200, model: 'opus[1m]' }), { percent: 8, level: 'low', tokens: '84k of 1M tokens' });
-  assert.deepEqual(contextUse({ context: 620_000, model: 'claude-opus-5-5' }), { percent: 62, level: 'mid', tokens: '620k of 1M tokens' });
-  assert.equal(contextUse({ context: 170_000, model: 'claude-opus-5-5' })?.level, 'high');
+test('the context reads as a share of the window, 1M for a Claude 5 model, a bare alias, a [1m] model or past 200k tokens, amber from 50 % and red from 80 %', () => {
+  assert.deepEqual(contextUse({ context: 48_600, model: 'claude-opus-5-5' }), { percent: 5, level: 'low', tokens: '49k of 1M tokens' });
+  assert.deepEqual(contextUse({ context: 84_200, model: 'opus' }), { percent: 8, level: 'low', tokens: '84k of 1M tokens' });
+  assert.deepEqual(contextUse({ context: 84_200, model: 'claude-sonnet-4-5-20250929' }), { percent: 42, level: 'low', tokens: '84k of 200k tokens' });
+  assert.deepEqual(contextUse({ context: 84_200, model: 'claude-sonnet-4-5[1m]' }), { percent: 8, level: 'low', tokens: '84k of 1M tokens' });
+  assert.deepEqual(contextUse({ context: 620_000, model: 'claude-opus-4-1' }), { percent: 62, level: 'mid', tokens: '620k of 1M tokens' });
+  assert.equal(contextUse({ context: 170_000, model: 'claude-haiku-4-5' })?.level, 'high');
+  assert.equal(contextUse({ context: 850_000, model: 'claude-fable-5-2' })?.level, 'high');
+  assert.equal(contextUse({ context: 100_000, model: 'claude-3-5-sonnet-20241022' })?.tokens, '100k of 200k tokens');
   assert.equal(contextUse({ context: null, model: 'claude-opus-5-5' }), null);
 });

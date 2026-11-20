@@ -436,7 +436,7 @@ export const schedulesLater: Check[] = [
       assert.deepEqual(await page.eval(() => {
         const gauge = document.querySelector<HTMLElement>('#task-sheet [data-task-context] [data-level]');
         return gauge && { text: gauge.textContent, level: gauge.dataset.level, tip: gauge.dataset.explain, clip: (gauge.querySelector('[aria-hidden] > span') as HTMLElement).style.clipPath };
-      }), { text: '42%', level: 'low', tip: '42% of the context window: 84k of 200k tokens', clip: 'inset(0px 58% 0px 0px)' }, 'the facts show how much of the context window the conversation fills, as a share and a gauge');
+      }), { text: '8%', level: 'low', tip: '8% of the context window: 84k of 1M tokens', clip: 'inset(0px 92% 0px 0px)' }, 'the facts show how much of the context window the conversation fills, as a share and a gauge');
 
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-later] li[data-parked] button')!.focus());

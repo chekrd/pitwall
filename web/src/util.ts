@@ -44,11 +44,14 @@ export function modelName(model: string) {
   return `${family[0].toUpperCase()}${family.slice(1)}${major ? ` ${major}` : ''}${minor ? `.${minor}` : ''}`;
 }
 
-// Claude Code tells the size of the context window only to the status line; a request names the model without the
-// [1m] of a 1M context, which the model picked keeps, and a conversation past 200k tokens can only be in a 1M one.
+// Claude Code tells the size of the context window only to the status line, and a request names the model without the
+// [1m] of a 1M context. Claude 5 models and the bare aliases, which pick them, have a 1M window; an older model has one
+// only with [1m], and a conversation past 200k tokens can only be in a 1M one.
+const oldModel = /^claude-(?:[a-z]+-)?[1-4](?:\D|$)/;
 export function contextUse(session: Pick<Session, 'context' | 'model'>) {
   if (session.context === null) return null;
-  const window = session.model?.endsWith('[1m]') || session.context > 200_000 ? 1_000_000 : 200_000;
+  const million = !oldModel.test(session.model ?? '') || session.model?.endsWith('[1m]') || session.context > 200_000;
+  const window = million ? 1_000_000 : 200_000;
   const k = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`);
   const percent = Math.round((session.context / window) * 100);
   return { percent, level: percent >= 80 ? 'high' : percent >= 50 ? 'mid' : 'low', tokens: `${k(session.context)} of ${k(window)} tokens` };
