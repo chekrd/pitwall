@@ -90,7 +90,7 @@ test('step 11 drops the columns of the model runs and keeps each task, a subtask
   mkdirSync(join(DATA_DIR, 'advisor', 'left-over'), { recursive: true });
   add.run('fix', '#1 Fix · a bug', 1, JSON.stringify({ id: 'task', basis: 't1', finding: 0, title: 'a bug', kind: 'accept', text: '' }), JSON.stringify({ state: 'solved', at: 1 }), 'fix');
   migrate(db);
-  assert.equal(version(db), 11);
+  assert.equal(version(db), migrations.length);
   assert.ok(!existsSync(join(DATA_DIR, 'advisor')));
   const names = columns(db, 'sessions').map((c) => c.name);
   for (const gone of ['advice', 'summary', 'explanation', 'findings', 'parent', 'resolution', 'rank', 'rank_reason', 'priority']) assert.ok(!names.includes(gone), gone);
@@ -99,4 +99,16 @@ test('step 11 drops the columns of the model runs and keeps each task, a subtask
     { id: 'fix', title: '#1 Fix · a bug', archived: 1 },
     { id: 'task', title: 'review', archived: 0 },
   ]);
+});
+
+test('step 12 makes each stored artifact version 1 of its title', () => {
+  const db = new DatabaseSync(':memory:');
+  migrate(db, migrations.slice(0, 11));
+  const add = db.prepare("INSERT INTO sessions (id, worktree, cwd, status, artifacts, created_at, updated_at, conversation) VALUES (?, '/r', '/r', 'idle', ?, 1, 1, ?)");
+  add.run('two', JSON.stringify([{ id: 'a', title: 'Flow', at: 1 }, { id: 'b', title: 'States', at: 2 }]), 'two');
+  add.run('none', null, 'none');
+  migrate(db);
+  assert.equal(version(db), 12);
+  const rows = Object.fromEntries(db.prepare('SELECT id, artifacts FROM sessions').all().map((r) => [r.id, r.artifacts && JSON.parse(String(r.artifacts))]));
+  assert.deepEqual(rows, { two: [{ id: 'a', title: 'Flow', at: 1, version: 1 }, { id: 'b', title: 'States', at: 2, version: 1 }], none: null });
 });

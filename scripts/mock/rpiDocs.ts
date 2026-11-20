@@ -223,3 +223,33 @@ export const rpiDocuments = (home: string): Record<string, Record<string, Record
   [`${home}/code/worktrees/invoice-export/billing-api`]: { 'invoice-export': EXPORT },
   [`${home}/code/worktrees/search-page/docs-site`]: { 'search-page': SEARCH },
 });
+
+const DESIGN = EXPORT['04-design-discussion-invoice-export.md'];
+const BUILD_FIRST = DESIGN.replace('**Recommendation:** stream.', '**Recommendation:** build the file first, so the dialog can say how many rows it holds.');
+
+// Earlier versions of a document, oldest first, that the board kept before the one on disk: the design discussion first
+// had no design questions, then recommended building the file first, and now recommends streaming.
+export const rpiVersions = (): Record<string, Record<string, string[]>> => ({
+  's-export': {
+    '.pitwall/artifacts/invoice-export/04-design-discussion-invoice-export.md': [
+      BUILD_FIRST.replace(/## Design Questions[\s\S]*?(?=## Resolved Design Questions)/, ''),
+      BUILD_FIRST,
+    ],
+  },
+});
+
+const flowPage = (title: string, steps: string[], note: string) => `<!doctype html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>:root { color-scheme: light dark; font: 15px/1.5 system-ui, sans-serif; } body { margin: 24px; } ol { padding-left: 1.4em; }</style>
+<script>document.addEventListener('DOMContentLoaded', () => document.body.dataset.ready = 'yes');</script></head>
+<body><h1>${title}</h1><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol><p>${note}</p></body></html>
+`;
+
+export const EXPORT_FLOW = 'How the export streams';
+
+// Three versions of one artifact, as Claude published it again under its title after each change of the design.
+export const EXPORT_FLOW_PAGES = [
+  flowPage(EXPORT_FLOW, ['The page asks for a month', 'The server builds the whole file', 'The browser downloads it'], 'Building first lets the dialog count the rows.'),
+  flowPage(EXPORT_FLOW, ['The page asks for a month', 'The server reads 50 invoices at a time', 'Each page of rows is written as it comes', 'The browser downloads it'], 'Streaming starts the download at once.'),
+  flowPage(EXPORT_FLOW, ['The page asks for a month', 'The server reads 500 invoices at a time', 'Each page of rows is written as it comes', 'The browser saves the file'], 'Streaming starts the download at once; a failed stream leaves a partial file.'),
+];

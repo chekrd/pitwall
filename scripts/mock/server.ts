@@ -33,7 +33,8 @@ import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
-import { contentType, RPI_DIR, rpiPrompt, taskDirName } from '../../server/rpi.ts';
+import { contentType, currentVersion, RPI_DIR, rpiPrompt, taskDirName } from '../../server/rpi.ts';
+import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
 import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
@@ -124,6 +125,7 @@ const log: Entry[] = [];
 const typed: { session: string | null; text: string }[] = [];
 // While set, a /clear typed into a session is never taken: no new conversation starts.
 let clearIgnored = false;
+let typingMs = TYPING_MS;
 // What the page's usage recorder posted, its batches' events in order, as the server stores them.
 const uxEvents: (UxEvent & { page: string })[] = [];
 let failNext: { error: string; code?: string } | null = null;
@@ -175,8 +177,26 @@ const documentRoots = (s: Session) => {
 
 // The scenario's rpi documents lie on disk in the mock's HOME and are read by the server's own code, a store to each
 // scenario, so a read that began before another one loaded changes nothing. The poll stands in for the server's sync.
-let docs = workflows();
+// Each load keeps its documents' versions in a folder of its own, its earlier versions recorded before the first read.
+let loads = 0;
+const storeOf = () => {
+  const dir = join(HOME, 'versions', String(++loads));
+  return workflows({ versionsDir: (task) => join(dir, task) });
+};
+let docs = storeOf();
+let seeded: Promise<unknown> = Promise.resolve();
 let written: string[] = [];
+let artifactHtml = new Map<string, string>();
+
+function seedVersions(store: typeof docs, versions: Scenario['documentVersions'] = {}) {
+  const now = Date.now();
+  return Promise.all(Object.entries(versions).flatMap(([task, byPath]) => Object.entries(byPath).map(async ([path, texts]) => {
+    const s = state.sessions.find((x) => x.id === task)!;
+    const onDisk = await readFile(join(s.worktree, path), 'utf8');
+    const all = [...texts, onDisk];
+    for (const [i, text] of all.entries()) await store.versions.record(task, path, text, now - (all.length - i) * 20 * 60_000);
+  })));
+}
 
 function writeDocuments(documents: Scenario['documents'] = {}) {
   for (const root of written) rmSync(join(root, '.pitwall'), { recursive: true, force: true });
@@ -192,7 +212,8 @@ function writeDocuments(documents: Scenario['documents'] = {}) {
 
 async function refreshDocuments() {
   const store = docs;
-  const changed = await store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s) })));
+  await seeded;
+  const changed = await store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' })));
   if (changed && store === docs) push();
 }
 setInterval(() => void refreshDocuments().catch((err) => console.warn('documents', err)), 1000);
@@ -249,7 +270,7 @@ function load(name: string) {
   dropUntil = 0;
   announced = null;
   pausing.cancel();
-  ends = turnEnds();
+  ends = turnEnds(latestOf);
   drift = [];
   ghosttyRefuses = false;
   terminalNotices = [];
@@ -257,9 +278,13 @@ function load(name: string) {
   transcripts.clear();
   typed.length = 0;
   clearIgnored = false;
+  typingMs = TYPING_MS;
   state = make(Date.now());
-  docs = workflows();
+  // A version folder of an earlier load is left to the HOME's removal, as a read of that load may still be writing it.
+  docs = storeOf();
   writeDocuments(state.documents);
+  artifactHtml = new Map(Object.entries(state.artifactHtml ?? {}));
+  seeded = seedVersions(docs, state.documentVersions).catch((err) => console.warn('document versions', err));
   void refreshDocuments();
   if (args.legacy) for (const s of state.sessions) s.answered = null;
   answers = answeringFor(state);
@@ -381,7 +406,7 @@ function typeInto(to: Target, text: string) {
       if (now) update(now.id, { ...handOver(now, randomUUID(), Date.now()), status: 'idle' });
     });
   }
-  return pause(TYPING_MS);
+  return pause(typingMs);
 }
 
 // One per scenario: a send still waiting its turn when another scenario loads is refused, not run on the new one.
@@ -393,7 +418,7 @@ function answeringFor(scenario: Scenario) {
   return answering({
     store: { get, update },
     send: typeInto,
-    keys: () => pause(TYPING_MS),
+    keys: () => pause(typingMs),
     clearedMs: CLEARED_MS_MOCK,
     notify: push,
     decided: (id) => (find(id)?.answered?.text === DECLINED ? declined(id) : claudeWorks(id)),
@@ -405,7 +430,11 @@ function answeringFor(scenario: Scenario) {
 let answers = answeringFor(state);
 
 // As the server's: armed drafts go out as one message at a real end of the turn.
-let ends = turnEnds();
+const latestOf = (id: string, path: string) => {
+  const v = docs.of(id)?.versions?.[path];
+  return v ? currentVersion(v) : null;
+};
+let ends = turnEnds(latestOf);
 
 function sendDueDrafts() {
   if (args.legacy) return;
@@ -922,10 +951,31 @@ api('POST /api/shell', () => {
   if (ghosttyRefuses) throw new HttpError(500, failure(Object.assign(new Error('Command failed: /usr/bin/osascript'), { stderr: REFUSED })).message);
   return NONE;
 });
-route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => {
-  const artifact = find(params[0])?.artifacts.find((a) => a.id === params[1]);
-  if (!artifact) throw new HttpError(404, 'artifact not found');
-  return new Page(artifactPage(artifact.title), { 'content-security-policy': ARTIFACT_CSP });
+const artifactOf = (id: string, artifact: string) => {
+  const found = find(id)?.artifacts.find((a) => a.id === artifact);
+  if (!found) throw new HttpError(404, 'artifact not found');
+  return artifactHtml.get(found.id) ?? artifactPage(found.title);
+};
+route('GET', '/api/sessions/:id/artifacts/:artifact', ({ params }) => new Page(artifactOf(params[0], params[1]), { 'content-security-policy': ARTIFACT_CSP }));
+route('GET', '/api/sessions/:id/artifacts/:artifact/text', ({ params }) => htmlText(artifactOf(params[0], params[1])));
+api('GET /api/sessions/:id/versions', async ({ params, url }) => {
+  must(params[0]);
+  return (await docs.versions.list(params[0], url.searchParams.get('path') ?? '')).map(({ n, at, size }) => ({ n, at, size }));
+});
+route('GET', '/api/sessions/:id/versions/:n', async ({ params, url }) => {
+  const text = find(params[0]) && await docs.versions.text(params[0], url.searchParams.get('path') ?? '', Number(params[1]));
+  if (typeof text !== 'string') throw new HttpError(404, 'version not found');
+  return new Page(text, { 'content-type': 'text/markdown; charset=utf-8', 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff' });
+});
+// Claude publishing an artifact again under its title, as a new version of it, or a new one under a new title.
+route('POST', '/mock/artifact', ({ body }) => {
+  const s = must(String(body.id));
+  const title = String(body.title);
+  const id = `art-${randomUUID().slice(0, 8)}`;
+  artifactHtml.set(id, String(body.html));
+  const version = Math.max(0, ...s.artifacts.filter((a) => a.title === title).map((a) => a.version)) + 1;
+  update(s.id, { artifacts: [...s.artifacts, { id, title, at: Date.now(), version }] });
+  return { id, version };
 });
 api('GET /api/sessions/:id/documents', ({ params }) => {
   const s = must(params[0]);
@@ -1220,6 +1270,12 @@ route('GET', '/mock/log', ({ url }) => {
   return entries;
 });
 route('GET', '/mock/typed', () => [...typed]);
+// How long typing into a terminal takes until the next scenario loads, for a check that acts while a send is typing.
+route('POST', '/mock/typing', ({ body }) => {
+  typingMs = Number(body.ms);
+  return { ms: typingMs };
+});
+
 route('POST', '/mock/clear-ignored', ({ body }) => {
   clearIgnored = body.on !== false;
   return { on: clearIgnored };

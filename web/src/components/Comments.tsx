@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { cutQuote, isDocumentRef } from '../../../server/codeRef.ts';
+import { currentVersion } from '../../../server/rpi.ts';
 import { showTab } from '../router.ts';
 import { active } from '../outbox.ts';
 import { useSends } from '../sends.ts';
@@ -40,6 +41,12 @@ export function shownComment() {
   changed();
 }
 
+// The version a task's document is at now, or null for one the board has not read.
+export function documentVersion(session: Session, path: string) {
+  const v = session.workflow?.versions?.[path];
+  return v ? currentVersion(v) : null;
+}
+
 export function openComment(session: Session, comment: Comment) {
   if (!session.workflow) {
     toast('info', `${fileName(comment.ref.path)} is gone from the task's folder; the comment stays under Later`, { session: session.id });
@@ -47,7 +54,9 @@ export function openComment(session: Session, comment: Comment) {
   }
   wanted = { path: comment.ref.path, id: comment.id };
   changed();
-  showTab('documents', documentItem(comment.ref.path));
+  const { version } = comment.ref;
+  const latest = documentVersion(session, comment.ref.path);
+  showTab('documents', documentItem(comment.ref.path), { version: version && latest && version < latest ? version : undefined });
 }
 
 const MARK = 'mark[data-comment]';

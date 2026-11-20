@@ -25,6 +25,7 @@ import { LatestReply } from './LatestReply.tsx';
 import { useSending, waitingText, YourMessage } from './YourMessage.tsx';
 import { MenuBody } from './MenuBody.tsx';
 import { Age } from './Parts.tsx';
+import { artifactGroups, versionLabel } from './Artifacts.tsx';
 import { interruptedAs, resumePaused } from './RestartBanner.tsx';
 import { RoundBody } from './RoundBody.tsx';
 import styles from './Overview.module.css';
@@ -393,7 +394,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
   const waits = waitingText(session, sending) !== null;
   // What the turn under way answers; a message still queued is not it.
   const trigger = sending || session.unanswered?.queued ? null : session.unanswered?.text ?? session.lastPrompt;
-  const artifacts = session.artifacts.toReversed();
+  const artifacts = artifactGroups(session.artifacts);
   const links = session.links.toReversed();
   const delivered = links.filter((l) => isDelivered(l.url));
   const cited = links.filter((l) => !isDelivered(l.url));
@@ -591,10 +592,10 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
             <section data-ux-section="artifacts">
               <h3 className={styles.label} data-explain="Visual explanations Claude made in this session">Artifacts</h3>
               <div className={styles.artifacts}>
-                {artifacts.map((a) => (
-                  <button key={a.id} type="button" data-ux="artifact" onClick={() => showTab('artifacts', a.id)}>
-                    <strong>{a.title}</strong>
-                    <span>made {ago(a.at)}</span>
+                {artifacts.map((g) => (
+                  <button key={g.title} type="button" data-ux="artifact" data-artifact={g.title} onClick={() => showTab('artifacts', g.latest.id)}>
+                    <strong>{g.title}</strong>
+                    <span>made {ago(g.latest.at)}{versionLabel(g)}</span>
                   </button>
                 ))}
               </div>

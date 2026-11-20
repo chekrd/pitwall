@@ -2,10 +2,18 @@ import { useSyncExternalStore } from 'react';
 
 export type Tab = 'overview' | 'diff' | 'artifacts' | 'conversation' | 'documents';
 
+// What a tab shows of its item, from the query: a document's older version, or what changed in a version.
+export interface View {
+  version?: number | null | undefined;
+  changes?: boolean | undefined;
+}
+
 export interface Sheet {
   id: string;
   tab: Tab;
   item: string | null;
+  version: number | null;
+  changes: boolean;
 }
 
 export interface Route {
@@ -41,10 +49,12 @@ const subscribe = (fn: () => void) => {
 
 // A task covers the Wall, also when it was loaded cold.
 function parse(href: string): Route {
-  const match = new URL(href).pathname.match(TASK_PATH);
+  const url = new URL(href);
+  const match = url.pathname.match(TASK_PATH);
   if (!match) return { sheet: null };
   const tab = (TABS.includes(match[2]) ? match[2] : 'overview') as Tab;
-  return { sheet: { id: match[1], tab, item: match[3] ?? null } };
+  const version = Number(url.searchParams.get('v'));
+  return { sheet: { id: match[1], tab, item: match[3] ?? null, version: Number.isInteger(version) && version > 0 ? version : null, changes: url.searchParams.has('changes') } };
 }
 
 const current = () => parse(navigation.currentEntry?.url ?? location.href);
@@ -56,7 +66,15 @@ export function useRoute() {
 
 const WALL = '/';
 
-export const sessionPath = (id: string, tab: Tab = 'overview', item?: string | null) => `/s/${id}/${tab}${item ? `/${item}` : ''}`;
+function query(view: View) {
+  const q = new URLSearchParams();
+  if (view.version) q.set('v', String(view.version));
+  if (view.changes) q.set('changes', '');
+  const text = q.toString().replace(/=(?=&|$)/g, '');
+  return text ? `?${text}` : '';
+}
+
+export const sessionPath = (id: string, tab: Tab = 'overview', item?: string | null, view: View = {}) => `/s/${id}/${tab}${item ? `/${item}` : ''}${query(view)}`;
 
 // An aborted navigation rejects both promises, which the error toasts would otherwise report.
 function settle(result: NavigationResult) {
@@ -72,9 +90,9 @@ export function openSheet(id: string, tab: Tab = 'overview', item?: string | nul
 }
 
 // Tabs and artifacts replace the entry, so one step back still closes the sheet.
-export function showTab(tab: Tab, item?: string | null) {
+export function showTab(tab: Tab, item?: string | null, view?: View) {
   const { sheet } = current();
-  if (sheet) go(sessionPath(sheet.id, tab, item), { history: 'replace' });
+  if (sheet) go(sessionPath(sheet.id, tab, item, view), { history: 'replace' });
 }
 
 // Stepping back into another document would load the board afresh and lose what the page shows, such as the toast

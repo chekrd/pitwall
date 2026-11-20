@@ -6,7 +6,7 @@ import { useStore } from '../store.ts';
 import type { RepoView, Session, Upstream } from '../types.ts';
 import { useBusy } from '../sends.ts';
 import { locate, sessionLabel, shownOf } from '../util.ts';
-import { Artifacts } from './Artifacts.tsx';
+import { artifactGroups, Artifacts } from './Artifacts.tsx';
 import { Conversation } from './Conversation.tsx';
 import { DiffView } from './DiffView.tsx';
 import { Documents } from './Documents.tsx';
@@ -56,7 +56,7 @@ export function TaskSheet({ route }: { route: Route }) {
   return (
     <section id={SHEET_DIALOG} ref={page} tabIndex={-1} className={styles.page} data-session={id} aria-label={name}>
       {link === 'connecting' && <p className={styles.connecting}>Connecting…</p>}
-      {session && <Body key={session.id} session={session} name={name} repos={repos} tab={sheet.tab} item={sheet.item} />}
+      {session && <Body key={session.id} session={session} name={name} repos={repos} tab={sheet.tab} item={sheet.item} view={{ version: sheet.version, changes: sheet.changes }} />}
     </section>
   );
 }
@@ -67,9 +67,10 @@ interface BodyProps {
   repos: RepoView[];
   tab: Tab;
   item: string | null;
+  view: { version: number | null; changes: boolean };
 }
 
-function Body({ session, name, repos, tab, item }: BodyProps) {
+function Body({ session, name, repos, tab, item, view }: BodyProps) {
   const { repo, worktree, branch } = locate(repos, session);
   const attention = shownOf(session, useBusy());
   const stat = session.diffstat;
@@ -77,7 +78,7 @@ function Body({ session, name, repos, tab, item }: BodyProps) {
     { key: 'overview', label: 'Overview', kbd: '1' },
     { key: 'conversation', label: 'Conversation', kbd: '2' },
     { key: 'diff', label: 'Diff', kbd: '3' },
-    ...(session.artifacts.length ? [{ key: 'artifacts' as const, label: `Artifacts (${session.artifacts.length})`, kbd: '4' }] : []),
+    ...(session.artifacts.length ? [{ key: 'artifacts' as const, label: `Artifacts (${artifactGroups(session.artifacts).length})`, kbd: '4' }] : []),
     ...(session.workflow ? [{ key: 'documents' as const, label: `Documents (${session.workflow.documents})`, kbd: '5' }] : []),
   ];
   const current = tabs.some((t) => t.key === tab) ? tab : 'overview';
@@ -130,9 +131,9 @@ function Body({ session, name, repos, tab, item }: BodyProps) {
       <div className={styles.panel} role="tabpanel">
         {current === 'overview' && <Overview session={session} name={name} branch={worktree?.branch ?? undefined} repo={repo} />}
         {current === 'diff' && <DiffView session={session} at={item} />}
-        {current === 'artifacts' && <Artifacts session={session} item={item} />}
+        {current === 'artifacts' && <Artifacts session={session} item={item} changes={view.changes} />}
         {current === 'conversation' && <Conversation session={session} />}
-        {current === 'documents' && <Documents session={session} name={name} item={item} />}
+        {current === 'documents' && <Documents session={session} name={name} item={item} view={view} />}
       </div>
     </>
   );

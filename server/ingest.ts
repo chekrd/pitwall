@@ -278,7 +278,7 @@ async function syncLive() {
     void refreshDiffstat(s.id);
     changed = true;
   }
-  const tasks = sessions.all().map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s) }));
+  const tasks = sessions.all().map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' }));
   if (await tasksWorkflows.refresh(tasks)) changed = true;
   if (changed) notify();
   void describeLinks();

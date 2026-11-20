@@ -8,6 +8,7 @@ import type { pauser } from './pause.ts';
 import type { TaskFolder } from './rpi.ts';
 import type { WorktreeLoss } from './removal.ts';
 import type { Run, Schedule, TaskRequest } from './schedule.ts';
+import type { DocumentVersion } from './versions.ts';
 import type { modelChoices } from './tasks.ts';
 
 // What server/app.ts, the mock and the page agree on: the bodies each route takes, checked with these schemas on the
@@ -66,7 +67,10 @@ export const actionBodies = {
         path: z.string().min(1).max(1000), side: z.enum(['old', 'new']), start: z.number().int().min(1), end: z.number().int().min(1),
         lines: z.array(z.string().max(MAX_REF_LINE)).max(MAX_REF_LINES),
       }).refine((r) => r.start <= r.end, 'the lines run backwards'),
-      z.strictObject({ kind: z.literal('document'), path: z.string().min(1).max(1000), heading: z.string().max(500).nullable(), quote: z.string().min(1).max(MAX_QUOTE) }),
+      z.strictObject({
+        kind: z.literal('document'), path: z.string().min(1).max(1000), heading: z.string().max(500).nullable(), quote: z.string().min(1).max(MAX_QUOTE),
+        version: z.number().int().min(1).optional(),
+      }),
     ]).optional(),
   }),
   'edit-park': z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }),
@@ -150,6 +154,7 @@ export interface Responses {
   'POST /api/shell': void;
   'GET /api/sessions/:id/conversation': ConversationLog[];
   'GET /api/sessions/:id/documents': TaskFolder[];
+  'GET /api/sessions/:id/versions': Pick<DocumentVersion, 'n' | 'at' | 'size'>[];
   'GET /api/sessions/:id/delete-worktree': WorktreeLoss;
   'POST /api/restart/resume': Resumed;
   'POST /api/restart/dismiss': void;

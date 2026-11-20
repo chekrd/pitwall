@@ -24,16 +24,26 @@ after(() => rm(join(SESSIONS_DIR, id), { recursive: true, force: true }));
 const session = (artifacts: Session['artifacts']) => ({ id, artifacts }) as Session;
 const call = (toolUseId: string, title: string, at: number, html = `<p>${toolUseId}</p>`) => ({ toolUseId, input: { title, html }, at });
 
-test('an artifact is saved once, and a later one with the same title replaces it for good', async () => {
+test('an artifact is saved once, and a later one with the same title is its next version, every version kept', async () => {
   const first = await storeArtifacts(session([]), [call('a1', 'Flow', 1), call('b1', 'States', 2)]);
-  assert.deepEqual(first?.map((a) => a.id), ['a1', 'b1']);
+  assert.deepEqual(first?.map((a) => [a.id, a.version]), [['a1', 1], ['b1', 1]]);
   assert.equal(await readFile(artifactFile(id, 'a1'), 'utf8'), '<p>a1</p>');
   assert.equal(await storeArtifacts(session(first), [call('a1', 'Flow', 1), call('b1', 'States', 2)]), null);
 
-  const replaced = await storeArtifacts(session(first), [call('a1', 'Flow', 1), call('b1', 'States', 2), call('a2', 'Flow', 3)]);
-  assert.deepEqual(replaced?.map((a) => a.id), ['b1', 'a2']);
-  await assert.rejects(readFile(artifactFile(id, 'a1')));
-  assert.equal(await storeArtifacts(session(replaced), [call('a1', 'Flow', 1), call('a2', 'Flow', 3)]), null);
+  const again = await storeArtifacts(session(first), [call('a1', 'Flow', 1), call('b1', 'States', 2), call('a2', 'Flow', 3), call('a3', 'Flow', 4)]);
+  assert.deepEqual(again?.map((a) => [a.id, a.title, a.version]), [['a1', 'Flow', 1], ['b1', 'States', 1], ['a2', 'Flow', 2], ['a3', 'Flow', 3]]);
+  assert.equal(await readFile(artifactFile(id, 'a1'), 'utf8'), '<p>a1</p>', 'the first version stays');
+  assert.equal(await readFile(artifactFile(id, 'a3'), 'utf8'), '<p>a3</p>');
+  assert.equal(await storeArtifacts(session(again), [call('a1', 'Flow', 1), call('a2', 'Flow', 3), call('a3', 'Flow', 4)]), null);
+});
+
+test('a call older than a version kept, replaced before versions were, does not come back; versions go with the task folder', async () => {
+  const before = [{ id: 'n2', title: 'Flow', at: 5, version: 1 }];
+  assert.equal(await storeArtifacts(session(before), [call('n1', 'Flow', 4), call('n2', 'Flow', 5)]), null);
+  const many = await storeArtifacts(session([]), Array.from({ length: 30 }, (_, i) => call(`m${i}`, 'Many', 10 + i)));
+  assert.equal(many?.at(-1)?.version, 30, 'no cap');
+  await rm(join(SESSIONS_DIR, id), { recursive: true, force: true });
+  await assert.rejects(readFile(artifactFile(id, 'm0')));
 });
 
 test('a call the MCP server would reject is not stored', async () => {

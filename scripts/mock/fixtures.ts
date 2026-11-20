@@ -87,8 +87,8 @@ export function queue(now: number): Session[] {
       lastMessage: 'I drafted `mergeCarts()` in `src/cart/mergeCarts.ts` and three failing tests that pin down the cases:\n\n1. Disjoint carts → union of both\n2. Same product in both → quantities add up, capped at stock\n3. Empty guest cart → account cart unchanged\n\nBefore wiring it into `onLogin` I need your call on the merge rule, so I asked through Pitwall. The rule comes from [CHK-412](https://jira.example.com/browse/CHK-412).',
       lastTurn: 't-cart-6', diffstat: { files: 4, insertions: 211, deletions: 8 },
       artifacts: [
-        { id: 'art-cart-1', title: 'Cart merge — before and after', at: now - 6 * MIN },
-        { id: 'art-cart-2', title: 'Login flow with the merge step', at: now - 5 * MIN },
+        { id: 'art-cart-1', title: 'Cart merge — before and after', at: now - 6 * MIN, version: 1 },
+        { id: 'art-cart-2', title: 'Login flow with the merge step', at: now - 5 * MIN, version: 1 },
       ],
       links: [
         { url: 'https://jira.example.com/browse/CHK-412', text: 'CHK-412', context: 'The rule comes from [CHK-412](https://jira.example.com/browse/CHK-412).', about: 'Jira ticket CHK-412: carts never lose items', at: now - 9 * MIN },
@@ -178,7 +178,7 @@ export function queue(now: number): Session[] {
       lastPrompt: 'Why is the total a cent off on some invoices? Fix it and push.',
       lastMessage: 'The cent goes missing in `LineItem.total()`, which multiplies floats before rounding. I switched every amount to integer cents and pushed PR 1842; checks are running.\n\n```ts\nconst total = (cents: number, qty: number) => Math.round(cents * qty);\n```',
       lastTurn: 't-invoice-9', diffstat: { files: 7, insertions: 88, deletions: 31 },
-      artifacts: [{ id: 'art-invoice-1', title: 'Where the cent goes missing', at: now - 25 * MIN }],
+      artifacts: [{ id: 'art-invoice-1', title: 'Where the cent goes missing', at: now - 25 * MIN, version: 1 }],
     }),
     session({
       id: 's-thumbs', repoId: 3, worktree: `${HOME}/git/github/worktrees/artifact-thumbs/pitwall`, tty: '/dev/ttys022', pid: 76002,

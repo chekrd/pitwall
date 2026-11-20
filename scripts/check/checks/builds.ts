@@ -61,6 +61,7 @@ export const builds: Check[] = [
       const answer = (id: string, body: object) => fetch(`${mock.url}/api/sessions/${id}/answer`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
       });
+      if (!legacy) await mock.post('/mock/typing', { ms: 20_000 });
       const sends = [
         answer('s-cart', { key: 'q:toolu_01Cart', choice: 'Keep the account cart' }),
         answer('s-group', { key: 'q:toolu_01Group', choice: 'By attention' }),

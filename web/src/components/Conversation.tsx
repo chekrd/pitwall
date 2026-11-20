@@ -101,7 +101,7 @@ function Exchange({ session, conversation, exchange: e, artifacts, whole }: { se
         <div className={styles.artifacts}>
           {made.map((a) => (
             <button key={a.id} type="button" data-ux="artifact" onClick={() => showTab('artifacts', a.id)}>
-              <span>Artifact</span>
+              <span>Artifact{a.version > 1 && ` · v${a.version}`}</span>
               <strong>{a.title}</strong>
             </button>
           ))}

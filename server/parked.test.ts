@@ -206,3 +206,24 @@ test('a stored draft about lines from before document comments still parses and 
   assert.equal(park.safeParse({ text: 'x', ref: { ...stream, quote: '' } }).success, false);
   assert.equal(park.safeParse({ text: 'x', ref: { kind: 'document', path: DESIGN, quote: 'q' } }).success, false, 'the heading is named, null when there is none');
 });
+
+test('a comment carries the version it was written on; only one on a version older than the latest says so, and one without a version reads as before', () => {
+  const onTwo = { ...stream, version: 2 };
+  assert.deepEqual(actionBodies.park.parse({ text: 'x', ref: onTwo }).ref, onTwo);
+  assert.equal(actionBodies.park.safeParse({ text: 'x', ref: { ...stream, version: 0 } }).success, false);
+  const moved = 'written on version 2; the document is at version 3 now, so the passage may have moved';
+  assert.equal(draftMessage({ text: 'Why?', ref: onTwo }, 3), `About \`${DESIGN}\`, under “Stream or build the file first?” (${moved}):\n> Streaming starts the download at once;\n> building first can report a row count.\n\nWhy?`);
+  assert.equal(draftMessage({ text: 'Why?', ref: onTwo }, 2), draftMessage({ text: 'Why?', ref: stream }), 'on the latest, as before');
+  assert.equal(draftMessage({ text: 'Why?', ref: stream }, 3), draftMessage({ text: 'Why?', ref: stream }), 'an unknown version, as before');
+  assert.equal(draftMessage({ text: 'Why?', ref: onTwo }, null), draftMessage({ text: 'Why?', ref: stream }), 'a document the board has not read');
+  assert.deepEqual(documentCommentsMessage('/rpi', DESIGN, [{ text: 'Why?', ref: onTwo }, { text: 'And?', ref: { ...units, heading: null, version: 1 } }, { text: 'Now.', ref: { ...units, version: 3 } }], 3).split('\n\n'), [
+    `/rpi update ${DESIGN}`,
+    `Under “Stream or build the file first?” (${moved}):\n> Streaming starts the download at once;\n> building first can report a row count.`, 'Why?',
+    'Written on version 1; the document is at version 3 now, so the passage may have moved:\n> Amounts are written in major units with two decimals', 'And?',
+    'Under “Resolved Design Questions”:\n> Amounts are written in major units with two decimals', 'Now.',
+  ]);
+  const parked: Parked[] = [{ id: 'c', text: 'Why?', auto: true, armedAt: 150, at: 0, ref: onTwo }];
+  const w = turnEnds((task, path) => (task === 's' && path === DESIGN ? 3 : null));
+  w.observe([session({ parked })], [], 100);
+  assert.equal(w.observe([session({ status: 'idle', parked, lastMessage: done })], [], 200)[0]?.text, draftMessage({ text: 'Why?', ref: onTwo }, 3), 'armed, it says so too');
+});

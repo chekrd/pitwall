@@ -69,6 +69,8 @@
     &:hover, &:focus-visible { text-decoration: underline; code { color: var(--text); } }
   }
 
+  .version { margin-left: 8px; color: var(--muted); }
+
   .num { display: inline-block; min-width: 4ch; margin-right: 10px; text-align: right; color: var(--muted); user-select: none; }
 
   .text { margin: 0; max-width: 90ch; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }

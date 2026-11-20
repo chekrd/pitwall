@@ -5,7 +5,7 @@ import { pauseMark } from '../../server/pause.ts';
 import type { RepoView } from '../../server/workspace.ts';
 import { addFromTemplate, queue, repos, ROOTS, session, titleOf, type Template } from './fixtures.ts';
 import { HOME } from './home.ts';
-import { rpiDocuments } from './rpiDocs.ts';
+import { EXPORT_FLOW, EXPORT_FLOW_PAGES, rpiDocuments, rpiVersions } from './rpiDocs.ts';
 
 export type Flag = 'lossFails' | 'resumeFails';
 
@@ -17,6 +17,10 @@ export interface Scenario {
   flags: Record<string, Flag[]>;
   // Files the mock writes into its HOME when the scenario loads: by worktree, task folder and name, under .pitwall/artifacts.
   documents?: Record<string, Record<string, Record<string, string>>>;
+  // Versions of those documents the board kept before the ones on disk, oldest first: by task and path.
+  documentVersions?: Record<string, Record<string, string[]>>;
+  // The HTML of artifacts by id, for those that have their own; any other shows a page made from its title.
+  artifactHtml?: Record<string, string>;
 }
 
 const MIN = 60_000;
@@ -75,6 +79,7 @@ const rpiTasks = (now: number) => [
     status: 'idle', createdAt: now - 3 * 60 * MIN, updatedAt: now - 4 * MIN,
     lastMessage: 'Phase 1 is done: the CSV writer formats one invoice per row, and `pnpm test csv` passes. Phase 2 streams a month from `GET /invoices/export`.',
     lastTurn: 't-export-5',
+    artifacts: EXPORT_FLOW_PAGES.map((_, i) => ({ id: `art-export-${i + 1}`, title: EXPORT_FLOW, at: now - (50 - 20 * i) * MIN, version: i + 1 })),
     // A comment on the outline whose passage has been rewritten since, so it is no longer marked.
     parked: [{
       id: 'p-export-batch', text: 'Name the batch size, and why it is 500.', auto: false, armedAt: null, at: now - 30 * MIN,
@@ -243,6 +248,8 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
       scenario.repos.find((r) => r.id === repoId)!.worktrees.push({ path, branch, head: '7'.repeat(40), isMain: false, conversations: [] });
     }
     scenario.documents = rpiDocuments(HOME);
+    scenario.documentVersions = rpiVersions();
+    scenario.artifactHtml = Object.fromEntries(EXPORT_FLOW_PAGES.map((html, i) => [`art-export-${i + 1}`, html]));
     return scenario;
   },
 

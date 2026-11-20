@@ -78,7 +78,8 @@ test('a document route reads only inside .pitwall/artifacts: no traversal, no ab
 
 test('the summaries change only when a document does, read again only when its mtime or size changed, and go with their task', async () => {
   const { worktree, task } = checkout();
-  const store = workflows();
+  // A clock that stands still, so no document settles into a version while the summaries are compared.
+  const store = workflows({ now: () => 0 });
   const tasks = [{ id: 't1', base: worktree, roots: [worktree] }];
   assert.equal(await store.refresh(tasks), true);
   const first = store.of('t1')!;

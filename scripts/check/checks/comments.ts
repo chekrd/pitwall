@@ -96,7 +96,7 @@ export const comments: Check[] = [
       assert.equal(toast.text, 'Kept for later: a comment on 04-design-discussion-invoice-export.md');
       const s = await stateOf(mock, 's-export');
       const kept = s.parked.find((p: { id: string }) => p.id !== STALE.id);
-      assert.deepEqual([kept.text, kept.auto, kept.ref], ['Say what a failed stream leaves behind.', false, { kind: 'document', path: DESIGN, heading: 'Stream or build the file first?', quote: PASSAGE }]);
+      assert.deepEqual([kept.text, kept.auto, kept.ref], ['Say what a failed stream leaves behind.', false, { kind: 'document', path: DESIGN, heading: 'Stream or build the file first?', quote: PASSAGE, version: 3 }], 'the version it was written on');
       await page.until('the passage marked', markCount, 1);
       assert.deepEqual(await page.eval(marked), { [kept.id]: PASSAGE });
       assert.equal(await page.eval(explainOf, `${BODY} mark[data-comment]`), 'Say what a failed stream leaves behind.', 'the comment on hover');

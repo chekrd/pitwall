@@ -14,6 +14,7 @@ import { schedulesLater } from './schedulesLater.ts';
 import { sends } from './sends.ts';
 import { taskPage } from './taskPage.ts';
 import { usageFindings } from './usageFindings.ts';
+import { versions } from './versions.ts';
 import { wall } from './wall.ts';
 import { workflow } from './workflow.ts';
 
@@ -35,4 +36,5 @@ export const checks: Check[] = [
   ...rounds,
   ...workflow,
   ...comments,
+  ...versions,
 ];

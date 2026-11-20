@@ -9,7 +9,7 @@ import { hold, useSends } from '../sends.ts';
 import { useStore } from '../store.ts';
 import type { ActionBody, CodeRef, Parked, Session } from '../types.ts';
 import { AsideList, askAside, canAsk, MAX_ASIDES, ownAsides } from './Asides.tsx';
-import { fileName, openComment, type Comment } from './Comments.tsx';
+import { documentVersion, fileName, openComment, type Comment } from './Comments.tsx';
 import { explain, TIPS, type Explanation } from './explain.ts';
 import { ModelPicker, useModelChoices, useStoredPick } from './ModelPicker.tsx';
 import styles from './Later.module.css';
@@ -33,7 +33,7 @@ const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd
 // Every draft goes out as one message, each with the lines it was written about, held for 5 s with its Undo like any
 // send, and leaves the task once it went out.
 function sendNow(s: Session, drafts: readonly Parked[], name: string) {
-  const text = drafts.map(draftMessage).join('\n\n');
+  const text = drafts.map((d) => draftMessage(d, isDocumentRef(d.ref) ? documentVersion(s, d.ref.path) : null)).join('\n\n');
   const request: Request = { action: 'answer', body: { key: null, text, drafts: drafts.map((d) => d.id) }, label: text };
   void hold(s, request, name, { box: false });
 }
@@ -72,13 +72,17 @@ function Lines({ at }: { at: CodeRef }) {
 }
 
 function Passage({ session, comment }: { session: Session; comment: Comment }) {
-  const { path, heading, quote } = comment.ref;
+  const { path, heading, quote, version } = comment.ref;
+  const latest = documentVersion(session, path);
   return (
     <figure className={styles.ref} data-ref data-document-ref>
       <figcaption>
         <button type="button" className={styles.where} data-explain={`Opens ${path} at this passage, marked; Claude gets it with the comment`} onClick={() => openComment(session, comment)}>
           <code>{fileName(path)}</code>{heading && <> · {heading}</>}
         </button>
+        {version && latest && version < latest
+          ? <span className={styles.version} data-comment-version data-explain={`Written on v${version}; the document is at v${latest} now, which Claude is told when it gets the comment`}>v{version}, now v{latest}</span>
+          : version && latest && latest > 1 ? <span className={styles.version} data-comment-version>v{version}</span> : null}
       </figcaption>
       <blockquote className={styles.quote}>{quote}</blockquote>
     </figure>

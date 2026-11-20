@@ -120,6 +120,21 @@ export const migrations: Migration[] = [
     }
     rmSync(join(DATA_DIR, 'advisor'), { recursive: true, force: true });
   },
+  // 12: an artifact published again under its title is a new version of it, all of them kept. Each artifact stored
+  // before then was the only one of its title and becomes its version 1.
+  (db) => {
+    const update = db.prepare('UPDATE sessions SET artifacts = ? WHERE id = ?');
+    for (const row of db.prepare('SELECT id, artifacts FROM sessions WHERE artifacts IS NOT NULL').all()) {
+      const list = JSON.parse(String(row.artifacts)) as { title: string; at: number; version?: number }[];
+      const seen = new Map<string, number>();
+      const versioned = list.map((a) => {
+        const version = a.version ?? (seen.get(a.title) ?? 0) + 1;
+        seen.set(a.title, version);
+        return { ...a, version };
+      });
+      update.run(JSON.stringify(versioned), row.id as string);
+    }
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

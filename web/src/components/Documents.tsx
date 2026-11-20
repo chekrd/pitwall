@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { documentCommentsMessage } from '../../../server/codeRef.ts';
-import { nextSteps, TYPE_LABELS, type NextStep } from '../../../server/rpi.ts';
+import { currentVersion, nextSteps, TYPE_LABELS, type NextStep, type VersionState } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
 import { api } from '../api.ts';
 import { SHEET_DIALOG } from '../keys.ts';
-import { sessionPath, showTab } from '../router.ts';
+import { changedSince, markRead, useReadVersions } from '../readVersions.ts';
+import { sessionPath, showTab, type View } from '../router.ts';
 import { hold } from '../sends.ts';
 import type { Command, DocumentEntry, Session, SupportingFile, TaskFolder, Workflow } from '../types.ts';
 import { ago } from '../util.ts';
+import { Changes, VersionPicker } from './Changes.tsx';
 import { CommentNote, fileName, markPassages, pickedIn, plural, shownComment, useComments, useWantedComment, type Comment, type Marked, type Picked } from './Comments.tsx';
 import { useCommands } from './Composer.tsx';
 import styles from './Documents.module.css';
@@ -18,6 +20,8 @@ import { toast } from './Toasts.tsx';
 import { documentItem, PhaseStrip } from './Workflow.tsx';
 
 export const documentUrl = (session: string, path: string) => `/api/sessions/${session}/documents/${path.split('/').map(encodeURIComponent).join('/')}`;
+
+export const versionUrl = (session: string, path: string, n: number) => `/api/sessions/${session}/versions/${n}?path=${encodeURIComponent(path)}`;
 
 // A path a document names, from the folder the document lies in; null for a link to another site or to the page itself.
 function relativeTo(doc: string, to: string) {
@@ -100,7 +104,7 @@ function NextSteps({ session, name, workflow, commands, comments }: { session: S
 
 // The task's rpi documents, as they stand on disk: read when the tab opens and again whenever the snapshot's stamp
 // says a file changed.
-export function Documents({ session, name, item }: { session: Session; name: string; item: string | null }) {
+export function Documents({ session, name, item, view }: { session: Session; name: string; item: string | null; view: View }) {
   const workflow = session.workflow ?? null;
   const [folders, setFolders] = useState<TaskFolder[] | null>(null);
   const stamp = workflow?.stamp;
@@ -113,6 +117,7 @@ export function Documents({ session, name, item }: { session: Session; name: str
   }, [session.id, stamp]);
   const comments = useComments(session);
   const commands = useCommands(session.worktree, true);
+  const readOf = useReadVersions(session.id);
   const opening = useWantedComment();
   useEffect(() => {
     if (!folders || !opening || folders.some((f) => f.documents.some((d) => d.path === opening.path))) return;
@@ -144,7 +149,10 @@ export function Documents({ session, name, item }: { session: Session; name: str
   const shown = pick(wanted) ?? pick(preferred) ?? (documents[0] ? { kind: 'document', entry: documents[0] } : null);
   if (!shown) return <p className={styles.empty}>The documents of this task are gone from its worktree.</p>;
 
-  const select = (path: string) => showTab('documents', documentItem(path));
+  const versionOf = (path: string) => workflow?.versions?.[path] ?? null;
+  const changed = (path: string) => !!versionOf(path) && changedSince(readOf(path), currentVersion(versionOf(path)));
+  // One that changed since you last read it opens at what changed.
+  const select = (path: string) => showTab('documents', documentItem(path), { changes: changed(path) || undefined });
   return (
     <div className={styles.page}>
       {workflow && (
@@ -160,10 +168,12 @@ export function Documents({ session, name, item }: { session: Session; name: str
               {folders.length > 1 && <h3 className={styles.folder}>{f.name}</h3>}
               {f.documents.map((d) => {
                 const count = comments.filter((c) => c.ref.path === d.path).length;
+                const version = currentVersion(versionOf(d.path));
                 return (
                   <button key={d.path} type="button" data-ux="document" data-document={d.path} aria-current={shown.entry.path === d.path || undefined} onClick={() => select(d.path)}>
                     <strong>{d.title ?? d.name}</strong>
-                    <span>{d.type ? TYPE_LABELS[d.type] : 'Document'} · {ago(d.modifiedAt)}</span>
+                    <span>{d.type ? TYPE_LABELS[d.type] : 'Document'} · {ago(d.modifiedAt)}{version > 1 && <> · <span data-version-count>v{version}</span></>}</span>
+                    {changed(d.path) && <span className={styles.changed} data-changed data-explain={`v${version} came after you last read it, at v${readOf(d.path)}; opening it shows what changed`}>Changed since you read it</span>}
                     {count > 0 && <span className={styles.count} data-comment-count data-explain="Comments under Later that Claude has not had yet">{plural(count, 'comment')}</span>}
                   </button>
                 );
@@ -188,6 +198,8 @@ export function Documents({ session, name, item }: { session: Session; name: str
               known={[...documents, ...files].map((d) => d.path).join('\n')}
               comments={comments.filter((c) => c.ref.path === shown.entry.path)}
               focus={opening?.path === shown.entry.path ? opening.id : null}
+              versions={versionOf(shown.entry.path)}
+              view={view}
               blocked={sendBlocked(session, commands)}
               invocation={rpiInvocation(commands ?? [])}
             />
@@ -198,13 +210,13 @@ export function Documents({ session, name, item }: { session: Session; name: str
   );
 }
 
-function Header({ session, path, title, detail, children }: { session: string; path: string; title: string; detail: string; children?: ReactNode }) {
+function Header({ href, title, detail, children }: { href: string; title: string; detail: string; children?: ReactNode }) {
   return (
     <header>
       <strong>{title}</strong>
       <span>{detail}</span>
       {children}
-      <a href={documentUrl(session, path)} target="_blank" rel="noreferrer">
+      <a href={href} target="_blank" rel="noreferrer">
         Open in new tab <Icon name="external" size={14} />
       </a>
     </header>
@@ -221,6 +233,8 @@ interface ViewProps {
   focus: string | null;
   blocked: string | null;
   invocation: string;
+  versions: VersionState | null;
+  view: View;
 }
 
 const NEW = 'new';
@@ -228,13 +242,23 @@ const NEW = 'new';
 // Kept on screen while a newer version is read, so a change on disk redraws the document where you were reading.
 // `known` lists the paths beside it, one a line, so the rewritten links stay the same, and the document is not drawn
 // again, until a file comes or goes. A passage selected in it takes a comment, and the passages commented are marked.
-function DocumentView({ session, name, doc, known, comments, focus, blocked, invocation }: ViewProps) {
+function DocumentView({ session, name, doc, known, comments: all, focus, blocked, invocation, versions, view }: ViewProps) {
   const id = session.id;
+  const latest = currentVersion(versions);
+  const shownVersion = view.version && view.version < latest ? view.version : latest;
+  const old = shownVersion < latest;
+  const showing = !!view.changes && shownVersion > 1;
+  const source = old ? versionUrl(id, doc.path, shownVersion) : documentUrl(id, doc.path);
+  // A comment is marked only in the version it was written on; one from before versions, in the latest.
+  const comments = all.filter((c) => (c.ref.version ?? latest) === shownVersion);
   const [text, setText] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    if (!old && versions) markRead(id, doc.path, latest);
+  }, [id, doc.path, old, showing]);
+  useEffect(() => {
     let live = true;
-    fetch(documentUrl(id, doc.path), { cache: 'no-store' })
+    fetch(source, { cache: 'no-store' })
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.statusText))))
       .then((t) => {
         if (!live) return;
@@ -244,7 +268,7 @@ function DocumentView({ session, name, doc, known, comments, focus, blocked, inv
     return () => {
       live = false;
     };
-  }, [id, doc.path, doc.modifiedAt, doc.size]);
+  }, [source, doc.modifiedAt, doc.size]);
 
   const paths = useMemo(() => new Set(known.split('\n')), [known]);
   const href = useCallback((to: string, image: boolean) => {
@@ -342,15 +366,33 @@ function DocumentView({ session, name, doc, known, comments, focus, blocked, inv
     getSelection()?.removeAllRanges();
   };
   const sendComments = () => {
-    const message = documentCommentsMessage(invocation, doc.path, comments);
-    void hold(session, { action: 'answer', body: { key: null, text: message, drafts: comments.map((c) => c.id) }, label: message, command: true }, name, { box: false });
+    const message = documentCommentsMessage(invocation, doc.path, all, latest);
+    void hold(session, { action: 'answer', body: { key: null, text: message, drafts: all.map((c) => c.id) }, label: message, command: true }, name, { box: false });
   };
+  const pick = (n: number) => showTab('documents', documentItem(doc.path), { version: n < latest ? n : undefined, changes: showing || undefined });
 
-  const detail = [doc.type ? TYPE_LABELS[doc.type] : null, doc.name, `changed ${ago(doc.modifiedAt)}`].filter(Boolean).join(' · ');
+  const detail = [doc.type ? TYPE_LABELS[doc.type] : null, doc.name, old ? `v${shownVersion}, an older version` : `v${latest} · changed ${ago(doc.modifiedAt)}`].filter(Boolean).join(' · ');
   return (
-    <div className={styles.viewer}>
-      <Header session={id} path={doc.path} title={doc.title ?? doc.name} detail={detail}>
-        {comments.length > 0 && (
+    <div className={styles.viewer} data-shown-version={shownVersion}>
+      <Header href={source} title={doc.title ?? doc.name} detail={detail}>
+        {latest > 1 && (
+          <span className={styles.versioning}>
+            <VersionPicker versions={Array.from({ length: latest }, (_, i) => i + 1)} shown={shownVersion} onPick={pick} />
+            {shownVersion > 1 && (
+              <button
+                type="button"
+                className={styles.tool}
+                aria-pressed={showing}
+                data-show-changes
+                data-explain={showing ? 'Shows the document again' : `Shows what changed in v${shownVersion} from v${shownVersion - 1}`}
+                onClick={() => showTab('documents', documentItem(doc.path), { version: old ? shownVersion : undefined, changes: showing ? undefined : true })}
+              >
+                Changes
+              </button>
+            )}
+          </span>
+        )}
+        {all.length > 0 && (
           <button
             type="button"
             className={styles.send}
@@ -359,11 +401,21 @@ function DocumentView({ session, name, doc, known, comments, focus, blocked, inv
             {...explain(blocked ? { does: blocked } : { ...SENDS.prompt(''), does: `Sends the comments on this document to Claude as one rpi command, with 5 s to undo: “${invocation} update ${doc.path}”, then each comment with its heading and the passage quoted. They leave Later once sent.` })}
             onClick={sendComments}
           >
-            Send {plural(comments.length, 'comment')}
+            Send {plural(all.length, 'comment')}
           </button>
         )}
       </Header>
-      <div className={styles.scroll} ref={scroller} data-document-body onClick={follow}>
+      {showing ? (
+        <Changes
+          key={`${shownVersion}`}
+          before={versionUrl(id, doc.path, shownVersion - 1)}
+          after={source}
+          name={doc.name}
+          from={shownVersion - 1}
+          to={shownVersion}
+          stamp={old ? undefined : `${doc.modifiedAt}:${doc.size}`}
+        />
+      ) : <div className={styles.scroll} ref={scroller} data-document-body onClick={follow}>
         {failed && text === null ? <p className={styles.empty}>This document could not be read.</p>
           : text !== null && <Markdown source={stripFrontMatter(text)} href={href} />}
         {picked && !writing && (
@@ -381,10 +433,10 @@ function DocumentView({ session, name, doc, known, comments, focus, blocked, inv
         )}
         {writing && (
           <div className={styles.noteAt} style={{ top: writing.top }}>
-            <CommentNote session={session} at={{ kind: 'document', path: doc.path, heading: writing.heading, quote: writing.quote }} onDone={closeNote} />
+            <CommentNote session={session} at={{ kind: 'document', path: doc.path, heading: writing.heading, quote: writing.quote, version: shownVersion }} onDone={closeNote} />
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -395,7 +447,7 @@ function FileView({ session, file, frame }: { session: string; file: SupportingF
   const src = `${documentUrl(session, file.path)}?v=${file.modifiedAt}`;
   return (
     <div className={styles.viewer}>
-      <Header session={session} path={file.path} title={file.name} detail={`${file.kind === 'mockup' ? 'Mockup' : 'Image'} · changed ${ago(file.modifiedAt)}`} />
+      <Header href={documentUrl(session, file.path)} title={file.name} detail={`${file.kind === 'mockup' ? 'Mockup' : 'Image'} · changed ${ago(file.modifiedAt)}`} />
       {file.kind === 'mockup'
         ? <iframe ref={frame} key={src} className={styles.frame} data-explain={file.name} src={src} sandbox="allow-scripts" />
         : <div className={styles.scroll}><img className={styles.image} src={src} alt={file.name} /></div>}

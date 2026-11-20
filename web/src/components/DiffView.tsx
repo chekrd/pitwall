@@ -22,7 +22,7 @@ const FILE_OPTIONS = {
 } as const;
 
 // Highlighting runs in workers, so a large diff never holds the page.
-const POOL = {
+export const POOL = {
   poolOptions: { workerFactory: () => new Worker(new URL('@pierre/diffs/worker/worker.js', import.meta.url), { type: 'module' }), poolSize: 4 },
   highlighterOptions: { theme: 'darcula', lineDiffType: 'word' },
 } as const;

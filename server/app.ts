@@ -12,6 +12,7 @@ import type { WSContext } from 'hono/ws';
 import { WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { ARTIFACT_CSP, artifactFile } from './artifacts.ts';
+import { htmlText } from './htmlText.ts';
 import { drift } from './claudeFormat.ts';
 import { documentFile, taskFolders, tasksWorkflows } from './documents.ts';
 import { listCommands } from './commands.ts';
@@ -292,6 +293,26 @@ export function createApp({ usage, ui }: AppDeps) {
     if (html === null) return c.text('artifact not found', 404);
     c.header('content-security-policy', ARTIFACT_CSP);
     return c.html(html);
+  });
+
+  // What an artifact shows as text, for comparing two of its versions; nothing in it runs.
+  app.get('/api/sessions/:id/artifacts/:artifact/text', async (c) => {
+    const html = await readFile(artifactFile(c.req.param('id'), c.req.param('artifact')), 'utf8').catch(() => null);
+    if (html === null) return c.text('artifact not found', 404);
+    return c.text(htmlText(html), 200, { 'x-content-type-options': 'nosniff', 'cache-control': 'private, max-age=31536000, immutable' });
+  });
+
+  app.get('/api/sessions/:id/versions', async (c) => {
+    const path = c.req.query('path');
+    if (!sessions.get(c.req.param('id')) || !path) return c.text('unknown task', 404);
+    return c.json((await tasksWorkflows.versions.list(c.req.param('id'), path)).map(({ n, at, size }) => ({ n, at, size })) satisfies Responses['GET /api/sessions/:id/versions']);
+  });
+
+  app.get('/api/sessions/:id/versions/:n', async (c) => {
+    const path = c.req.query('path');
+    const text = path && sessions.get(c.req.param('id')) ? await tasksWorkflows.versions.text(c.req.param('id'), path, Number(c.req.param('n'))) : null;
+    if (text === null) return c.text('version not found', 404);
+    return c.body(text, 200, { 'content-type': 'text/markdown; charset=utf-8', 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff', 'cache-control': 'private, max-age=31536000, immutable' });
   });
 
   app.get('/api/sessions/:id/documents', async (c) => {

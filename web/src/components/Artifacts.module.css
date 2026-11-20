@@ -52,6 +52,13 @@
     }
   }
 
+  .tool {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12.5px;
+    &[aria-pressed="true"] { border-color: var(--line-2); background: var(--raised-2); }
+  }
+
   .frame { flex: 1; min-height: 0; margin: 12px 24px 18px; border: 1px solid var(--line); border-radius: 16px; }
 
   .empty { padding: 24px; color: var(--muted); }

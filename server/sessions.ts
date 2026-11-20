@@ -26,6 +26,8 @@ import { archivePatch } from './restart.ts';
 import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
+import { tasksWorkflows } from './documents.ts';
+import { currentVersion } from './rpi.ts';
 
 const run = promisify(execFile);
 
@@ -315,7 +317,10 @@ export const settleAsides = () => asides.settle(sessions.all());
 export const sweepAsides = () => asides.sweep(sessions.all());
 export const dropAsides = (gone: Session[]) => Promise.all(gone.map((s) => asides.drop(s)));
 
-const ends = turnEnds();
+const ends = turnEnds((id, path) => {
+  const versions = tasksWorkflows.of(id)?.versions;
+  return versions?.[path] ? currentVersion(versions[path]) : null;
+});
 const autoSending = new Set<string>();
 
 // A sync writes a turn's end before it reads the reply that ended it, so drafts wait for the sync to finish, whose

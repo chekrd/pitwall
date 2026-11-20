@@ -58,10 +58,12 @@ export interface PrFlow {
   at: number;
 }
 
+// One version of an artifact: the versions of one are those with its title, numbered from 1 in the order they came.
 export interface Artifact {
   id: string;
   title: string;
   at: number;
+  version: number;
 }
 
 // A web link Claude gave in a message: its Markdown text if it had one, the line it stood on, and a few words on what
@@ -94,12 +96,14 @@ export interface CodeRef {
 }
 
 // A passage of one of the task's rpi documents a comment was written about: the document's path from the task's own
-// folder, as the documents' routes take it, the nearest heading above the passage and the passage itself.
+// folder, as the documents' routes take it, the nearest heading above the passage, the passage itself and the version
+// of the document it was read in, which comments from before versions lack.
 export interface DocumentRef {
   kind: 'document';
   path: string;
   heading: string | null;
   quote: string;
+  version?: number | undefined;
 }
 
 // A message written for the task's Claude to send later. `armedAt` is when Send when it's my turn was switched on.

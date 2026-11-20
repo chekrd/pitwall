@@ -108,6 +108,8 @@ export const rounds: Check[] = [
         Q4: { option: null, recommended: false, text: 'The city calendar and two club pages' },
       });
       await until('the round closed', async () => (await stateOf(mock, 's-events')).round === null);
+      // A send the page still waits to see answered outlives a reload and would hold back the same round, loaded again.
+      await page.until('the page to see its send answered', () => !/sending/i.test(document.querySelector('#task-sheet')?.textContent ?? ''));
 
       await mock.reset('round');
       await openDecision(page, mock, 's-events');
@@ -119,6 +121,7 @@ export const rounds: Check[] = [
       const [instead] = await logged(mock, 'the message instead', (e) => e.action === 'answer' && e.sessionId === 's-events', POSTED_MS);
       assert.deepEqual(instead.body, { key: 'r:toolu_01Round', text: 'Skip the round, just build the list view' });
       await until('the round closed by the message', async () => (await stateOf(mock, 's-events')).round === null);
+      await page.until('the page to see its message answered', () => !/sending/i.test(document.querySelector('#task-sheet')?.textContent ?? ''));
 
       await mock.reset('round');
       await openDecision(page, mock, 's-events');

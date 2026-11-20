@@ -188,6 +188,15 @@ export interface WorkflowStep {
   document: string | null;
 }
 
+// What the snapshot tells of a document's versions: its latest, and whether the file on disk still reads as it.
+export interface VersionState {
+  latest: number;
+  settled: boolean;
+}
+
+// The version the file on disk is, or is about to become once it settles.
+export const currentVersion = (v: VersionState | null | undefined) => (v ? (v.settled ? v.latest : v.latest + 1) : 1);
+
 // What the snapshot carries for a task that has documents: enough for the Wall's chip and the phase strip. `stamp`
 // changes whenever a file under the task's folders does, so an open Documents tab knows to read them again.
 export interface Workflow {
@@ -199,6 +208,8 @@ export interface Workflow {
   documents: number;
   folders: number;
   stamp: string;
+  // By each document's path; set by the pass that reads them, as versions live on disk.
+  versions?: Record<string, VersionState>;
 }
 
 const RANK: Record<DocType, number> = { request: 0, 'research-questions': 1, research: 2, 'design-discussion': 3, prd: 3, tdd: 4, outline: 5 };

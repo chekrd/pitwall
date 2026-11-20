@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SESSIONS_DIR } from './config.ts';
 import type { ToolCall } from './conversations.ts';
@@ -15,8 +15,9 @@ export function artifactFile(sessionId: string, id: string) {
 }
 
 // Only the transcript holds an artifact's HTML, and only until the call scrolls out of the part
-// that is read, so each one is saved once when first seen. A later call with the same title
-// replaces it; the older call, still in the transcript, must not bring it back.
+// that is read, so each one is saved once when first seen. A later call with the same title is
+// its next version, and every version is kept. A call older than a version kept was replaced
+// before versions were, and its HTML is gone; still in the transcript, it must not come back.
 export async function storeArtifacts(s: Session, calls: ToolCall[]): Promise<Artifact[] | null> {
   let list = s.artifacts;
   for (const call of calls) {
@@ -24,11 +25,11 @@ export async function storeArtifacts(s: Session, calls: ToolCall[]): Promise<Art
     const input = artifactInput.safeParse(call.input);
     if (!input.success) continue;
     const { title, html } = input.data;
-    if (list.some((a) => a.title === title && a.at >= call.at)) continue;
+    const same = list.filter((a) => a.title === title);
+    if (same.some((a) => a.at > call.at)) continue;
     await mkdir(dir(s.id), { recursive: true });
     await writeFile(artifactFile(s.id, call.toolUseId), html);
-    for (const old of list.filter((a) => a.title === title)) await rm(artifactFile(s.id, old.id), { force: true });
-    list = [...list.filter((a) => a.title !== title), { id: call.toolUseId, title, at: call.at }];
+    list = [...list, { id: call.toolUseId, title, at: call.at, version: Math.max(0, ...same.map((a) => a.version)) + 1 }];
   }
   return list === s.artifacts ? null : list;
 }
