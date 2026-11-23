@@ -47,8 +47,11 @@ const OUTLINE = `${fm('structure-outline')}# Outline: retries
 `;
 
 test("the outline's progress counts its overview's phases, done when checked or marked ✅ there or on the phase's heading", () => {
-  assert.deepEqual(parseDocument('05-structure-outline-retries.md', OUTLINE).progress, { done: 2, total: 3, unit: 'phase' });
-  assert.deepEqual(outlineProgress(['- [x] one', '- [ ] two', '* [X] three']), { done: 2, total: 3, unit: 'check' }, 'no overview: every checkbox');
+  assert.deepEqual(parseDocument('05-structure-outline-retries.md', OUTLINE).progress, { done: 2, total: 3, unit: 'phase', started: true });
+  assert.deepEqual(outlineProgress(['- [x] one', '- [ ] two', '* [X] three']), { done: 2, total: 3, unit: 'check', started: true }, 'no overview: every checkbox');
+  assert.deepEqual(outlineProgress(['## Implementation Overview', '- [ ] Phase 1: a', '- [ ] Phase 2: b', '## Phase 1: a', '- [x] `pnpm test a`']),
+    { done: 0, total: 2, unit: 'phase', started: true }, "a phase's own check ticked, its overview box open until the manual check");
+  assert.deepEqual(outlineProgress(['## Implementation Overview', '- [ ] Phase 1: a', '## Phase 1: a', '- [ ] `pnpm test a`']), { done: 0, total: 1, unit: 'phase', started: false });
   assert.equal(outlineProgress(['no boxes here']), null);
 });
 
@@ -209,7 +212,7 @@ const T = '.pitwall/artifacts/t';
 const docAt = (name: string) => `${T}/${name}`;
 // Research done, the design discussion done, the outline done with a phase of it implemented.
 const underWay = (patch: Partial<Workflow> = {}): Workflow => ({
-  folder: T, flow: 'design-discussion', current: 'implement', outline: { done: 1, total: 3, unit: 'phase' }, documents: 4, folders: 1, stamp: 's',
+  folder: T, flow: 'design-discussion', current: 'implement', outline: { done: 1, total: 3, unit: 'phase', started: true }, documents: 4, folders: 1, stamp: 's',
   steps: [
     { phase: 'questions', state: 'done', document: docAt('01-research-questions-t.md') },
     { phase: 'research', state: 'done', document: docAt('02-research-t.md') },
@@ -221,10 +224,11 @@ const underWay = (patch: Partial<Workflow> = {}): Workflow => ({
   ...patch,
 });
 
-test('the later phases under way of a document: each after it with a document, done or current, and Implement once a phase of the outline is done', () => {
+test('the later phases under way of a document: each after it with a document, done or current, and Implement once a box of the outline is ticked', () => {
   assert.deepEqual(laterUnderWay(underWay(), docAt('02-research-t.md')), ['design-discussion', 'outline', 'implement']);
   assert.deepEqual(laterUnderWay(underWay(), docAt('04-structure-outline-t.md')), ['implement']);
-  assert.deepEqual(laterUnderWay(underWay({ outline: { done: 0, total: 3, unit: 'phase' } }), docAt('04-structure-outline-t.md')), [], 'no phase of the outline done');
+  assert.deepEqual(laterUnderWay(underWay({ outline: { done: 0, total: 3, unit: 'phase', started: false } }), docAt('04-structure-outline-t.md')), [], 'no box of the outline ticked');
+  assert.deepEqual(laterUnderWay(underWay({ outline: { done: 0, total: 3, unit: 'phase', started: true } }), docAt('04-structure-outline-t.md')), ['implement'], 'a check ticked, no phase done yet');
   assert.deepEqual(laterUnderWay(underWay(), docAt('99-notes.md')), [], 'not the document of a phase');
   const atDesign = underWay({
     current: 'design-discussion', outline: null,

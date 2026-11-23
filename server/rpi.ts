@@ -76,6 +76,9 @@ export interface Progress {
   total: number;
   // Phases of the outline's overview, or every checkbox when it has no overview.
   unit: 'phase' | 'check';
+  // Any box of the outline ticked or marked ✅: rpi leaves a phase's overview box open until its manual check is
+  // confirmed, while its own checks are already ticked.
+  started: boolean;
 }
 
 export interface DocumentMeta {
@@ -128,7 +131,7 @@ const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const DONE_MARK = '✅';
 
 // The outline's progress: its Implementation Overview's phases, done when checked or marked ✅ there or on their own
-// heading; without an overview, every checkbox.
+// heading; without an overview, every checkbox. Implementation has started once any box anywhere in it is ticked.
 export function outlineProgress(lines: string[]): Progress | null {
   const phaseOf = (text: string) => Number(text.match(/\bphase\s+(\d+)/i)?.[1] ?? 0);
   const doneHeadings = new Set(lines.map((l) => l.match(HEADING)?.[2] ?? '').filter((h) => h.includes(DONE_MARK)).map(phaseOf));
@@ -137,10 +140,12 @@ export function outlineProgress(lines: string[]): Progress | null {
   const after = lines.slice(at + 1);
   const end = after.findIndex((l) => HEADING.test(l));
   const overview = at < 0 ? [] : boxes(end < 0 ? after : after.slice(0, end));
-  const items = overview.length ? overview : boxes(lines);
+  const all = boxes(lines);
+  const items = overview.length ? overview : all;
   if (!items.length) return null;
   const done = items.filter(([, mark, text]) => mark !== ' ' || text.includes(DONE_MARK) || (phaseOf(text) > 0 && doneHeadings.has(phaseOf(text)))).length;
-  return { done, total: items.length, unit: overview.length ? 'phase' : 'check' };
+  const started = done > 0 || all.some(([, mark, text]) => mark !== ' ' || text.includes(DONE_MARK));
+  return { done, total: items.length, unit: overview.length ? 'phase' : 'check', started };
 }
 
 export function parseDocument(name: string, text: string): DocumentMeta {
@@ -244,7 +249,7 @@ export function stepsOf(docs: DocumentEntry[]): Pick<Workflow, 'flow' | 'steps' 
   const phases = ORDER.filter((p) => base.includes(p) || (p !== 'implement' && p !== 'design' && has(p)));
   const outlineDoc = newest(typed.filter((d) => d.type === 'outline'));
   const outline = outlineDoc?.progress ?? null;
-  const reached = (p: Phase) => (p === 'implement' ? !!outline && outline.done > 0 : has(p));
+  const reached = (p: Phase) => (p === 'implement' ? !!outline?.started : has(p));
   const finished = !!outline && outline.total > 0 && outline.done === outline.total;
   const furthest = phases.findLastIndex(reached);
   const steps = phases.map((phase, i): WorkflowStep => {
@@ -393,12 +398,12 @@ type Steps = Pick<Workflow, 'folder' | 'steps' | 'outline' | 'versions'>;
 const stepOfDocument = (w: Pick<Workflow, 'steps'>, path: string) => w.steps.findIndex((s) => s.phase !== 'implement' && s.document === path);
 
 // The phases after the one of `path` that have got under way: each with a document, done or current, and Implement
-// once a phase of the outline is done.
+// once the outline's implementation has started.
 export function laterUnderWay(w: Pick<Workflow, 'steps' | 'outline'>, path: string): Phase[] {
   const at = stepOfDocument(w, path);
   if (at < 0) return [];
   return w.steps.slice(at + 1)
-    .filter((s) => (s.phase === 'implement' ? (w.outline?.done ?? 0) > 0 : !!s.document && (s.state === 'done' || s.state === 'current')))
+    .filter((s) => (s.phase === 'implement' ? !!w.outline?.started : !!s.document && (s.state === 'done' || s.state === 'current')))
     .map((s) => s.phase);
 }
 

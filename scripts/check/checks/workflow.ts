@@ -222,6 +222,23 @@ export const workflow: Check[] = [
     },
   },
   {
+    name: 'RPI.4b an outline whose first phase has its checks ticked but its overview box still open, as rpi leaves it until the manual check, shows Implement under way at 0/3 with Implement the next phase; with no box ticked anywhere Implement is not yet',
+    scenario: 'workflow',
+    async run({ page, mock }) {
+      await page.goto(`${mock.url}/s/s-export/documents/${encodeURIComponent(OUTLINE)}`);
+      await page.until('the outline', headingIs, 'Outline: Invoice CSV export');
+      const outline = await (await fetch(`${mock.url}/api/sessions/s-export/documents/${OUTLINE}`)).text();
+      const awaitingManual = outline.replace('- [x] Phase 1', '- [ ] Phase 1').replaceAll(' ✅', '');
+      await mock.post('/mock/document', { id: 's-export', path: OUTLINE, text: awaitingManual });
+      const tail = ['Outline:done', 'Implement0/3:current'];
+      await page.until('Implement under way', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-phase-strip] li')].map((li) => `${li.textContent}:${li.dataset.state}`).slice(-2)) === want, JSON.stringify(tail));
+      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-phase-strip] li[data-phase="implement"]')!.dataset.explain), 'Under way: 0 of 3 phases of the outline done');
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-next-steps] [data-step]')].map((b) => b.dataset.step)), ['Implement the next phase']);
+      await mock.post('/mock/document', { id: 's-export', path: OUTLINE, text: awaitingManual.replace('- [x] `pnpm test csv`', '- [ ] `pnpm test csv`') });
+      await page.until('Implement not yet', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-phase-strip] li')].map((li) => `${li.textContent}:${li.dataset.state}`).slice(-2)) === want, JSON.stringify(['Outline:current', 'Implement0/3:next']));
+    },
+  },
+  {
     name: 'RPI.5 narrow: Documents lists its entries in a row over the document, with the strip above, and nothing scrolls sideways',
     scenario: 'workflow',
     narrow: true,

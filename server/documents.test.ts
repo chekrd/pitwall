@@ -96,7 +96,7 @@ test('the summaries change only when a document does, read again only when its m
   writeFileSync(outline, OUTLINE.replace('- [ ] Phase 1', '- [x] Phase 1'));
   utimesSync(outline, at, at);
   assert.equal(await store.refresh(tasks), true);
-  assert.deepEqual([store.of('t1')!.current, store.of('t1')!.outline], ['implement', { done: 1, total: 2, unit: 'phase' }]);
+  assert.deepEqual([store.of('t1')!.current, store.of('t1')!.outline], ['implement', { done: 1, total: 2, unit: 'phase', started: true }]);
 
   rmSync(join(worktree, '.pitwall'), { recursive: true });
   assert.equal(await store.refresh(tasks), true);
