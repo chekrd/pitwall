@@ -200,17 +200,14 @@ test('the note the board adds for rpi is left out as it is worded now and as it 
   assert.equal(withoutHandoff(`/rpi research x\n\n${BOARD_HANDOFF}`), '/rpi research x');
 });
 
-test('an implement step names the model for the implementer, and a research step the one for the research agents; with none picked, or on other steps, none is named', () => {
+test('an implement step runs the implementer on Opus and a research step the research agents; other steps name no model', () => {
   const [implement] = nextSteps(at('outline', 'tdd'), '/rpi');
   const [research] = nextSteps(at('questions', 'tdd'), '/rpi');
   const [prd] = nextSteps(at('research', 'prd'), '/rpi');
-  const both = { implementer: 'opus', research: 'fable' } as const;
-  assert.equal(stepMessage(implement, both), `${implement.command}\nLaunch outline-implementer-agent with model: opus.\n\n${BOARD_HANDOFF}`);
-  assert.equal(stepMessage(implement, {}), `${implement.command}\n\n${BOARD_HANDOFF}`);
-  assert.equal(stepMessage(research, both),
-    `${research.command}\nLaunch codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher with model: fable.\n\n${BOARD_HANDOFF}`);
-  assert.equal(stepMessage(research, { implementer: 'opus', research: '' }), `${research.command}\n\n${BOARD_HANDOFF}`);
-  assert.equal(stepMessage(prd, both), `${prd.command}\n\n${BOARD_HANDOFF}`);
+  assert.equal(stepMessage(implement), `${implement.command}\nLaunch outline-implementer-agent with model: opus.\n\n${BOARD_HANDOFF}`);
+  assert.equal(stepMessage(research),
+    `${research.command}\nLaunch codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher with model: opus.\n\n${BOARD_HANDOFF}`);
+  assert.equal(stepMessage(prd), `${prd.command}\n\n${BOARD_HANDOFF}`);
 });
 
 const T = '.pitwall/artifacts/t';
@@ -282,14 +279,14 @@ test("a rework step updates the outdated document after a /clear, naming what ch
   const marks = outdatedBy(underWay(), docAt('02-research-t.md'), 50);
   const design = reworkStep(underWay(), marks, 'design-discussion', '/rpi:rpi')!;
   assert.deepEqual({ ...design, command: '' }, { label: 'Rework Design discussion', command: '', usual: true, implements: false, researches: false, fresh: true, rework: 'design-discussion' });
-  assert.equal(stepMessage(design, { implementer: 'opus', research: 'opus' }), [
+  assert.equal(stepMessage(design), [
     `/rpi:rpi update ${docAt('03-design-discussion-t.md')}`,
     `\`${docAt('02-research-t.md')}\` changed after this document was written. Bring this document in line with the latest version of each and keep what still holds.`,
     '',
     BOARD_HANDOFF,
   ].join('\n'), 'no agent named');
   const research = reworkStep(underWay(), outdatedBy(underWay(), docAt('01-research-questions-t.md'), 50), 'research', '/rpi')!;
-  assert.equal(stepMessage(research, { research: 'opus' }).split('\n').at(-3),
+  assert.equal(stepMessage(research).split('\n').at(-3),
     'Launch codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher with model: opus.', "Research's rework names the research agents' model");
   const reworked = underWay({ versions: { ...underWay().versions, [docAt('03-design-discussion-t.md')]: { latest: 4, settled: true }, [docAt('04-structure-outline-t.md')]: { latest: 2, settled: true } } });
   assert.equal(reworkStep(reworked, marks, 'outline', '/rpi')!.command.split('\n')[1],

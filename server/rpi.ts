@@ -342,23 +342,19 @@ export interface NextStep {
   rework?: Phase;
 }
 
-export const AGENT_MODELS = ['opus', 'sonnet', 'fable'] as const;
-export type AgentModel = (typeof AGENT_MODELS)[number] | '';
-export const RESEARCH_MODEL: AgentModel = 'opus';
-
-// What rpi's subagents run on, '' leaving each at its own: the implementer inherits the conversation's model, and the
-// research agents are set to Sonnet. A model named at launch overrides an agent's own.
-export interface StepModels {
-  implementer?: AgentModel;
-  research?: AgentModel;
-}
+// An RPI task starts on TASK_MODEL unless New task picks another, and it writes every document. rpi's implementer would
+// inherit that model and its research agents are set to Sonnet; a model named at launch overrides an agent's own. The
+// questions phase's look around keeps rpi's Sonnet.
+export const TASK_MODEL = 'fable';
+export const IMPLEMENTER_MODEL = 'opus';
+export const RESEARCH_MODEL = 'opus';
 
 const RESEARCH_AGENTS = 'codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher';
 
-export function stepMessage(step: NextStep, { implementer = '', research = '' }: StepModels) {
+export function stepMessage(step: NextStep) {
   const pick = [
-    ...(step.implements && implementer ? [`Launch outline-implementer-agent with model: ${implementer}.`] : []),
-    ...(step.researches && research ? [`Launch ${RESEARCH_AGENTS} with model: ${research}.`] : []),
+    ...(step.implements ? [`Launch outline-implementer-agent with model: ${IMPLEMENTER_MODEL}.`] : []),
+    ...(step.researches ? [`Launch ${RESEARCH_AGENTS} with model: ${RESEARCH_MODEL}.`] : []),
   ];
   return [step.command, ...pick, '', BOARD_HANDOFF].join('\n');
 }

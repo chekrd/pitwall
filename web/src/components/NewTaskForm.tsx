@@ -12,7 +12,7 @@ import { toast } from './Toasts.tsx';
 import { effortName, tilde, untilde } from '../util.ts';
 import { ModelPicker, modelOptionsOf, useModelChoices } from './ModelPicker.tsx';
 import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
-import { RPI_DIR, taskDirName } from '../../../server/rpi.ts';
+import { RPI_DIR, TASK_MODEL, taskDirName } from '../../../server/rpi.ts';
 import { nameFromPrompt } from '../../../server/schedule.ts';
 import { Icon } from './Icon.tsx';
 import { RpiGuideButton } from './RpiGuide.tsx';
@@ -54,7 +54,7 @@ const CHOICES = 'pitwall:new-task-choices';
 const WHEN = { start: 'now', at: '', time: '09:00', days: [1, 2, 3, 4, 5] } as const satisfies Partial<Fields>;
 const EMPTY: Fields = { prompt: '', repoId: null, folder: null, name: '', branch: '', path: '', existing: true, model: null, effort: '', workflow: 'none', more: false, ...WHEN, days: [...WHEN.days] };
 const choicesOf = ({ repoId, folder, existing, effort, workflow, more }: Fields) => ({ repoId, folder, existing, effort, workflow, more });
-const WORKFLOW_MODEL = { none: 'opus', rpi: 'fable' } as const;
+const WORKFLOW_MODEL = { none: 'opus', rpi: TASK_MODEL } as const;
 
 // When Claude Code picks the workflow's model by itself, that model has no option of its own but the first.
 function modelOf(f: Fields, choices: Parameters<typeof modelOptionsOf>[0]) {

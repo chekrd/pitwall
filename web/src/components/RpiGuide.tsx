@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { FLOWS, PHASE_LABELS, type Flow, type Phase } from '../../../server/rpi.ts';
+import { FLOWS, IMPLEMENTER_MODEL, PHASE_LABELS, RESEARCH_MODEL, TASK_MODEL, type Flow, type Phase } from '../../../server/rpi.ts';
 import { keepUnderLayer } from '../layers.ts';
 import type { Workflow } from '../types.ts';
+import { modelName } from '../util.ts';
 import styles from './RpiGuide.module.css';
 
 const DIALOG = 'rpi-guide';
@@ -41,7 +42,10 @@ interface Entry {
   writes: string;
   check: string;
   not: string;
+  model: string;
 }
+
+const BY_TASK = `The task's model, ${modelName(TASK_MODEL)} unless New task picked another`;
 
 const PHASES: Entry[] = [
   {
@@ -51,6 +55,7 @@ const PHASES: Entry[] = [
     writes: 'Focused questions about how the code works today, with the files to start from. Your request is saved in a document of its own.',
     check: 'The scope: is anything missing or beside the point?',
     not: 'Ask what to change. The questions describe the system as it is.',
+    model: `${BY_TASK}. rpi's research agents look around on Sonnet, rpi's own.`,
   },
   {
     id: 'research',
@@ -58,6 +63,7 @@ const PHASES: Entry[] = [
     writes: 'Answers from the live code, tests and docs, with file references.',
     check: 'The facts: is this how the code really works?',
     not: 'Propose the change. It leaves your request aside, so the findings stay neutral.',
+    model: `rpi's research agents answer the questions on ${modelName(RESEARCH_MODEL)}; the task's model writes the research from what they find.`,
   },
   {
     id: 'design',
@@ -66,6 +72,7 @@ const PHASES: Entry[] = [
     writes: 'The change itself: options with trade-offs and a recommendation, and the one you pick. Claude asks one decision at a time and waits for your answer.',
     check: 'Each choice, then the whole document.',
     not: 'Write code.',
+    model: `${BY_TASK}.`,
   },
   {
     id: 'outline',
@@ -74,6 +81,7 @@ const PHASES: Entry[] = [
     writes: 'The agreed design split into ordered phases, each with its result, files, tests, and automated and manual checks.',
     check: 'The scope and the order of the phases.',
     not: 'Change the approach. It decides the order of the work, not what the work is.',
+    model: `${BY_TASK}.`,
   },
   {
     id: 'implement',
@@ -82,6 +90,7 @@ const PHASES: Entry[] = [
       'Code and tests, though not by the conversation itself: it hands the work to rpi\'s implementer, a subagent that starts with an empty context and reads only the documents, then checks what comes back. With an outline, each phase goes to a new implementer and is ticked off in the outline; without one, the whole change goes to one implementer in one run.',
     check: 'The checks it ran, then test it yourself. It pauses for the manual checks of a phase.',
     not: 'Redesign. Where the code and the design disagree on the result, it asks you.',
+    model: `rpi's implementer writes the code on ${modelName(IMPLEMENTER_MODEL)}; the task's model checks what comes back.`,
   },
 ];
 
@@ -159,6 +168,8 @@ export function RpiGuide() {
                 <dd>{p.check}</dd>
                 <dt>Does not</dt>
                 <dd>{p.not}</dd>
+                <dt>Model</dt>
+                <dd data-guide-model>{p.model}</dd>
               </dl>
             </li>
           ))}
@@ -219,11 +230,6 @@ export function RpiGuide() {
           <li>
             <strong>New RPI cycle</strong> starts another cycle in the same worktree and branch: it asks for the request, then sends <code>/clear</code> and rpi on it with a
             folder of its own. Once the new cycle writes its first document, the earlier cycles' documents fold under Earlier cycles in Documents.
-          </li>
-          <li><strong>Implements with</strong>, beside Implement, picks the model rpi's implementer writes the code with; the task's own model reviews what it hands back.</li>
-          <li>
-            <strong>Researches with</strong>, beside Research, picks the model rpi's research agents read the code and the web with, Opus unless another is picked; the
-            task's own model writes the research from what they find. Rework now on outdated research uses Opus too.
           </li>
         </ul>
       </section>

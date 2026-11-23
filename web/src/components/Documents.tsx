@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { documentCommentsMessage } from '../../../server/codeRef.ts';
-import { byCycle, currentVersion, firstOutdated, laterUnderWay, outdatedBy, PHASE_LABELS, RESEARCH_MODEL, reworkStep, TYPE_LABELS, type Phase, type VersionState } from '../../../server/rpi.ts';
+import { byCycle, currentVersion, firstOutdated, laterUnderWay, outdatedBy, PHASE_LABELS, reworkStep, TYPE_LABELS, type Phase, type VersionState } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
 import { api, sessionAction } from '../api.ts';
 import { SHEET_DIALOG } from '../keys.ts';
@@ -417,7 +417,7 @@ function ReworkLater({ session, name, workflow, path, blocked, invocation }: Rew
     });
     const first = firstOutdated(workflow, outdated);
     const step = marked && first && reworkStep(workflow, outdated, first, invocation);
-    if (step) sendStep(session, name, step, { research: RESEARCH_MODEL });
+    if (step) sendStep(session, name, step);
   };
   return (
     <button
@@ -449,7 +449,7 @@ function OutdatedBanner({ session, name, workflow, path, titleOf, blocked, invoc
       <span>Outdated: <strong>{titleOf(mark.because)}</strong> changed after this was written.</span>
       <span className={styles.spacer} />
       {step && (
-        <button type="button" data-variant="primary" data-rework-now disabled={!!blocked} {...explain(blocked ? { does: blocked } : stepTip(step))} onClick={() => sendStep(session, name, step, { research: RESEARCH_MODEL })}>
+        <button type="button" data-variant="primary" data-rework-now disabled={!!blocked} {...explain(blocked ? { does: blocked } : stepTip(step))} onClick={() => sendStep(session, name, step)}>
           Rework now
         </button>
       )}

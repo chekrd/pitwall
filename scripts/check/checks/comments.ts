@@ -289,7 +289,6 @@ export const comments: Check[] = [
       await page.until('the steps', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
       assert.deepEqual(await page.eval(steps), ['*Implement the next phase']);
       assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-next-steps] input')), null, 'no choice to stay in the conversation');
-      assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('#task-sheet [data-implementer-model] select')?.selectedOptions[0]?.textContent), 'Opus', 'Opus implements unless another is picked');
       assert.match(await page.eval(explainOf, '#task-sheet [data-next-steps] button') ?? '', /Sends Claude, with 5 s to undo: “\/rpi:rpi implement \.pitwall\/artifacts\/invoice-export”/);
       await shot('documents-next-steps');
       const before = (await stateOf(mock, 's-export')).conversation;
@@ -304,7 +303,6 @@ export const comments: Check[] = [
       await page.goto(`${mock.url}/s/s-search-page/overview`);
       await page.until('the steps in Overview', () => !!document.querySelector('#task-sheet [data-ux-section="workflow"] [data-next-steps] button'));
       assert.deepEqual(await page.eval(steps), ['*PRD (disabled)', 'Outline (disabled)', 'Implement (disabled)'], 'Claude is at work');
-      assert.ok(await page.eval(() => !!document.querySelector('#task-sheet [data-implementer-model]')), 'a model for the Implement step');
       await mock.post('/mock/patch', { id: 's-search-page', patch: { status: 'idle', activity: null } });
       await page.until('enabled', () => !document.querySelector('#task-sheet [data-next-steps] button:disabled'));
       await shot('overview-next-steps');
@@ -319,32 +317,6 @@ export const comments: Check[] = [
       const [error] = await until('the refusal', () => page.eval(toastsOf, 'error'), 15_000);
       assert.equal(error.text, 'Not sent to Docs search page: Claude did not start a new conversation after /clear, so “/rpi:rpi make an outline .pitwall/artifacts/search-page; flow: prd” was not sent\nShow');
       assert.deepEqual(await typedInto(mock, 's-search-page'), ['/clear', sent('/rpi:rpi make a PRD .pitwall/artifacts/search-page; flow: prd'), '/clear'], 'nothing after the /clear');
-    },
-  },
-  {
-    name: 'CM.3a the model picked by the Implement step goes with it, and with the task\'s model picked no model is named',
-    scenario: 'workflow',
-    clock: 'fast',
-    async run({ page, mock }) {
-      const pick = (value: string) => page.eval((v) => {
-        const s = document.querySelector<HTMLSelectElement>('#task-sheet [data-implementer-model] select')!;
-        s.value = v;
-        s.dispatchEvent(new Event('change', { bubbles: true }));
-      }, value);
-      await mock.post('/mock/patch', { id: 's-search-page', patch: { status: 'idle', activity: null } });
-      await page.goto(`${mock.url}/s/s-search-page/overview`);
-      await page.until('enabled', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
-      await pick('fable');
-      await page.click('#task-sheet [data-next-steps] button', 'Implement');
-      await until('typed', async () => (await typedInto(mock, 's-search-page')).length === 2);
-      assert.deepEqual(await typedInto(mock, 's-search-page'),
-        ['/clear', `/rpi:rpi implement .pitwall/artifacts/search-page; flow: prd\nLaunch outline-implementer-agent with model: fable.\n\n${BOARD_HANDOFF}`]);
-
-      await page.until('enabled again', () => !!document.querySelector('#task-sheet [data-next-steps] button:not(:disabled)'));
-      await pick('');
-      await page.click('#task-sheet [data-next-steps] button', 'Implement');
-      await until('typed again', async () => (await typedInto(mock, 's-search-page')).length === 4);
-      assert.equal((await typedInto(mock, 's-search-page'))[3], `/rpi:rpi implement .pitwall/artifacts/search-page; flow: prd\n\n${BOARD_HANDOFF}`);
     },
   },
   {
@@ -479,14 +451,14 @@ export const comments: Check[] = [
     },
   },
   {
-    name: "CM.6b the research's rework names Opus for rpi's research agents when Rework later phases sends it, and beside Rework Research a picked model goes with it",
+    name: "CM.6b the research's rework runs rpi's research agents on Opus",
     scenario: 'workflow',
     clock: 'fast',
     async run({ page, mock }) {
-      const researchRework = (model: string) => [
+      const researchRework = [
         `/rpi:rpi update ${RESEARCH}`,
         `\`${QUESTIONS}\` changed after this document was written. Bring this document in line with the latest version of each and keep what still holds.`,
-        `Launch codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher with model: ${model}.`,
+        'Launch codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher with model: opus.',
         '',
         BOARD_HANDOFF,
       ].join('\n');
@@ -495,19 +467,8 @@ export const comments: Check[] = [
       await page.until('Rework later phases enabled', () => document.querySelector<HTMLButtonElement>('#task-sheet [data-rework-later]')?.disabled === false);
       await page.click('#task-sheet [data-rework-later]', 'Rework later phases');
       const [post] = await logged(mock, 'the rework sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
-      assert.deepEqual(post.body, { key: null, text: researchRework('opus'), fresh: true, rework: 'research' });
-
-      await page.until('Rework Research enabled', () => document.querySelector<HTMLButtonElement>('#task-sheet [data-next-steps] button')?.disabled === false);
-      assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('#task-sheet [data-research-model] select')?.selectedOptions[0]?.textContent), 'Opus', 'Opus researches unless another is picked');
-      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-implementer-model]')), null, 'no implementer to pick');
-      await page.eval(() => {
-        const s = document.querySelector<HTMLSelectElement>('#task-sheet [data-research-model] select')!;
-        s.value = 'fable';
-        s.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-      await page.click('#task-sheet [data-next-steps] button', 'Rework Research');
-      assert.deepEqual(await until('typed twice', async () => (await typedInto(mock, 's-export')).length === 4 && typedInto(mock, 's-export')),
-        ['/clear', researchRework('opus'), '/clear', researchRework('fable')]);
+      assert.deepEqual(post.body, { key: null, text: researchRework, fresh: true, rework: 'research' });
+      assert.deepEqual(await until('typed', async () => (await typedInto(mock, 's-export')).length === 2 && typedInto(mock, 's-export')), ['/clear', researchRework]);
     },
   },
   {

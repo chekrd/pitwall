@@ -257,7 +257,7 @@ export const workflow: Check[] = [
     },
   },
   {
-    name: 'RPI.6 How RPI works opens one guide from Overview\'s Workflow and from Documents\' strip, with the task\'s flow and phase marked; Esc closes only the guide and gives focus back to the control that opened it; nothing comes from another host',
+    name: 'RPI.6 How RPI works opens one guide from Overview\'s Workflow and from Documents\' strip, with the task\'s flow and phase marked and the model of each phase; Esc closes only the guide and gives focus back to the control that opened it; nothing comes from another host',
     scenario: 'workflow',
     async run({ page, mock, shot }) {
       await openSheetOf(page, mock, 's-search-page');
@@ -266,6 +266,13 @@ export const workflow: Check[] = [
       await page.until('the guide', guideOpen);
       assert.deepEqual(await page.eval(guideMarks), { phase: ['research'], design: [], flow: ['prd'], chip: 'Research' });
       assert.equal(await page.eval(() => document.querySelector('dialog#rpi-guide h2')?.textContent), 'How RPI works');
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('dialog#rpi-guide [data-guide-model]')].map((dd) => dd.textContent)), [
+        "The task's model, Fable unless New task picked another. rpi's research agents look around on Sonnet, rpi's own.",
+        "rpi's research agents answer the questions on Opus; the task's model writes the research from what they find.",
+        "The task's model, Fable unless New task picked another.",
+        "The task's model, Fable unless New task picked another.",
+        "rpi's implementer writes the code on Opus; the task's model checks what comes back.",
+      ], 'the model of each phase');
       await shot('rpi-guide');
       await page.eval(() => document.querySelector('#rpi-guide-flows')!.scrollIntoView({ block: 'start' }));
       await shot('rpi-guide-flows');
