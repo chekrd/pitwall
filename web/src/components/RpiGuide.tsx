@@ -221,6 +221,10 @@ export function RpiGuide() {
             folder of its own. Once the new cycle writes its first document, the earlier cycles' documents fold under Earlier cycles in Documents.
           </li>
           <li><strong>Implements with</strong>, beside Implement, picks the model rpi's implementer writes the code with; the task's own model reviews what it hands back.</li>
+          <li>
+            <strong>Researches with</strong>, beside Research, picks the model rpi's research agents read the code and the web with, Opus unless another is picked; the
+            task's own model writes the research from what they find. Rework now on outdated research uses Opus too.
+          </li>
         </ul>
       </section>
     </dialog>

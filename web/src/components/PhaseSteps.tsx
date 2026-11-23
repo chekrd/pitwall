@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { firstOutdated, IMPLEMENTER_MODELS, nextSteps, reworkStep, stepMessage, type ImplementerModel, type NextStep } from '../../../server/rpi.ts';
+import { AGENT_MODELS, firstOutdated, nextSteps, RESEARCH_MODEL, reworkStep, stepMessage, type AgentModel, type NextStep, type StepModels } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
 import type { Body } from '../outbox.ts';
 import { hold } from '../sends.ts';
@@ -27,8 +27,8 @@ export const stepTip = (step: NextStep) => step.fresh
   ? { ...SENDS.prompt(`/clear”, then, once Claude has started the new conversation, “${step.command}`), sees: "a new conversation: /clear leaves this one behind, and rpi reads the task's documents" }
   : SENDS.prompt(step.command);
 
-export function sendStep(session: Session, name: string, step: NextStep, model: ImplementerModel) {
-  const text = stepMessage(step, model);
+export function sendStep(session: Session, name: string, step: NextStep, models: StepModels) {
+  const text = stepMessage(step, models);
   const body: Body = { key: null, text };
   if (step.fresh) body.fresh = true;
   if (step.rework) body.rework = step.rework;
@@ -47,7 +47,8 @@ export function firstRework(session: Session, workflow: Workflow, invocation: st
 // is the only step. New RPI cycle, last, starts another cycle in the task once this one is done or set aside.
 export function PhaseSteps({ session, name, workflow, place }: { session: Session; name: string; workflow: Workflow; place: 'overview' | 'documents' }) {
   const commands = useCommands(session.worktree, true);
-  const [model, setModel] = useState<ImplementerModel>('opus');
+  const [implementer, setImplementer] = useState<AgentModel>('opus');
+  const [research, setResearch] = useState<AgentModel>(RESEARCH_MODEL);
   const invocation = rpiInvocation(commands ?? []);
   const rework = firstRework(session, workflow, invocation);
   const steps = rework ? [rework] : nextSteps(workflow, invocation);
@@ -55,15 +56,16 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
   return (
     <div className={styles.steps} data-place={place}>
       {steps.length > 0 && <span className={styles.next} data-next-steps>{steps.map((step) => (
-        <Pair key={step.label} with={step === steps.find((s) => s.implements) && (
-          <label className={picker.select} data-implementer-model data-explain="The model rpi's implementer writes the code with; the task's own model still reviews and fixes what it hands back">
-            <span className={picker.caption}>Implements with</span>
-            <select value={model} onChange={(e) => setModel(e.currentTarget.value as ImplementerModel)}>
-              {IMPLEMENTER_MODELS.map((m) => <option key={m} value={m}>{modelName(m)}</option>)}
-              <option value="">Task's model</option>
-            </select>
-            <Icon name="chevron-down" size={14} />
-          </label>
+        <Pair key={step.label} with={step === steps.find((s) => s.implements) ? (
+          <ModelSelect
+            value={implementer} onChange={setImplementer} attr="data-implementer-model" caption="Implements with" own="Task's model"
+            explain="The model rpi's implementer writes the code with; the task's own model still reviews and fixes what it hands back"
+          />
+        ) : step === steps.find((s) => s.researches) && (
+          <ModelSelect
+            value={research} onChange={setResearch} attr="data-research-model" caption="Researches with" own="rpi's own (Sonnet)"
+            explain="The model rpi's research agents read the code and the web with; the task's own model writes the research from what they find"
+          />
         )}>
           <button
             type="button"
@@ -72,7 +74,7 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
             data-rework={step.rework}
             disabled={!!blocked}
             {...explain(blocked ? { does: blocked } : stepTip(step))}
-            onClick={() => sendStep(session, name, step, model)}
+            onClick={() => sendStep(session, name, step, { implementer, research })}
           >
             {step.label}
           </button>
@@ -92,6 +94,21 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
         New RPI cycle
       </button>
     </div>
+  );
+}
+
+function ModelSelect({ value, onChange, attr, caption, own, explain: tip }: {
+  value: AgentModel; onChange: (m: AgentModel) => void; attr: string; caption: string; own: string; explain: string;
+}) {
+  return (
+    <label className={picker.select} {...{ [attr]: '' }} data-explain={tip}>
+      <span className={picker.caption}>{caption}</span>
+      <select value={value} onChange={(e) => onChange(e.currentTarget.value as AgentModel)}>
+        {AGENT_MODELS.map((m) => <option key={m} value={m}>{modelName(m)}</option>)}
+        <option value="">{own}</option>
+      </select>
+      <Icon name="chevron-down" size={14} />
+    </label>
   );
 }
 

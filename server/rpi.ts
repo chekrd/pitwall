@@ -335,18 +335,31 @@ export interface NextStep {
   // The flow's usual next step, where rpi names one.
   usual: boolean;
   implements: boolean;
+  researches: boolean;
   // Sent after a /clear.
   fresh: boolean;
   // The outdated phase it reworks.
   rework?: Phase;
 }
 
-export const IMPLEMENTER_MODELS = ['opus', 'sonnet', 'fable'] as const;
-export type ImplementerModel = (typeof IMPLEMENTER_MODELS)[number] | '';
+export const AGENT_MODELS = ['opus', 'sonnet', 'fable'] as const;
+export type AgentModel = (typeof AGENT_MODELS)[number] | '';
+export const RESEARCH_MODEL: AgentModel = 'opus';
 
-// rpi's outline-implementer-agent inherits the conversation's model; '' leaves it at that.
-export function stepMessage(step: NextStep, model: ImplementerModel) {
-  const pick = step.implements && model ? [`Launch outline-implementer-agent with model: ${model}.`] : [];
+// What rpi's subagents run on, '' leaving each at its own: the implementer inherits the conversation's model, and the
+// research agents are set to Sonnet. A model named at launch overrides an agent's own.
+export interface StepModels {
+  implementer?: AgentModel;
+  research?: AgentModel;
+}
+
+const RESEARCH_AGENTS = 'codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher';
+
+export function stepMessage(step: NextStep, { implementer = '', research = '' }: StepModels) {
+  const pick = [
+    ...(step.implements && implementer ? [`Launch outline-implementer-agent with model: ${implementer}.`] : []),
+    ...(step.researches && research ? [`Launch ${RESEARCH_AGENTS} with model: ${research}.`] : []),
+  ];
   return [step.command, ...pick, '', BOARD_HANDOFF].join('\n');
 }
 
@@ -354,7 +367,7 @@ export function stepMessage(step: NextStep, model: ImplementerModel) {
 // research questions and the research carry the flow on; a design step's handoff names it only from a PRD to its TDD.
 export function nextSteps(w: Pick<Workflow, 'folder' | 'flow' | 'current' | 'steps'>, invocation: string): NextStep[] {
   const step = (label: string, does: string, flow: Flow | null, usual = false): NextStep => ({
-    label, usual, implements: does === 'implement', fresh: true, command: `${invocation} ${does} ${w.folder}${flow ? `; flow: ${FLOW_WORDS[flow]}` : ''}`,
+    label, usual, implements: does === 'implement', researches: does === 'research', fresh: true, command: `${invocation} ${does} ${w.folder}${flow ? `; flow: ${FLOW_WORDS[flow]}` : ''}`,
   });
   const onward = (flow: Flow | null) => [step('Outline', 'make an outline', flow), step('Implement', 'implement', flow)];
   switch (w.current) {
@@ -455,7 +468,7 @@ export function reworkStep(w: Steps, outdated: Outdated, phase: Phase, invocatio
   const command = phase === 'implement'
     ? `${invocation} fix the implementation ${w.folder}\n${changed('the code')} Bring the code and its tests in line with ${step.document ? `the outline, \`${step.document}\`` : 'the outline'}, and keep what still holds.`
     : `${invocation} update ${step.document}\n${changed('this document')} Bring this document in line with the latest version of each and keep what still holds.`;
-  return { label: `Rework ${PHASE_LABELS[phase]}`, command, usual: true, implements: false, fresh: true, rework: phase };
+  return { label: `Rework ${PHASE_LABELS[phase]}`, command, usual: true, implements: false, researches: phase === 'research', fresh: true, rework: phase };
 }
 
 export const isDocument = (name: string) => /\.md$/i.test(name);

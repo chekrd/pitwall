@@ -479,6 +479,38 @@ export const comments: Check[] = [
     },
   },
   {
+    name: "CM.6b the research's rework names Opus for rpi's research agents when Rework later phases sends it, and beside Rework Research a picked model goes with it",
+    scenario: 'workflow',
+    clock: 'fast',
+    async run({ page, mock }) {
+      const researchRework = (model: string) => [
+        `/rpi:rpi update ${RESEARCH}`,
+        `\`${QUESTIONS}\` changed after this document was written. Bring this document in line with the latest version of each and keep what still holds.`,
+        `Launch codebase-locator, codebase-analyzer, codebase-pattern-finder and web-search-researcher with model: ${model}.`,
+        '',
+        BOARD_HANDOFF,
+      ].join('\n');
+      await page.goto(docUrl(mock, QUESTIONS));
+      await page.until('the research questions', headingIs, 'Research Questions: Invoice CSV export');
+      await page.until('Rework later phases enabled', () => document.querySelector<HTMLButtonElement>('#task-sheet [data-rework-later]')?.disabled === false);
+      await page.click('#task-sheet [data-rework-later]', 'Rework later phases');
+      const [post] = await logged(mock, 'the rework sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
+      assert.deepEqual(post.body, { key: null, text: researchRework('opus'), fresh: true, rework: 'research' });
+
+      await page.until('Rework Research enabled', () => document.querySelector<HTMLButtonElement>('#task-sheet [data-next-steps] button')?.disabled === false);
+      assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('#task-sheet [data-research-model] select')?.selectedOptions[0]?.textContent), 'Opus', 'Opus researches unless another is picked');
+      assert.equal(await page.eval(() => document.querySelector('#task-sheet [data-implementer-model]')), null, 'no implementer to pick');
+      await page.eval(() => {
+        const s = document.querySelector<HTMLSelectElement>('#task-sheet [data-research-model] select')!;
+        s.value = 'fable';
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.click('#task-sheet [data-next-steps] button', 'Rework Research');
+      assert.deepEqual(await until('typed twice', async () => (await typedInto(mock, 's-export')).length === 4 && typedInto(mock, 's-export')),
+        ['/clear', researchRework('opus'), '/clear', researchRework('fable')]);
+    },
+  },
+  {
     name: 'CM.7 an outdated document says what changed after it was written, with Rework now and Keep as is; Keep as is takes its mark off and leaves the rest; Rework later phases goes only when a send can, marking nothing otherwise',
     scenario: 'workflow',
     clock: 'fast',
