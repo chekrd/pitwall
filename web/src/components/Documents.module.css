@@ -38,6 +38,15 @@
 
   .folder { margin: 6px 12px 0; font: 650 12px/1.4 var(--font); color: var(--muted); }
 
+  .earlier {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    summary { padding: 4px 12px; font-size: 12.5px; font-weight: 650; color: var(--muted); cursor: pointer; }
+    &[open] summary { margin-bottom: 4px; }
+    section { margin-top: 6px; }
+  }
+
   .viewer {
     min-width: 0;
     min-height: 0;

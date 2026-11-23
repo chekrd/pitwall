@@ -9,5 +9,7 @@
     &[data-place="overview"] { margin-top: 12px; }
   }
 
+  .next { display: contents; }
+
   .pair { display: inline-flex; align-items: center; gap: 8px; }
 }

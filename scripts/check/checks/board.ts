@@ -250,7 +250,10 @@ export const board: Check[] = [
     name: 'P2.3b a folder in the diff\'s file tree collapses and expands with its chevron, leaving the diff and the folder filter alone',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/s/s-cart/diff`);
-      await page.until('the file tree', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 12);
+      // The diff marks the file in view once it has laid out, which opens that file's folder again: under load that comes
+      // after a click on the chevron.
+      await page.until('the file tree at the file in view', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 12
+        && !!document.querySelector('nav[aria-label="Changed files"] [aria-current]'));
       await page.click('nav[aria-label="Changed files"] button[aria-label="Collapse server/"]');
       await page.until('server/ collapsed to its row', () => document.querySelectorAll('nav[aria-label="Changed files"] a').length === 4);
       assert.equal(await page.eval(() => document.querySelector('nav[aria-label="Changed files"] button[aria-label="Expand server/"]')?.getAttribute('aria-expanded')), 'false');

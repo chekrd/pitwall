@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BOARD_HANDOFF, firstOutdated, laterUnderWay, nextSteps, outdatedBy, outlineProgress, parseDocument, phaseLabel, pruneOutdated, reworkStep, rpiPrompt, stepMessage, stepsOf, summarize, taskDirName, withoutHandoff, type DocumentEntry, type Flow, type TaskFolder, type Workflow } from './rpi.ts';
+import { BOARD_HANDOFF, byCycle, firstOutdated, laterUnderWay, nextCycleDir, nextSteps, outdatedBy, outlineProgress, parseDocument, phaseLabel, pruneOutdated, reworkStep, rpiPrompt, stepMessage, stepsOf, summarize, taskDirName, withoutHandoff, type DocumentEntry, type Flow, type TaskFolder, type Workflow } from './rpi.ts';
 
 const doc = (name: string, text: string, modifiedAt = 1000): DocumentEntry =>
   ({ path: `.pitwall/artifacts/t/${name}`, name, modifiedAt, size: text.length, ...parseDocument(name, text) });
@@ -106,6 +106,22 @@ test('the summary is of the folder last written to, counts every document and ch
   assert.deepEqual([w.documents, w.folders], [3, 2]);
   const touched = summarize([old, folder('now', [{ ...Q, modifiedAt: 20 }, { ...R, modifiedAt: 31 }])])!;
   assert.notEqual(touched.stamp, w.stamp);
+});
+
+test('another cycle gets the lowest free -N from 2, whatever names an entry under the artifacts folder', () => {
+  assert.equal(nextCycleDir('csv-export', []), 'csv-export-2');
+  assert.equal(nextCycleDir('csv-export', ['csv-export']), 'csv-export-2');
+  assert.equal(nextCycleDir('csv-export', ['csv-export', 'csv-export-2', 'csv-export-4', 'other-3']), 'csv-export-3');
+  assert.equal(nextCycleDir('csv-export', ['csv-export-2', 'csv-export-3']), 'csv-export-4', 'an empty folder or a file of that name counts too');
+});
+
+test("Documents folds every folder but the workflow's under Earlier cycles, and nothing while there is one folder or the workflow's is not listed", () => {
+  const f = (name: string) => ({ path: `.pitwall/artifacts/${name}` });
+  const [first, second, third] = [f('x'), f('x-2'), f('x-3')];
+  assert.deepEqual(byCycle([first, second, third], second.path), { current: [second], earlier: [first, third] });
+  assert.deepEqual(byCycle([first], first.path), { current: [first], earlier: [] });
+  assert.deepEqual(byCycle([first, second], '.pitwall/artifacts/gone'), { current: [first, second], earlier: [] });
+  assert.deepEqual(byCycle([first, second], undefined), { current: [first, second], earlier: [] });
 });
 
 test("New task's RPI prompt: one /rpi command with the task directory on its first line, the rest of the prompt after it, then that the board moves the phases", () => {
@@ -238,6 +254,7 @@ test("a document's mark goes once a newer version of it settles or a newer docum
   const replaced = underWay({ steps: underWay().steps.map((s) => (s.phase === 'outline' ? { ...s, document: docAt('05-structure-outline-t.md') } : s)) });
   assert.deepEqual(Object.keys(pruneOutdated(marks, replaced)), ['design-discussion', 'implement']);
   assert.deepEqual(Object.keys(pruneOutdated(marks, underWay({ steps: underWay().steps.filter((s) => s.phase !== 'implement') }))), ['design-discussion', 'outline']);
+  assert.deepEqual(pruneOutdated(marks, underWay({ folder: `${T}-2` })), {}, "a new cycle's folder takes every mark of the one before, Implement's too");
 });
 
 test("a rework step updates the outdated document after a /clear, naming what changed and what was reworked since; Implement's fixes the code", () => {

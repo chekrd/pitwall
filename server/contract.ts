@@ -3,6 +3,7 @@ import { MAX_QUOTE, MAX_REF_LINE, MAX_REF_LINES } from './codeRef.ts';
 import type { Snapshot, State } from './app.ts';
 import type { ArchitectureView } from './architecture.ts';
 import type { Command } from './commands.ts';
+import type { NewCycle } from './cycles.ts';
 import type { ConversationLog } from './conversations.ts';
 import type { FullDiff, Upstream } from './git.ts';
 import type { pauser } from './pause.ts';
@@ -46,7 +47,7 @@ const optionalPaused = z.strictObject({ paused: z.boolean().optional() });
 export const actionBodies = {
   answer: z.strictObject({
     key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: ids,
-    fresh: z.boolean().optional(), comments: ids, rework: phase.optional(),
+    fresh: z.boolean().optional(), comments: ids, rework: phase.optional(), cycle: z.boolean().optional(),
   }),
   dismiss: z.strictObject({ key }),
   rename: z.strictObject({ title: z.string() }),
@@ -163,6 +164,7 @@ export interface Responses {
   'GET /api/sessions/:id/conversation': ConversationLog[];
   'GET /api/sessions/:id/documents': TaskFolder[];
   'GET /api/sessions/:id/architecture': ArchitectureView;
+  'GET /api/sessions/:id/new-cycle': NewCycle;
   'GET /api/sessions/:id/versions': Pick<DocumentVersion, 'n' | 'at' | 'size'>[];
   'GET /api/sessions/:id/delete-worktree': WorktreeLoss;
   'POST /api/restart/resume': Resumed;

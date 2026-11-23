@@ -330,6 +330,8 @@ export function createApp({ usage, ui }: AppDeps) {
     return c.body(text, 200, { 'content-type': 'text/markdown; charset=utf-8', 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff', 'cache-control': 'private, max-age=31536000, immutable' });
   });
 
+  app.get('/api/sessions/:id/new-cycle', async (c) => c.json((await S.newCycle(c.req.param('id'))) satisfies Responses['GET /api/sessions/:id/new-cycle']));
+
   app.get('/api/sessions/:id/documents', async (c) => {
     const s = sessions.get(c.req.param('id'));
     if (!s) return c.text('unknown task', 404);

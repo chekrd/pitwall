@@ -35,6 +35,7 @@ import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
 import { contentType, outdatedBy, RPI_DIR, RPI_NEEDS_WORKTREE, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
+import { cycleFolder, cycleMessage } from '../../server/cycles.ts';
 import { addComment, archiveComment, editComment, keepPhase, markOutdated, markSent, pruneReview } from '../../server/review.ts';
 import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
@@ -145,6 +146,8 @@ const REFUSED = '50:75: execution error: Not authorized to send Apple events to 
 let terminalNotices: TerminalNotice[] = [];
 // Each worktree's branch against its upstream; none has an upstream until a check sets one.
 const upstreams = new Map<string, Upstream>();
+// What git would list as not committed in a worktree, set by /mock/uncommitted.
+const uncommitted = new Map<string, string[]>();
 let schedules: Schedule[] = [];
 const transcripts = new Map<string, string>();
 
@@ -283,6 +286,7 @@ function load(name: string) {
   failNext = null;
   delayMs = 0;
   upstreams.clear();
+  uncommitted.clear();
   clearHold?.release();
   clearHold = null;
   dropUntil = 0;
@@ -480,8 +484,15 @@ const asides = asking({
   discard: async () => {},
 });
 
+// As the server's: a new cycle's request goes as New task would send it, in the folder the cycle gets, after a /clear.
+async function cycleReply(s: Session, body: ActionInput<'answer'>) {
+  if (!documentRoots(s).length) throw new Error(RPI_NEEDS_WORKTREE);
+  const files = checkUploads(body.files);
+  return { key: null, text: cycleMessage(body.text ?? '', files, await cycleFolder(s, state.repos), rpiInvocation(commandsIn(s.worktree))), fresh: true };
+}
+
 async function answerWithDrafts(s: Session, body: ActionInput<'answer'>) {
-  await answers.answer(s.id, body);
+  await answers.answer(s.id, body.cycle ? await cycleReply(s, body) : body);
   const now = find(s.id);
   if (!now) return;
   if (body.drafts?.length) update(now.id, { parked: removeParked(now.parked, body.drafts) });
@@ -1013,6 +1024,15 @@ route('POST', '/mock/artifact', ({ body }) => {
   const version = Math.max(0, ...s.artifacts.filter((a) => a.title === title).map((a) => a.version)) + 1;
   update(s.id, { artifacts: [...s.artifacts, { id, title, at: Date.now(), version }] });
   return { id, version };
+});
+api('GET /api/sessions/:id/new-cycle', async ({ params }) => {
+  const s = must(params[0]);
+  return { folder: await cycleFolder(s, state.repos), changes: uncommitted.get(s.worktree) ?? [] };
+});
+route('POST', '/mock/uncommitted', ({ body }) => {
+  const s = must(String(body.id));
+  uncommitted.set(s.worktree, (body.files as string[] | undefined) ?? []);
+  return NONE;
 });
 api('GET /api/sessions/:id/documents', ({ params }) => {
   const s = must(params[0]);

@@ -1,0 +1,71 @@
+@layer components {
+  .dialog {
+    width: min(640px, calc(100% - 32px));
+    max-width: none;
+    margin: 66px auto auto;
+    padding: 18px 18px 14px 20px;
+    border-color: var(--line-2);
+    h2 { font-size: 13px; font-weight: 650; color: var(--muted); }
+  }
+
+  .form { display: flex; flex-direction: column; gap: 10px; }
+
+  .promptRow { display: flex; align-items: flex-start; gap: 6px; }
+
+  .prompt {
+    flex: 1;
+    width: 100%;
+    min-height: 62px;
+    max-height: 40vh;
+    field-sizing: content;
+    resize: none;
+    padding: 2px;
+    border: 0;
+    border-radius: 0;
+    outline: none;
+    background: none;
+    font: 500 19px/1.4 var(--font-display);
+    &:focus-visible { outline: none; }
+  }
+
+  .hint { font-size: 13px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+
+  .muted { font-size: 13px; color: var(--muted); }
+
+  .warning { font-size: 14px; font-weight: 650; line-height: 1.5; color: var(--prompt); }
+
+  .changes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    ul { margin: 0; padding-left: 20px; max-height: 30vh; overflow: auto; font-size: 13px; line-height: 1.6; }
+    code { overflow-wrap: anywhere; }
+  }
+
+  .foot {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-top: 4px;
+    button { height: 40px; padding: 0 16px; border-radius: 11px; font-size: 14.5px; }
+  }
+
+  .start {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px 0 16px;
+    border: 0;
+    background: var(--text);
+    color: var(--ground);
+    font-weight: 700;
+    kbd { border-color: color-mix(in srgb, var(--ground) 30%, transparent); background: color-mix(in srgb, var(--ground) 14%, transparent); color: inherit; }
+    &:hover:not(:disabled) { filter: brightness(1.1); }
+  }
+
+  @media (max-width: 760px) {
+    .dialog { width: calc(100% - 16px); margin-top: 104px; }
+  }
+}

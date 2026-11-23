@@ -130,6 +130,18 @@ export const unpushedCommits = async (worktree: string) =>
 export const changedFiles = async (worktree: string) =>
   (await git(worktree, ['status', '--porcelain'])).split('\n').filter(Boolean).length;
 
+// Staged, unstaged and untracked paths, an untracked folder as one entry; a rename by its new path.
+export async function uncommittedFiles(worktree: string) {
+  const entries = (await git(worktree, ['status', '--porcelain', '-z'])).split('\0');
+  const files: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].length < 4) continue;
+    files.push(entries[i].slice(3));
+    if (/[RC]/.test(entries[i].slice(0, 2))) i++;
+  }
+  return files;
+}
+
 export async function removeWorktree(repo: string, path: string, opts: { force: boolean; deleteBranch: boolean }) {
   await gitWt(repo, ['rm', path, ...(opts.force ? ['--force'] : []), ...(opts.deleteBranch ? ['--delete-branch'] : [])]);
 }

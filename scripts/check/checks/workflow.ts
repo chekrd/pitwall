@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { logged, openNewTask, openSheetOf, pickRepo, sidewaysScroll, stateOf, tiles, type Check } from '../helpers.ts';
+import { logged, openNewTask, openSheetOf, pastePng, pickRepo, POSTED_MS, sidewaysScroll, stateOf, tiles, toastsOf, type Check } from '../helpers.ts';
+import { until } from '../cdp.ts';
+import { BOARD_HANDOFF } from '../../../server/rpi.ts';
 
 const EXPORT_DIR = '.pitwall/artifacts/invoice-export';
 const OUTLINE = `${EXPORT_DIR}/05-structure-outline-invoice-export.md`;
@@ -340,6 +342,89 @@ export const workflow: Check[] = [
       });
       assert.deepEqual(header, { scrolled: true, header: true });
       await shot('rpi-guide-narrow-end');
+    },
+  },
+  {
+    name: 'RPI.10 New RPI cycle, beside the next steps, waits for the end of a turn; its dialog lists uncommitted changes and reads Continue anyway, the send is held 5 s with Undo, which keeps the request, then /clear and the rpi command in .pitwall/artifacts/<branch>-2 go out; once that cycle writes its first document, the earlier one folds under Earlier cycles',
+    scenario: 'workflow',
+    clock: 'fast',
+    async run({ page, mock, shot }) {
+      const typedInto = async (id: string) => ((await mock.get('/mock/typed')) as { session: string; text: string }[]).filter((t) => t.session === id).map((t) => t.text);
+      const NEW_DIR = '.pitwall/artifacts/invoice-export-2';
+      const BUTTON = '#task-sheet [data-new-cycle]';
+      const dialogOpen = () => !!document.querySelector<HTMLDialogElement>('dialog#new-cycle')?.open;
+
+      await page.goto(`${mock.url}/s/s-search-page/overview`);
+      await page.until('the button in Overview', (b: string) => !!document.querySelector(b), BUTTON);
+      assert.deepEqual(await page.eval((b: string) => {
+        const button = document.querySelector<HTMLButtonElement>(b)!;
+        return [button.textContent, button.disabled, button.getAttribute('data-explain')];
+      }, BUTTON), ['New RPI cycle', true, 'Claude is at work; this can go once its turn has ended.']);
+
+      await page.goto(`${mock.url}/s/s-export/documents`);
+      await page.until('enabled at the end of the turn', (b: string) => !!document.querySelector(`${b}:not(:disabled)`), BUTTON);
+      assert.equal(await page.eval(() => document.querySelectorAll('#task-sheet nav[aria-label="Documents"] h3, #task-sheet [data-earlier-cycles]').length), 0, 'one folder, no headings');
+      await mock.post('/mock/uncommitted', { id: 's-export', files: ['src/export/csv.ts', 'notes/'] });
+      await page.click(BUTTON, 'New RPI cycle');
+      await page.until('the dialog', dialogOpen);
+      await page.until('focus in the request', () => document.activeElement?.matches('dialog#new-cycle [data-cycle-request]') ?? false);
+      assert.deepEqual(await page.until('the uncommitted files', () => {
+        const items = [...document.querySelectorAll('dialog#new-cycle [data-uncommitted] li')].map((li) => li.textContent);
+        return items.length ? items : null;
+      }), ['src/export/csv.ts', 'notes/']);
+      assert.deepEqual(await page.eval(() => {
+        const start = document.querySelector<HTMLButtonElement>('dialog#new-cycle [data-start-cycle]')!;
+        return [start.textContent, start.disabled];
+      }), ['Continue anyway ⌘↵', true], 'nothing to send yet');
+      assert.match(await page.eval(() => document.querySelector('dialog#new-cycle [data-cycle-hint]')?.textContent ?? ''), /documents in \.pitwall\/artifacts\/invoice-export-2\./);
+      await page.type('Add a PDF export\nSame columns as the CSV.');
+      await page.eval(pastePng, 'dialog#new-cycle [data-cycle-request]');
+      await page.until('the picture uploaded', () => !!document.querySelector('dialog#new-cycle [data-state="ready"]') && !document.querySelector<HTMLButtonElement>('dialog#new-cycle [data-start-cycle]')!.disabled);
+      await shot('new-cycle-dialog');
+      await page.key('Enter', { meta: true });
+      await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#new-cycle')?.open);
+      const [held] = await until('the held toast', () => page.eval(toastsOf, 'undo'));
+      assert.equal(held.text.split('\n')[0], `Sending: /clear, then /rpi:rpi Add a PDF export; task directory: ${NEW_DIR}`);
+      await page.click('[data-toast][data-kind="undo"] button', 'Undo');
+      await page.click(BUTTON, 'New RPI cycle');
+      await page.until('the dialog again', dialogOpen);
+      assert.deepEqual(await page.until('the request back', () => {
+        const field = document.querySelector<HTMLTextAreaElement>('dialog#new-cycle [data-cycle-request]');
+        const files = document.querySelectorAll('dialog#new-cycle [data-state="ready"]').length;
+        return field?.value && files ? [field.value, files] : null;
+      }), ['Add a PDF export\nSame columns as the CSV.', 1]);
+      assert.equal((await mock.log()).filter((e) => e.action === 'answer' && e.sessionId === 's-export').length, 0, 'Undo sent nothing');
+
+      const before = (await stateOf(mock, 's-export')).conversation;
+      await page.click('dialog#new-cycle [data-start-cycle]', 'Continue anyway');
+      const [post] = await logged(mock, 'the new cycle', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
+      const [file] = post.body.files;
+      assert.deepEqual(post.body, { key: null, text: 'Add a PDF export\nSame columns as the CSV.', files: [file], cycle: true });
+      assert.deepEqual(await until('typed', async () => (await typedInto('s-export')).length === 2 && typedInto('s-export')), [
+        '/clear',
+        `/rpi:rpi Add a PDF export; task directory: ${NEW_DIR}\nSame columns as the CSV.\n\n${file}\n\n${BOARD_HANDOFF}`,
+      ]);
+      assert.notEqual((await stateOf(mock, 's-export')).conversation, before, 'a new conversation took the task over');
+
+      await mock.post('/mock/patch', { id: 's-export', patch: { status: 'idle', activity: null } });
+      await mock.post('/mock/document', { id: 's-export', path: `${NEW_DIR}/01-request-pdf-export.md`, text: '---\ntype: request\n---\n\n# Original Request: A PDF export\n' });
+      await page.until('the new cycle current', () => {
+        const nav = document.querySelector('#task-sheet nav[aria-label="Documents"]');
+        const earlier = nav?.querySelector<HTMLDetailsElement>('[data-earlier-cycles]');
+        return !!earlier && !earlier.open && earlier.querySelector('summary')?.textContent === 'Earlier cycles · 1'
+          && nav!.querySelector(':scope > section h3')?.textContent === 'invoice-export-2'
+          && nav!.querySelector(':scope > section strong')?.textContent === 'Original Request: A PDF export';
+      });
+      assert.deepEqual(await page.eval(strip), ['Questions:current', 'Research:next', 'Design:next', 'Outline:next', 'Implement:next']);
+      await shot('documents-earlier-cycles');
+      await page.click('#task-sheet [data-earlier-cycles] summary');
+      await page.until('the earlier cycle listed', () => {
+        const section = document.querySelector<HTMLElement>('#task-sheet [data-earlier-cycles] section');
+        return section?.checkVisibility() && section.querySelector('h3')?.textContent === 'invoice-export' && section.querySelectorAll('button').length > 3;
+      });
+      await page.click('#task-sheet [data-earlier-cycles] button', 'Outline: Invoice CSV export');
+      await page.until('its outline shown', headingIs, 'Outline: Invoice CSV export');
+      assert.equal((await mock.get('/api/sessions/s-export/new-cycle')).folder, '.pitwall/artifacts/invoice-export-3');
     },
   },
 ];

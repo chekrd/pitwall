@@ -272,6 +272,13 @@ export function summarize(folders: TaskFolder[]): Workflow | null {
   };
 }
 
+// The task's folders as Documents lists them: the workflow's, and the folders of its earlier rpi cycles, which fold away.
+// Until the workflow's folder is among them, every folder is current.
+export function byCycle<F extends { path: string }>(folders: F[], workflowFolder: string | null | undefined) {
+  if (!folders.some((f) => f.path === workflowFolder)) return { current: folders, earlier: [] };
+  return { current: folders.filter((f) => f.path === workflowFolder), earlier: folders.filter((f) => f.path !== workflowFolder) };
+}
+
 // What a Wall tile names: the phase under way, with the outline's progress while implementing.
 export function phaseLabel(w: Pick<Workflow, 'current' | 'outline' | 'steps'>) {
   if (!w.current) return w.steps.length && w.steps.every((s) => s.state === 'done' || s.state === 'skipped') ? 'Done' : null;
@@ -284,6 +291,15 @@ export function taskDirName(branch: string | null | undefined, name: string) {
   const fromBranch = branch?.trim().replaceAll('/', '-');
   if (fromBranch) return fromBranch;
   return name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'task';
+}
+
+// The folder of another rpi cycle in the same task: `<base>-N`, N the lowest from 2 that no entry under the checkout's
+// artifacts folder is named yet.
+export function nextCycleDir(base: string, taken: Iterable<string>) {
+  const names = new Set(taken);
+  let n = 2;
+  while (names.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
 // One message: Claude Code reads a slash command's arguments to the end of the message, and the task directory stays
@@ -400,11 +416,12 @@ export function outdatedBy(w: Steps, path: string, at: number): Outdated {
 }
 
 // A document's mark goes once a newer version of it has settled, or a newer document took its phase's place; a phase
-// gone from the workflow takes its mark along. Implement's goes when its rework is sent.
+// gone from the workflow takes its mark along, and so does every mark once another cycle's folder is the workflow's.
+// Implement's goes when its rework is sent.
 export function pruneOutdated(outdated: Outdated, w: Steps): Outdated {
   return Object.fromEntries(Object.entries(outdated).filter(([phase, mark]) => {
     const step = w.steps.find((s) => s.phase === phase);
-    if (!step || !mark) return false;
+    if (!step || !mark || !mark.because.startsWith(`${w.folder}/`)) return false;
     if (phase === 'implement') return true;
     if (step.document !== mark.document) return false;
     const v = step.document ? w.versions?.[step.document] : undefined;

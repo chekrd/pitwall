@@ -6,19 +6,19 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { answering, Called } from './answering.ts';
 import { listCommands } from './commands.ts';
-import { knowsCommand, slashName } from './slash.ts';
+import { knowsCommand, rpiInvocation, slashName } from './slash.ts';
 import { conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, signal, transcriptFile, type ConversationLog, type LiveProcess } from './conversations.ts';
 import { report } from './claudeFormat.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { handOver, taskOf } from './handover.ts';
 import { sessions, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
-import { isClean, listBranches, pullBranch, switchBranch } from './git.ts';
+import { excludeLocally, isClean, listBranches, pullBranch, switchBranch, uncommittedFiles } from './git.ts';
 import { CLAUDE, headless } from './headless.ts';
 import { asking, type AskBody } from './asides.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
-import { notify, type RepoView } from './workspace.ts';
+import { documentRoots, notify, repoView, taskWorktrees, workspace, type RepoView } from './workspace.ts';
 import { folderArgs } from './folderTasks.ts';
 import { inSync, retired, sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
@@ -28,7 +28,8 @@ import { addComment, archiveComment, editComment, keepPhase, markOutdated, markS
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
 import { tasksWorkflows } from './documents.ts';
-import { outdatedBy, withoutHandoff, type Phase } from './rpi.ts';
+import { outdatedBy, RPI_NEEDS_WORKTREE, withoutHandoff, type Phase } from './rpi.ts';
+import { cycleFolder, cycleMessage, type NewCycle } from './cycles.ts';
 
 const run = promisify(execFile);
 
@@ -234,9 +235,10 @@ const answers = answering({ store: sessions, send: terminal.send, keys: terminal
 export const { answerMenu, answerRound, declineMenu, dismiss } = answers;
 
 // A send from the board may carry drafts, which leave the task once it went out, document comments, which are sent
-// then, or the rework of an outdated phase, whose mark Implement loses then as it has no document to change.
-export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: string[] | undefined; comments?: string[] | undefined; rework?: Phase | undefined }) {
-  await answers.answer(id, reply);
+// then, or the rework of an outdated phase, whose mark Implement loses then as it has no document to change. A new
+// cycle's request goes as New task would send it, in the folder the cycle gets when it goes, after a /clear.
+export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: string[] | undefined; comments?: string[] | undefined; rework?: Phase | undefined; cycle?: boolean | undefined }) {
+  await answers.answer(id, reply.cycle ? await cycleReply(must(id), reply.text ?? '', reply.files) : reply);
   const s = must(id);
   const drafts = reply.drafts ?? [];
   const comments = reply.comments ?? [];
@@ -246,6 +248,25 @@ export async function answer(id: string, reply: Parameters<typeof answers.answer
   if (implemented) review = keepPhase(review, 'implement');
   sessions.update(id, { ...(drafts.length && { parked: removeParked(s.parked, drafts) }), review });
   notify();
+}
+
+async function cycleReply(s: Session, request: string, files: unknown) {
+  if (!documentRoots(s).length) throw new Error(RPI_NEEDS_WORKTREE);
+  const attached = await checkUploads(files);
+  const repo = repoView(s.repoId);
+  if (repo) await excludeLocally(repo.path, '.pitwall/');
+  const text = cycleMessage(request, attached, await cycleFolder(s, workspace()), rpiInvocation(await listCommands(s.worktree)));
+  return { key: null, text, fresh: true };
+}
+
+export async function newCycle(id: string): Promise<NewCycle> {
+  const s = must(id);
+  const checkouts = s.repoId === null ? taskWorktrees(s.worktree).map(({ worktree }) => worktree.path) : [s.worktree];
+  const changes = await Promise.all(checkouts.map(async (path) => {
+    const prefix = path === s.worktree ? '' : `${path.slice(s.worktree.length + 1)}/`;
+    return (await uncommittedFiles(path).catch(() => [])).map((f) => prefix + f);
+  }));
+  return { folder: await cycleFolder(s, workspace()), changes: changes.flat() };
 }
 
 export function addDocComment(id: string, body: NewComment) {

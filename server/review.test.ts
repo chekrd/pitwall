@@ -107,13 +107,13 @@ test('the comment actions check what they are given', () => {
   assert.equal(actionBodies.answer.safeParse({ key: null, text: 'x', rework: 'review' }).success, false);
 });
 
-const mark = (patch: Partial<OutdatedMark> = {}): OutdatedMark => ({ document: 'o.md', version: 2, because: 'r.md', at: 1, earlier: {}, ...patch });
+const mark = (patch: Partial<OutdatedMark> = {}): OutdatedMark => ({ document: 'o.md', version: 2, because: 'f/r.md', at: 1, earlier: {}, ...patch });
 
 test('marks are added over the ones there, one is kept as is by hand, and a review the workflow has moved past none of stays the same object', () => {
   assert.throws(() => markOutdated(EMPTY_REVIEW, {}), /no later phase/);
-  const r = markOutdated(markOutdated(EMPTY_REVIEW, { outline: mark(), implement: mark({ document: null, version: null }) }), { outline: mark({ because: 'd.md' }) });
+  const r = markOutdated(markOutdated(EMPTY_REVIEW, { outline: mark(), implement: mark({ document: null, version: null }) }), { outline: mark({ because: 'f/d.md' }) });
   assert.deepEqual(Object.keys(r.outdated), ['outline', 'implement']);
-  assert.equal(r.outdated.outline!.because, 'd.md');
+  assert.equal(r.outdated.outline!.because, 'f/d.md');
   assert.deepEqual(Object.keys(keepPhase(r, 'outline').outdated), ['implement']);
   const w: Workflow = {
     folder: 'f', flow: null, current: 'implement', outline: null, documents: 1, folders: 1, stamp: 's', versions: { 'o.md': { latest: 2, settled: true } },

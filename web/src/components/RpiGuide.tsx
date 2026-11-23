@@ -216,6 +216,10 @@ export function RpiGuide() {
             When a document changes after later phases were built on it, <strong>Rework later phases</strong> marks them outdated and reworks them in order, each
             the next step until it is done; <strong>Keep as is</strong> takes a mark off.
           </li>
+          <li>
+            <strong>New RPI cycle</strong> starts another cycle in the same worktree and branch: it asks for the request, then sends <code>/clear</code> and rpi on it with a
+            folder of its own. Once the new cycle writes its first document, the earlier cycles' documents fold under Earlier cycles in Documents.
+          </li>
           <li><strong>Implements with</strong>, beside Implement, picks the model rpi's implementer writes the code with; the task's own model reviews what it hands back.</li>
         </ul>
       </section>

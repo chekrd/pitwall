@@ -81,7 +81,8 @@ test('a body with fields the page does not send, such as a setup command, is a 4
   const repoId = repos.add(id);
   await refreshWorkspace();
   assert.ok(repoView(repoId)?.worktrees.some((w) => w.path === id));
-  const before = sessions.all().length;
+  // Other test files share the state.db and add sessions of their own meanwhile.
+  const started = () => sessions.all().filter((s) => s.repoId === repoId || s.worktree === '/etc').length;
   for (const body of [
     { repoId, worktree: id, setup: 'touch /tmp/pwned' },
     { repoId, worktree: id, parent: { id: 'x' } },
@@ -96,7 +97,7 @@ test('a body with fields the page does not send, such as a setup command, is a 4
   assert.equal(res.status, 400);
   assert.equal((await res.json()).error, 'unknown worktree');
   assert.equal((await (await post('/api/sessions', { repoId: repoId + 1000, worktree: id })).json()).error, 'unknown repo');
-  assert.equal(sessions.all().length, before);
+  assert.equal(started(), 0);
 });
 
 test('a body that is not JSON is a 400', async () => {
@@ -144,7 +145,7 @@ test('the server serves every route of the contract, under its method and path',
     'DELETE /api/worktrees': true, 'POST /api/schedules': true, 'PATCH /api/schedules/:id': true, 'DELETE /api/schedules/:id': true,
     'POST /api/schedules/:id/run': true, 'POST /api/sessions': true, 'POST /api/shell': true, 'GET /api/sessions/:id/conversation': true, 'GET /api/sessions/:id/documents': true,
     'GET /api/sessions/:id/architecture': true,
-    'GET /api/sessions/:id/versions': true,
+    'GET /api/sessions/:id/versions': true, 'GET /api/sessions/:id/new-cycle': true,
     'GET /api/sessions/:id/delete-worktree': true, 'POST /api/restart/resume': true, 'POST /api/restart/dismiss': true,
     'POST /api/pause': true, 'POST /api/pause/now': true, 'POST /api/pause/resume': true, 'POST /api/pause/dismiss': true,
     'POST /api/terminal-notices/:id/dismiss': true,

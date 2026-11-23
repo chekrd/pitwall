@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { addWorktree, changedFiles, detectBase, fullDiff, pullRequestUrlOf, unpushedCommits, upstreamOf } from './git.ts';
+import { addWorktree, changedFiles, detectBase, fullDiff, pullRequestUrlOf, uncommittedFiles, unpushedCommits, upstreamOf } from './git.ts';
 
 const GIT_WT = join(import.meta.dirname, '..', 'scripts', 'git-wt');
 const env = {
@@ -285,6 +285,19 @@ test('a commit counts as unpushed until a remote has it, though another local br
   const pushed = await unpushedCommits(main);
   git(main, 'update-ref', 'refs/remotes/origin/feature', 'HEAD');
   assert.deepEqual([pushed, await unpushedCommits(main)], [2, 0]);
+});
+
+test('what is not committed: staged, unstaged, untracked and renamed files, nothing ignored, a path with a space as it is', async () => {
+  const { main } = repo();
+  assert.deepEqual(await uncommittedFiles(main), []);
+  write(main, '.gitignore', '*.log\n.env\ndist/\n');
+  write(main, 'staged file.txt', 'x\n');
+  git(main, 'add', 'staged file.txt');
+  git(main, 'mv', 'a.txt', 'moved.txt');
+  write(main, 'debug.log', 'ignored\n');
+  mkdirSync(join(main, 'new'));
+  write(main, 'new/b.txt', 'untracked\n');
+  assert.deepEqual((await uncommittedFiles(main)).toSorted(), ['.gitignore', 'moved.txt', 'new/', 'staged file.txt']);
 });
 
 test('pull request links for Azure DevOps and GitHub remotes', () => {

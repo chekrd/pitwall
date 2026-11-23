@@ -24,6 +24,8 @@ export interface Body {
   comments?: string[];
   // The outdated phase the send reworks.
   rework?: Phase;
+  // `text` and `files` are the request of a new rpi cycle, which the server sends as New task would, after a /clear.
+  cycle?: boolean;
 }
 
 export interface Request {

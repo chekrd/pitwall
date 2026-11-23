@@ -27,8 +27,9 @@ function post(o: Outgoing) {
 export interface Restore {
   // The task as the toasts name it.
   name: string;
-  // What the send took from the reply box.
+  // What the send took from the reply box, and the box's draft id: the task's own reply box unless a dialog's.
   draft: Draft | null;
+  from?: string;
 }
 
 const subscribers = new Set<() => void>();
@@ -132,7 +133,7 @@ function review() {
     told.set(i.id, { item: i, toast: announce(i) });
     if (i.state !== 'failed' && i.state !== 'answered') continue;
     givenBack.add(i.id);
-    if (i.restore.draft) putBack(i.sessionId, i.restore.draft);
+    if (i.restore.draft) putBack(i.restore.from ?? i.sessionId, i.restore.draft);
     if (i.state === 'failed') {
       track('send-failed', { action: i.action });
       refused(i.sessionId, i.error ?? 'the send failed', i.key);
@@ -148,15 +149,15 @@ function review() {
 }
 
 // Holds an answering request for 5 s. What it takes along from the reply box leaves the box, and comes back if the
-// send is taken back or refused; with `box` off it takes nothing from it.
-export function hold(s: Session, request: Request, name: string, { box = true } = {}) {
+// send is taken back or refused; with `box` off it takes nothing from it, and `from` names another box than the task's.
+export function hold(s: Session, request: Request, name: string, { box = true, from = s.id } = {}) {
   const { text, files } = request.body;
-  const draft = box && request.action === 'answer' && (text !== undefined || !!files?.length) ? takeDraft(s.id, files ?? []) : null;
+  const draft = box && request.action === 'answer' && (text !== undefined || !!files?.length) ? takeDraft(from, files ?? []) : null;
   track('send', {
     task: s.id, decision: request.body.key ?? undefined, action: request.action, command: !!request.command, option: request.body.choice !== undefined, ownText: !!text?.trim(), files: files?.length ?? 0,
   });
   forget(s.id);
-  return sends.hold(s, request, { name, draft });
+  return sends.hold(s, request, { name, draft, ...(from !== s.id && { from }) });
 }
 
 export const holding = () => sends.items().some((i) => i.state === 'held');
@@ -169,7 +170,7 @@ export function undo(id?: string) {
   givenBack.add(item.id);
   track('undo', { task: item.sessionId, decision: item.body.key ?? undefined, action: item.action, afterMs: HOLD_MS - (item.dueAt - Date.now()) });
   sends.undo(item.id);
-  if (item.restore.draft) putBack(item.sessionId, item.restore.draft);
+  if (item.restore.draft) putBack(item.restore.from ?? item.sessionId, item.restore.draft);
 }
 
 // The page is going away or being frozen: whatever has not been posted yet goes now. Not on visibilitychange,

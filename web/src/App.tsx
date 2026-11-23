@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BugReportDialog } from './components/BugReportDialog.tsx';
 import { DriftBanner } from './components/DriftBanner.tsx';
 import { DeleteWorktreeDialog } from './components/DeleteWorktreeDialog.tsx';
+import { NewCycleDialog } from './components/NewCycleDialog.tsx';
 import { KeysDialog } from './components/KeysDialog.tsx';
 import { NewTaskDialog } from './components/NewTaskForm.tsx';
 import { RestartBanner } from './components/RestartBanner.tsx';
@@ -57,6 +58,7 @@ export function App() {
       <RpiGuide />
       <BugReportDialog />
       <DeleteWorktreeDialog />
+      <NewCycleDialog />
       <Toasts />
     </>
   );

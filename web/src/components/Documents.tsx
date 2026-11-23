@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { documentCommentsMessage } from '../../../server/codeRef.ts';
-import { currentVersion, firstOutdated, laterUnderWay, outdatedBy, PHASE_LABELS, reworkStep, TYPE_LABELS, type Phase, type VersionState } from '../../../server/rpi.ts';
+import { byCycle, currentVersion, firstOutdated, laterUnderWay, outdatedBy, PHASE_LABELS, reworkStep, TYPE_LABELS, type Phase, type VersionState } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
 import { api, sessionAction } from '../api.ts';
 import { SHEET_DIALOG } from '../keys.ts';
@@ -79,6 +79,31 @@ export function Documents({ session, name, item, view }: { session: Session; nam
   const changed = (path: string) => !!versionOf(path) && changedSince(readOf(path), currentVersion(versionOf(path)));
   // One that changed since you last read it opens at what changed.
   const select = (path: string) => showTab('documents', documentItem(path), { changes: changed(path) || undefined });
+  const { current, earlier } = byCycle(folders, workflow?.folder);
+  const section = (f: TaskFolder, heading: boolean) => (
+    <section key={f.path} aria-label={f.name} data-folder={f.path}>
+      {heading && <h3 className={styles.folder}>{f.name}</h3>}
+      {f.documents.map((d) => {
+        const count = comments.open.filter((c) => c.path === d.path).length;
+        const version = currentVersion(versionOf(d.path));
+        return (
+          <button key={d.path} type="button" data-ux="document" data-document={d.path} aria-current={shown.entry.path === d.path || undefined} onClick={() => select(d.path)}>
+            <strong>{d.title ?? d.name}</strong>
+            <span>{d.type ? TYPE_LABELS[d.type] : 'Document'} · {ago(d.modifiedAt)}{version > 1 && <> · <span data-version-count>v{version}</span></>}</span>
+            {changed(d.path) && <span className={styles.changed} data-changed data-explain={`v${version} came after you last read it, at v${readOf(d.path)}; opening it shows what changed`}>Changed since you read it</span>}
+            {count > 0 && <span className={styles.count} data-comment-count data-explain="Comments on it that Claude has not had yet">{plural(count, 'comment')}</span>}
+          </button>
+        );
+      })}
+      {f.files.length > 0 && <h4 className={styles.folder}>Mockups and images</h4>}
+      {f.files.map((file) => (
+        <button key={file.path} type="button" data-ux="document file" data-document={file.path} aria-current={shown.entry.path === file.path || undefined} onClick={() => select(file.path)}>
+          <strong>{file.name}</strong>
+          <span>{file.kind === 'mockup' ? 'Mockup' : 'Image'} · {ago(file.modifiedAt)}</span>
+        </button>
+      ))}
+    </section>
+  );
   return (
     <div className={styles.page}>
       {workflow && (
@@ -90,30 +115,13 @@ export function Documents({ session, name, item, view }: { session: Session; nam
       )}
       <div className={styles.documents}>
         <nav className={styles.list} aria-label="Documents">
-          {folders.map((f) => (
-            <section key={f.path} aria-label={f.name}>
-              {folders.length > 1 && <h3 className={styles.folder}>{f.name}</h3>}
-              {f.documents.map((d) => {
-                const count = comments.open.filter((c) => c.path === d.path).length;
-                const version = currentVersion(versionOf(d.path));
-                return (
-                  <button key={d.path} type="button" data-ux="document" data-document={d.path} aria-current={shown.entry.path === d.path || undefined} onClick={() => select(d.path)}>
-                    <strong>{d.title ?? d.name}</strong>
-                    <span>{d.type ? TYPE_LABELS[d.type] : 'Document'} · {ago(d.modifiedAt)}{version > 1 && <> · <span data-version-count>v{version}</span></>}</span>
-                    {changed(d.path) && <span className={styles.changed} data-changed data-explain={`v${version} came after you last read it, at v${readOf(d.path)}; opening it shows what changed`}>Changed since you read it</span>}
-                    {count > 0 && <span className={styles.count} data-comment-count data-explain="Comments on it that Claude has not had yet">{plural(count, 'comment')}</span>}
-                  </button>
-                );
-              })}
-              {f.files.length > 0 && <h4 className={styles.folder}>Mockups and images</h4>}
-              {f.files.map((file) => (
-                <button key={file.path} type="button" data-ux="document file" data-document={file.path} aria-current={shown.entry.path === file.path || undefined} onClick={() => select(file.path)}>
-                  <strong>{file.name}</strong>
-                  <span>{file.kind === 'mockup' ? 'Mockup' : 'Image'} · {ago(file.modifiedAt)}</span>
-                </button>
-              ))}
-            </section>
-          ))}
+          {current.map((f) => section(f, folders.length > 1))}
+          {earlier.length > 0 && (
+            <details className={styles.earlier} data-earlier-cycles open={earlier.some((f) => holds(f, shown.entry.path)) || undefined}>
+              <summary data-explain="The documents of the task's earlier rpi cycles, each in its own folder; the phase strip and the next steps follow the current one">Earlier cycles · {earlier.length}</summary>
+              {earlier.map((f) => section(f, true))}
+            </details>
+          )}
         </nav>
         {shown.kind === 'document'
           ? (
@@ -449,6 +457,8 @@ function OutdatedBanner({ session, name, workflow, path, titleOf, blocked, invoc
     </div>
   );
 }
+
+const holds = (f: TaskFolder, path: string) => f.documents.some((d) => d.path === path) || f.files.some((d) => d.path === path);
 
 const stripFrontMatter = (text: string) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/, '');
 

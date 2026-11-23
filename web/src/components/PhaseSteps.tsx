@@ -8,6 +8,7 @@ import { modelName } from '../util.ts';
 import { useCommands } from './Composer.tsx';
 import { explain, SENDS } from './explain.ts';
 import { Icon } from './Icon.tsx';
+import { askNewCycle } from './NewCycleDialog.tsx';
 import picker from './ModelPicker.module.css';
 import styles from './PhaseSteps.module.css';
 
@@ -43,18 +44,17 @@ export function firstRework(session: Session, workflow: Workflow, invocation: st
 
 // rpi's next steps from the phase under way, each sent as rpi's own command for the task's folder and flow, after a
 // /clear when it starts a phase, as rpi runs each phase in a context of its own. While a phase is outdated, its rework
-// is the only step.
+// is the only step. New RPI cycle, last, starts another cycle in the task once this one is done or set aside.
 export function PhaseSteps({ session, name, workflow, place }: { session: Session; name: string; workflow: Workflow; place: 'overview' | 'documents' }) {
   const commands = useCommands(session.worktree, true);
   const [model, setModel] = useState<ImplementerModel>('opus');
   const invocation = rpiInvocation(commands ?? []);
   const rework = firstRework(session, workflow, invocation);
   const steps = rework ? [rework] : nextSteps(workflow, invocation);
-  if (!steps.length) return null;
   const blocked = sendBlocked(session, commands);
   return (
-    <div className={styles.steps} data-place={place} data-next-steps>
-      {steps.map((step) => (
+    <div className={styles.steps} data-place={place}>
+      {steps.length > 0 && <span className={styles.next} data-next-steps>{steps.map((step) => (
         <Pair key={step.label} with={step === steps.find((s) => s.implements) && (
           <label className={picker.select} data-implementer-model data-explain="The model rpi's implementer writes the code with; the task's own model still reviews and fixes what it hands back">
             <span className={picker.caption}>Implements with</span>
@@ -77,7 +77,20 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
             {step.label}
           </button>
         </Pair>
-      ))}
+      ))}</span>}
+      <button
+        type="button"
+        data-new-cycle
+        disabled={!!blocked}
+        {...explain(blocked ? { does: blocked } : {
+          ...SENDS.prompt(''),
+          does: "Asks for a new request, then sends /clear and rpi on it in the same worktree and branch, with its documents in a folder of their own, with 5 s to undo. This cycle's documents stay under Earlier cycles in Documents.",
+          sees: 'a new conversation: /clear leaves this one behind, and rpi starts on the request',
+        })}
+        onClick={() => askNewCycle(session, name)}
+      >
+        New RPI cycle
+      </button>
     </div>
   );
 }
