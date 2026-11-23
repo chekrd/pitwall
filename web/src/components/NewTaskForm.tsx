@@ -13,6 +13,7 @@ import { effortName, tilde, untilde } from '../util.ts';
 import { ModelPicker, modelOptionsOf, useModelChoices } from './ModelPicker.tsx';
 import { AttachButton, AttachedFiles, draftOf, editDraft, readyPaths, release, takesFiles, uploading, useDraft } from './Composer.tsx';
 import { RPI_DIR, taskDirName } from '../../../server/rpi.ts';
+import { nameFromPrompt } from '../../../server/schedule.ts';
 import { Icon } from './Icon.tsx';
 import { RpiGuideButton } from './RpiGuide.tsx';
 import styles from './NewTaskForm.module.css';
@@ -423,9 +424,11 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
   const existing = f.existing && !pickedFolder;
   const model = modelOf(f, choices);
 
-  const name = f.name.trim();
   const branch = f.branch.trim();
   const scheduling = f.start !== 'now';
+  // A schedule left unnamed is named by its prompt, as the server names it.
+  const generated = scheduling && !existing && !f.name.trim() ? nameFromPrompt(f.prompt) : '';
+  const name = f.name.trim() || generated;
   const when = whenOf(f);
   const valid = !uploading(attached) && (existing ? !!branch : pickedFolder ? NAME.test(name) && !name.includes('/') : NAME.test(name))
     && (!scheduling || (!!f.prompt.trim() && !!when && (existing || !name.includes('/'))));
@@ -586,7 +589,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
         ) : (
           <label className={styles.field} data-explain={pickedFolder ? 'Names the task folder, and the branch of every worktree Claude opens' : 'Names the worktree folder, and the branch unless you set one'}>
             <span className={styles.caption}>Name</span>
-            <input value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder="fix-login-redirect" spellCheck={false} autoComplete="off" />
+            <input value={f.name} onChange={(e) => edit({ name: e.currentTarget.value.replace(/\s+/g, '-') })} placeholder={scheduling ? generated || 'named by the prompt' : 'fix-login-redirect'} spellCheck={false} autoComplete="off" />
           </label>
         )}
         <button type="submit" className={styles.create} disabled={!valid || pending}>
@@ -670,7 +673,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
           {scheduling && (
             <p className={styles.hint} data-when-hint>
               {!when ? (f.start === 'once' ? 'Pick a time to come.' : 'Pick at least one day.')
-                : <>{existing ? 'Starts' : 'Creates the worktree and starts'} Claude {describeWhen(when)}{f.start === 'repeat' && !existing && <>, a new one each time, named <code>{name || '<name>'}-</code> and the date</>}. A run missed while the Mac sleeps starts when it wakes.</>}
+                : <>{existing ? 'Starts' : 'Creates the worktree and starts'} Claude {describeWhen(when)}{f.start === 'repeat' && !existing && <>, a new one each time, named <code>{name || '<name>'}-</code> and the date and time{branch && <>, on <code>{branch}-</code> and the same</>}</>}. A run missed while the Mac sleeps starts when it wakes.</>}
             </p>
           )}
         </div>

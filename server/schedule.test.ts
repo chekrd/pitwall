@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { nextRun, parseSchedule, runName, scheduler, taskPrompt, untilNextMinute, type Schedule } from './schedule.ts';
+import { nameFromPrompt, nextRun, parseSchedule, runOf, scheduler, taskPrompt, untilNextMinute, type Schedule } from './schedule.ts';
 
 const local = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
 // Monday 2 November 2026.
@@ -24,10 +24,28 @@ test('a one-off runs at its time, and not again once it has passed', () => {
   assert.equal(nextRun({ at: MON(22) }, MON(22)), null);
 });
 
-test('each run of a repeating schedule is named by its date, a one-off by the schedule, and a clash gets a number', () => {
-  assert.equal(runName({ name: 'review', when: { time: '09:00', days: WEEKDAYS } }, MON(9), new Set()), 'review-2026-11-02');
-  assert.equal(runName({ name: 'review', when: { time: '09:00', days: WEEKDAYS } }, MON(9), new Set(['review-2026-11-02'])), 'review-2026-11-02-2');
-  assert.equal(runName({ name: 'nightly', when: { at: MON(22) } }, MON(22), new Set()), 'nightly');
+test('each run of a repeating schedule is named by its date and time, a one-off by the schedule, and a clash gets a number', () => {
+  const task = { kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'p', model: '', effort: '' } as const;
+  const review = { name: 'review', when: { time: '09:00', days: WEEKDAYS }, task };
+  assert.deepEqual(runOf(review, MON(9), new Set()), { name: 'review-2026-11-02-0900', task });
+  assert.equal(runOf(review, MON(9), new Set(['review-2026-11-02-0900'])).name, 'review-2026-11-02-0900-2');
+  assert.deepEqual(runOf({ name: 'nightly', when: { at: MON(22) }, task }, MON(22), new Set()), { name: 'nightly', task });
+  assert.equal(runOf({ name: 'nightly', when: { at: MON(22) }, task }, MON(22), new Set(['nightly'])).name, 'nightly-2');
+});
+
+test('a repeating run on a branch of its own stamps the branch as it does the name', () => {
+  const task = { kind: 'repo', repoId: 1, existingBranch: false, branch: 'chore/deps', path: '', prompt: 'p', model: '', effort: '' } as const;
+  const deps = { name: 'deps', when: { time: '09:00', days: WEEKDAYS }, task };
+  assert.deepEqual(runOf(deps, MON(9), new Set()), { name: 'deps-2026-11-02-0900', task: { ...task, branch: 'chore/deps-2026-11-02-0900' } });
+  assert.deepEqual(runOf(deps, MON(9), new Set(['chore/deps-2026-11-02-0900'])).task, { ...task, branch: 'chore/deps-2026-11-02-0900-2' });
+  const onCheckout = { ...deps, task: { ...task, existingBranch: true, branch: 'main' } };
+  assert.equal(runOf(onCheckout, MON(9), new Set()).task, onCheckout.task);
+});
+
+test('a schedule left unnamed is named by the first words of its prompt', () => {
+  assert.equal(nameFromPrompt('Review the open PRs, and comment on each!'), 'review-the-open-prs-and');
+  assert.equal(nameFromPrompt('Bump dependencies across the monorepo workspaces'), 'bump-dependencies-across-the-monorepo');
+  assert.equal(nameFromPrompt('  …  '), 'task');
 });
 
 test('a task starts on its prompt with the attached files listed under it, or on the files alone', () => {
@@ -36,7 +54,7 @@ test('a task starts on its prompt with the attached files listed under it, or on
   assert.equal(taskPrompt('Fix it', []), 'Fix it');
 });
 
-test('a schedule needs a prompt, a name, and a time to come or days to repeat on', () => {
+test('a schedule needs a prompt, a valid name if one is given, and a time to come or days to repeat on', () => {
   const task = { kind: 'repo', repoId: 1, existingBranch: false, branch: '', path: '', prompt: 'Review open PRs', model: '', effort: '' };
   assert.throws(() => parseSchedule({ name: 'x', task: { ...task, prompt: ' ' }, when: { at: MON(9) } }, MON(8)), /prompt/);
   assert.throws(() => parseSchedule({ name: 'a b', task, when: { at: MON(9) } }, MON(8)), /name/);
@@ -49,6 +67,7 @@ test('a schedule needs a prompt, a name, and a time to come or days to repeat on
   assert.throws(() => parseSchedule({ name: 'x', task: { ...task, path: '/w/x' }, when: { time: '09:00', days: [1] } }, MON(8)), /Worktree path/);
   const onBranch = parseSchedule({ name: '', task: { ...task, existingBranch: true, branch: 'feature/a' }, when: { at: MON(9) } }, MON(8));
   assert.equal(onBranch.name, 'feature-a');
+  assert.equal(parseSchedule({ name: ' ', task, when: { time: '09:00', days: [1] } }, MON(8)).name, 'review-open-prs');
 });
 
 function setup(schedule: Partial<Schedule>) {
@@ -62,7 +81,7 @@ function setup(schedule: Partial<Schedule>) {
   const plan = scheduler({
     list: () => rows,
     save: (s) => void (rows = rows.map((r) => (r.id === s.id ? s : r))),
-    start: async (_s, name, scheduled) => {
+    start: async (_task, name, scheduled) => {
       if (fail) throw new Error('main checkout has uncommitted changes');
       started.push({ name, due: scheduled.due, at: scheduled.at });
       return `task-${started.length}`;
@@ -79,7 +98,7 @@ test('nothing starts before a schedule is due; once due it starts and moves on t
   assert.equal(t.started.length, 0);
   t.at(MON(9));
   await t.plan.step();
-  assert.deepEqual(t.started, [{ name: 'review-2026-11-02', due: MON(9), at: MON(9) }]);
+  assert.deepEqual(t.started, [{ name: 'review-2026-11-02-0900', due: MON(9), at: MON(9) }]);
   assert.equal(t.row().next, local(2026, 11, 3, 9));
   assert.equal(t.row().last?.sessionId, 'task-1');
 });
@@ -90,7 +109,7 @@ test('runs missed while the Mac slept start once on wake, and the next is the fi
   await t.plan.step();
   await t.plan.step();
   assert.equal(t.started.length, 1);
-  assert.deepEqual(t.started[0], { name: 'review-2026-11-02', due: MON(9), at: local(2026, 11, 5, 10, 42) });
+  assert.deepEqual(t.started[0], { name: 'review-2026-11-02-0900', due: MON(9), at: local(2026, 11, 5, 10, 42) });
   assert.equal(t.row().next, local(2026, 11, 6, 9));
 });
 

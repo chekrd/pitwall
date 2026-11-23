@@ -67,17 +67,35 @@ export function nextRun(when: When, after: number): number | null {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const dateOf = (at: number) => {
+const stampOf = (at: number) => {
   const d = new Date(at);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
 };
 
-// A repeating schedule's runs each get a worktree and a task name of their own, dated by the run.
-export function runName(s: Pick<Schedule, 'name' | 'when'>, at: number, taken: ReadonlySet<string>) {
-  const base = repeats(s.when) ? `${s.name}-${dateOf(at)}` : s.name;
-  let name = base;
-  for (let i = 2; taken.has(name); i++) name = `${base}-${i}`;
-  return name;
+// A schedule left unnamed is named by the first words of its prompt.
+export function nameFromPrompt(prompt: string) {
+  const words = prompt.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).slice(0, 5);
+  let name = '';
+  for (const w of words) {
+    const next = name ? `${name}-${w}` : w;
+    if (next.length > 40) break;
+    name = next;
+  }
+  return name || words[0]?.slice(0, 40) || 'task';
+}
+
+// A repeating schedule's runs each get a task name, worktree and branch of their own, stamped with the run's date and time.
+export function runOf(s: Pick<Schedule, 'name' | 'when' | 'task'>, at: number, taken: ReadonlySet<string>): { name: string; task: TaskRequest } {
+  if (!repeats(s.when)) {
+    let name = s.name;
+    for (let i = 2; taken.has(name); i++) name = `${s.name}-${i}`;
+    return { name, task: s.task };
+  }
+  const stamp = `-${stampOf(at)}`;
+  const branch = s.task.kind === 'repo' && !s.task.existingBranch ? s.task.branch.trim() : '';
+  let suffix = stamp;
+  for (let i = 2; taken.has(s.name + suffix) || (branch && taken.has(branch + suffix)); i++) suffix = `${stamp}-${i}`;
+  return { name: s.name + suffix, task: branch ? { ...s.task, branch: branch + suffix } as TaskRequest : s.task };
 }
 
 export function parseSchedule(body: { name?: string; task?: unknown; when?: unknown }, now: number): Pick<Schedule, 'name' | 'task' | 'when'> {
@@ -85,7 +103,7 @@ export function parseSchedule(body: { name?: string; task?: unknown; when?: unkn
   if (task?.kind !== 'repo' && task?.kind !== 'folder') throw new Error('unknown task');
   if (!(task.prompt ?? '').trim()) throw new Error('a scheduled task needs a prompt');
   if (task.kind === 'repo' && task.existingBranch && task.workflow === 'rpi') throw new Error(RPI_NEEDS_WORKTREE);
-  const name = (body.name ?? '').trim() || (task.kind === 'repo' && task.existingBranch ? task.branch.trim().replaceAll('/', '-') : '');
+  const name = (body.name ?? '').trim() || (task.kind === 'repo' && task.existingBranch ? task.branch.trim().replaceAll('/', '-') : nameFromPrompt(task.prompt));
   if (!NAME.test(name)) throw new Error('name the task: letters, digits, dot, hyphen and underscore');
   const w = body.when as Partial<{ at: number; time: string; days: number[] }>;
   let when: When;
@@ -107,8 +125,8 @@ export function parseSchedule(body: { name?: string; task?: unknown; when?: unkn
 export interface SchedulerDeps {
   list: () => Schedule[];
   save: (s: Schedule) => void;
-  // Starts the task under the run's name and returns its session id.
-  start: (s: Schedule, name: string, scheduled: Scheduled) => Promise<string>;
+  // Starts the run's task under its name and returns its session id.
+  start: (task: TaskRequest, name: string, scheduled: Scheduled) => Promise<string>;
   taken: () => ReadonlySet<string>;
   now?: () => number;
 }
@@ -120,10 +138,10 @@ export function scheduler({ list, save, start, taken, now = Date.now }: Schedule
   async function fire(s: Schedule, due: number | null) {
     running.add(s.id);
     const at = now();
-    const name = runName(s, due ?? at, taken());
+    const { name, task } = runOf(s, due ?? at, taken());
     let run: Run;
     try {
-      run = { due, at, sessionId: await start(s, name, { id: s.id, name: s.name, due, at }), error: null };
+      run = { due, at, sessionId: await start(task, name, { id: s.id, name: s.name, due, at }), error: null };
     } catch (err) {
       run = { due, at, sessionId: null, error: err instanceof Error ? err.message : String(err) };
     } finally {

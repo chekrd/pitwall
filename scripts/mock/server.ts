@@ -946,8 +946,8 @@ const plan = scheduler({
     schedules = schedules.map((x) => (x.id === s.id ? s : x));
     push();
   },
-  start: async (s, name, scheduled) => {
-    const { sessionId } = startTask({ ...s.task, name, scheduled });
+  start: async (task, name, scheduled) => {
+    const { sessionId } = startTask({ ...task, name, scheduled });
     const failed = find(sessionId)?.starting?.error;
     if (!failed) return sessionId;
     state.sessions = state.sessions.filter((o) => o.id !== sessionId);

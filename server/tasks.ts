@@ -115,8 +115,8 @@ export const plan = scheduler({
     notify();
   },
   // A run that fails is the schedule's to report, on its last run.
-  start: async (s, name, scheduled) => {
-    const { sessionId, ready } = await startTask({ ...s.task, name, scheduled });
+  start: async (task, name, scheduled) => {
+    const { sessionId, ready } = await startTask({ ...task, name, scheduled });
     await ready.catch((err: unknown) => {
       sessions.remove(sessionId);
       notify();

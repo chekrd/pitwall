@@ -29,7 +29,7 @@ async function openLineDraft(page: Page, url: string) {
 
 export const schedulesLater: Check[] = [
   {
-    name: 'S1 New task can repeat: Repeat under More offers weekdays at 09:00, needs a prompt, and the button reads Schedule; ⌘↵ posts the schedule, says so in a toast and lists it under Scheduled on the Wall, folded like Archived until opened, the link under the heading opening it, with its next run; Run now opens a task named by the date whose facts name the schedule; Pause and Resume, and Delete with Undo',
+    name: 'S1 New task can repeat: Repeat under More offers weekdays at 09:00, needs a prompt, and the button reads Schedule; ⌘↵ posts the schedule, says so in a toast and lists it under Scheduled on the Wall, folded like Archived until opened, the link under the heading opening it, with its next run; Run now opens a task named by the date and time whose facts name the schedule; Pause and Resume, and Delete with Undo',
     async run({ page, mock, shot }) {
       const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await page.goto(`${mock.url}/`);
@@ -54,7 +54,7 @@ export const schedulesLater: Check[] = [
       await typeInPrompt(page);
       await page.type('Review the open PRs and summarise what needs me');
       await page.until('Schedule enabled with a prompt', () => !document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!.disabled);
-      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent), /weekdays at 09:00, a new one each time, named nightly-review- and the date/);
+      assert.match(await page.eval(() => document.querySelector('dialog#new-task [data-when-hint]')!.textContent), /weekdays at 09:00, a new one each time, named nightly-review- and the date and time/);
       await shot('new-task-repeat');
       const rows = () => [...document.querySelectorAll('dialog#new-task [data-more-options] > div')].map((row) =>
         [...row.querySelectorAll(':scope > label, :scope > [data-when] > label, :scope > [data-when] > fieldset:not([data-days]), :scope > div > label')].map((el) => el.querySelector('span')?.textContent ?? 'Start'));
@@ -111,7 +111,7 @@ export const schedulesLater: Check[] = [
       await page.click('[data-schedule="nightly-review"] button', 'Run now');
       const d = new Date();
       const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      await page.until('the run\'s sheet', (name: string) => !!document.querySelector('#task-sheet') && document.querySelector('#task-sheet h2')?.textContent === name, `nightly-review-${today}`);
+      await page.until('the run\'s sheet', (re: string) => !!document.querySelector('#task-sheet') && new RegExp(re).test(document.querySelector('#task-sheet h2')?.textContent ?? ''), `^nightly-review-${today}-\\d{4}$`);
       const facts = await page.until('its facts', () => {
         const dl = document.querySelector('#task-sheet dl');
         return dl && Object.fromEntries([...dl.querySelectorAll('dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]));
@@ -136,6 +136,34 @@ export const schedulesLater: Check[] = [
       await page.eval(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.key('z', { meta: true });
       await page.until('the schedule back by ⌘Z', () => !!document.querySelector('[data-schedule="nightly-review"]'));
+    },
+  },
+  {
+    name: 'S1.unnamed a schedule left unnamed is named by its prompt: the Name field shows the name it gets, Schedule is enabled without one, and the hint says each run adds the date and time',
+    async run({ page, mock }) {
+      await page.goto(`${mock.url}/`);
+      await page.until('the tiles', tiles);
+      await openNewTask(page);
+      await pickRepo(page, 'storefront');
+      await page.click('dialog#new-task label', 'New worktree');
+      if (await page.eval(() => document.querySelector('dialog#new-task [data-more]')!.getAttribute('aria-expanded') !== 'true')) await page.click('dialog#new-task [data-more]');
+      await page.click('dialog#new-task [data-when] label', 'Repeat');
+      await typeInPrompt(page);
+      await page.type('Bump the dependencies, then open a PR');
+      const form = await page.until('Schedule enabled without a name', () => {
+        const button = document.querySelector<HTMLButtonElement>('dialog#new-task button[type="submit"]')!;
+        return !button.disabled && {
+          placeholder: document.querySelector<HTMLInputElement>('dialog#new-task [data-explain^="Names the worktree"] input')!.placeholder,
+          hint: document.querySelector('dialog#new-task [data-when-hint]')!.textContent,
+        };
+      });
+      assert.equal(form.placeholder, 'bump-the-dependencies-then-open');
+      assert.match(form.hint, /named bump-the-dependencies-then-open- and the date and time/);
+      await page.eval(() => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+      const [posted] = await logged(mock, 'the schedule', (e) => e.method === 'POST' && e.path === '/api/schedules');
+      assert.equal(posted.status, 200);
+      assert.equal(posted.body.name, '');
+      await page.until('the toast', () => [...document.querySelectorAll('[data-toast]')].some((t) => /Scheduled bump-the-dependencies-then-open: weekdays at 09:00/.test(t.textContent)));
     },
   },
   {
