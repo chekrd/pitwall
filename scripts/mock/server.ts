@@ -35,7 +35,7 @@ import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
 import { contentType, outdatedBy, RPI_DIR, RPI_NEEDS_WORKTREE, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
-import { addComment, editComment, keepPhase, markOutdated, markSent, pruneReview, removeComments } from '../../server/review.ts';
+import { addComment, archiveComment, editComment, keepPhase, markOutdated, markSent, pruneReview } from '../../server/review.ts';
 import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
@@ -542,7 +542,7 @@ const actions: ActionHandlers<Session> = {
   unpark: (s, body) => update(s.id, { parked: removeParked(s.parked, [body.draft]) }),
   'add-comment': (s, body) => update(s.id, { review: addComment(s.review, body) }),
   'edit-comment': (s, body) => update(s.id, { review: editComment(s.review, body) }),
-  'delete-comment': (s, body) => update(s.id, { review: removeComments(s.review, [body.comment]) }),
+  'archive-comment': (s, body) => update(s.id, { review: archiveComment(s.review, body) }),
   'mark-outdated': (s, body) => {
     const workflow = docs.of(s.id);
     if (!workflow) throw new Error('this task has no documents');

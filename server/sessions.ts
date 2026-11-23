@@ -24,7 +24,7 @@ import { inSync, retired, sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
 import { archivePatch } from './restart.ts';
 import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
-import { addComment, editComment, keepPhase, markOutdated, markSent, removeComments, type NewComment } from './review.ts';
+import { addComment, archiveComment, editComment, keepPhase, markOutdated, markSent, type NewComment } from './review.ts';
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
 import { tasksWorkflows } from './documents.ts';
@@ -258,8 +258,8 @@ export function editDocComment(id: string, body: { comment: string; text: string
   notify();
 }
 
-export function deleteDocComment(id: string, comment: string) {
-  sessions.update(id, { review: removeComments(must(id).review, [comment]) });
+export function archiveDocComment(id: string, body: { comment: string; archived: boolean }) {
+  sessions.update(id, { review: archiveComment(must(id).review, body) });
   notify();
 }
 

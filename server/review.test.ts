@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { documentCommentsMessage, MAX_QUOTE } from './codeRef.ts';
 import { actionBodies } from './contract.ts';
 import type { Review } from './db.ts';
-import { addComment, editComment, EMPTY_REVIEW, keepPhase, markOutdated, markSent, MAX_COMMENTS, pruneReview, removeComments } from './review.ts';
+import { addComment, archiveComment, editComment, EMPTY_REVIEW, keepPhase, markOutdated, markSent, MAX_COMMENTS, pruneReview } from './review.ts';
 import { BOARD_HANDOFF, type OutdatedMark, type Workflow } from './rpi.ts';
 
 const DESIGN = '.pitwall/artifacts/invoice-export/04-design-discussion-invoice-export.md';
@@ -14,16 +14,16 @@ const whole = { path: DESIGN, version: 3, heading: null, quote: null };
 test('a comment keeps its document, version, passage and heading, or none for the whole document; it is open until sent, and in the order written', () => {
   const one = addComment(EMPTY_REVIEW, { ...stream, text: '  Say what a failed stream leaves behind. ' }, 50);
   const [c] = one.comments;
-  assert.deepEqual({ ...c, id: '' }, { id: '', ...stream, text: 'Say what a failed stream leaves behind.', at: 50, sentAt: null });
+  assert.deepEqual({ ...c, id: '' }, { id: '', ...stream, text: 'Say what a failed stream leaves behind.', at: 50, sentAt: null, archivedAt: null });
   const both = addComment(one, { ...whole, heading: 'ignored', text: 'Shorter overall.' }, 60);
   assert.deepEqual(both.comments.map((x) => [x.quote, x.heading, x.text]), [[stream.quote, stream.heading, c.text], [null, null, 'Shorter overall.']], 'no heading without a passage');
-  const back = addComment(both, { ...units, text: 'Put back by Undo.', at: 55, sentAt: 58 }, 99);
-  assert.deepEqual(back.comments.map((x) => [x.text, x.at, x.sentAt]), [[c.text, 50, null], ['Put back by Undo.', 55, 58], ['Shorter overall.', 60, null]], 'an Undo puts it back where it was');
+  const third = addComment(both, { ...units, text: 'Units.' }, 70);
+  assert.deepEqual(third.comments.map((x) => x.text), [c.text, 'Shorter overall.', 'Units.']);
   assert.throws(() => addComment(EMPTY_REVIEW, { ...whole, text: '  ' }), /the comment is empty/);
   assert.throws(() => addComment(EMPTY_REVIEW, { ...whole, text: 'x'.repeat(20_001) }), /too long/);
 });
 
-test('an open comment can be edited and deleted; a sent one only deleted; sending marks only the open ones named', () => {
+test('an open comment can be edited and archived; a sent one only archived; an archived one is restored as it was, and is neither edited nor sent; sending marks only the open ones named', () => {
   let r = addComment(addComment(EMPTY_REVIEW, { ...stream, text: 'One' }, 1), { ...whole, text: 'Two' }, 2);
   const [one, two] = r.comments.map((c) => c.id);
   r = editComment(r, { comment: one, text: ' Uno ' });
@@ -33,10 +33,23 @@ test('an open comment can be edited and deleted; a sent one only deleted; sendin
   assert.deepEqual(r.comments.map((c) => c.sentAt), [10, null]);
   assert.equal(markSent(r, [one, two], 20).comments[0].sentAt, 10, 'sent once');
   assert.throws(() => editComment(r, { comment: one, text: 'x' }), /sent already/);
-  assert.deepEqual(removeComments(r, [one]).comments.map((c) => c.id), [two]);
+  const archived = archiveComment(archiveComment(r, { comment: one, archived: true }, 30), { comment: two, archived: true }, 40);
+  assert.deepEqual(archived.comments.map((c) => [c.id, c.sentAt, c.archivedAt]), [[one, 10, 30], [two, null, 40]], 'kept, with when');
+  assert.equal(archiveComment(archived, { comment: two, archived: true }, 50).comments[1].archivedAt, 40, 'archived once');
+  assert.throws(() => editComment(archived, { comment: two, text: 'x' }), /archived; restore it first/);
+  assert.equal(markSent(archived, [two], 60).comments[1].sentAt, null, 'an archived one is not sent');
+  assert.throws(() => archiveComment(archived, { comment: 'gone', archived: true }), /this comment is gone/);
+  const restored = archiveComment(archiveComment(archived, { comment: one, archived: false }), { comment: two, archived: false });
+  assert.deepEqual(restored.comments.map((c) => [c.text, c.sentAt, c.archivedAt]), [['Uno', 10, null], ['Two', null, null]]);
+  assert.equal(editComment(restored, { comment: two, text: 'Dos' }).comments[1].text, 'Dos');
+  assert.equal(archiveComment({ ...r, comments: r.comments.map((c) => {
+    const old: Partial<typeof c> = { ...c };
+    delete old.archivedAt;
+    return old as typeof c;
+  }) }, { comment: two, archived: true }, 70).comments[1].archivedAt, 70, 'one from before archiving');
 });
 
-test(`a task holds ${MAX_COMMENTS} comments: a new one forgets the oldest sent one, and with none sent is refused`, () => {
+test(`a task holds ${MAX_COMMENTS} comments: a new one forgets the oldest archived one, then the oldest sent one, and with neither is refused`, () => {
   let r: Review = EMPTY_REVIEW;
   for (let i = 0; i < MAX_COMMENTS; i++) r = addComment(r, { ...whole, text: `c${i}` }, i);
   assert.throws(() => addComment(r, { ...whole, text: 'more' }), /at most 200 comments/);
@@ -45,6 +58,10 @@ test(`a task holds ${MAX_COMMENTS} comments: a new one forgets the oldest sent o
   assert.equal(next.comments.length, MAX_COMMENTS);
   assert.ok(!next.comments.some((c) => c.text === 'c5'), 'the one sent first goes');
   assert.ok(next.comments.some((c) => c.text === 'c3'));
+  const withArchived = archiveComment(archiveComment(next, { comment: next.comments[9].id, archived: true }, 5000), { comment: next.comments[8].id, archived: true }, 4000);
+  const after = addComment(withArchived, { ...whole, text: 'again' }, 6000);
+  assert.ok(!after.comments.some((c) => c.text === next.comments[8].text), 'the one archived first goes');
+  assert.ok(after.comments.some((c) => c.text === next.comments[9].text) && after.comments.some((c) => c.text === 'c3'), 'before any sent one');
 });
 
 test("a document's comments go as one rpi command: update and the path on its first line, then each passage's heading, the passage and the text, and each on the whole document as itself", () => {
@@ -83,6 +100,8 @@ test('the comment actions check what they are given', () => {
   assert.equal(add.safeParse({ path: DESIGN, version: 3, quote: 'q', text: 'x' }).success, false, 'the heading is named, null when there is none');
   assert.equal(add.safeParse({ ...stream, version: 0, text: 'x' }).success, false);
   assert.equal(add.safeParse({ ...stream, path: '', text: 'x' }).success, false);
+  assert.equal(actionBodies['add-comment'].safeParse({ ...stream, text: 'x', at: 1 }).success, false, 'a comment is new when added');
+  assert.equal(actionBodies['archive-comment'].safeParse({ comment: 'a' }).success, false, 'archived or restored is said');
   assert.equal(actionBodies['keep-outdated'].safeParse({ phase: 'review' }).success, false);
   assert.deepEqual(actionBodies.answer.parse({ key: null, text: '/rpi x', comments: ['a'], rework: 'implement', fresh: true }), { key: null, text: '/rpi x', comments: ['a'], rework: 'implement', fresh: true });
   assert.equal(actionBodies.answer.safeParse({ key: null, text: 'x', rework: 'review' }).success, false);

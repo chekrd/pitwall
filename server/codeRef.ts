@@ -16,6 +16,8 @@ function fenced(lines: readonly string[]) {
 
 export const MAX_QUOTE = 600;
 
+export const isArchived = (c: Pick<DocComment, 'archivedAt'>) => (c.archivedAt ?? null) !== null;
+
 // A passage as a comment keeps it: trimmed, and at most MAX_QUOTE characters, the rest cut with an ellipsis.
 export function cutQuote(text: string) {
   const t = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();

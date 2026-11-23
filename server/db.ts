@@ -98,7 +98,8 @@ export interface CodeRef {
 
 // A comment on one of the task's rpi documents: its path from the task's own folder, as the documents' routes take it,
 // the version it was written on (null for one from before versions), and the passage with the nearest heading above
-// it, or null for one on the whole document. `sentAt` is when it reached Claude.
+// it, or null for one on the whole document. `sentAt` is when it reached Claude, `archivedAt` when it was archived,
+// which only comments from before archiving lack.
 export interface DocComment {
   id: string;
   path: string;
@@ -108,6 +109,7 @@ export interface DocComment {
   text: string;
   at: number;
   sentAt: number | null;
+  archivedAt?: number | null;
 }
 
 // The task's comments on its documents, and the phases outdated by a change to a document before them.

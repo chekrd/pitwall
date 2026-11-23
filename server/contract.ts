@@ -74,10 +74,10 @@ export const actionBodies = {
   unpark: z.strictObject({ draft: z.string() }),
   'add-comment': z.strictObject({
     path: z.string().min(1).max(1000), version: z.number().int().min(1).nullable(), quote: z.string().min(1).max(MAX_QUOTE).nullable(),
-    heading: z.string().max(500).nullable(), text: z.string(), at: z.number().optional(), sentAt: z.number().nullable().optional(),
+    heading: z.string().max(500).nullable(), text: z.string(),
   }),
   'edit-comment': z.strictObject({ comment: z.string(), text: z.string() }),
-  'delete-comment': z.strictObject({ comment: z.string() }),
+  'archive-comment': z.strictObject({ comment: z.string(), archived: z.boolean() }),
   'mark-outdated': z.strictObject({ because: z.string().min(1).max(1000) }),
   'keep-outdated': z.strictObject({ phase }),
   'ask-aside': z.strictObject({

@@ -94,7 +94,7 @@ const steps = () => [...document.querySelectorAll<HTMLButtonElement>('#task-shee
 
 const explainOf = (selector: string) => document.querySelector(selector)?.getAttribute('data-explain') ?? null;
 
-type Comment = { id: string; path: string; version: number | null; heading: string | null; quote: string | null; text: string; at: number; sentAt: number | null };
+type Comment = { id: string; path: string; version: number | null; heading: string | null; quote: string | null; text: string; at: number; sentAt: number | null; archivedAt?: number | null };
 const commentsOf = async (mock: Mock): Promise<Comment[]> => (await stateOf(mock, 's-export')).review.comments;
 
 const outdatedOf = async (mock: Mock): Promise<Record<string, { because: string; version: number | null }>> => (await stateOf(mock, 's-export')).review.outdated;
@@ -103,7 +103,7 @@ const stripOutdated = () => [...document.querySelectorAll<HTMLElement>('#task-sh
 
 export const comments: Check[] = [
   {
-    name: 'CM.1 a passage selected in a document takes a comment in the panel beside it: Comment by the selection opens a box whose only action adds it, Enter adds it with the path, version, heading and passage; it is marked, counted in the list and listed in the panel, where a click lights it in the document; it can be edited, and deleted with Undo; one whose passage changed stays unmarked and its click goes to its heading; none of it shows under Later or by the next steps',
+    name: 'CM.1 a passage selected in a document takes a comment in the panel beside it: Comment by the selection opens a box whose only action adds it, Enter adds it with the path, version, heading and passage; it is marked, counted in the list and listed in the panel, where a click lights it in the document; it can be edited, and archived with Undo, then restored from Archived as it was; one whose passage changed stays unmarked and its click goes to its heading; none of it shows under Later or by the next steps',
     scenario: 'workflow',
     async run({ page, mock, shot }) {
       await page.goto(docUrl(mock, DESIGN));
@@ -121,7 +121,7 @@ export const comments: Check[] = [
       await page.key('Enter');
       await page.until('the box to close', () => !document.querySelector('#task-sheet [data-comment-note]'));
       const kept = await until('the comment kept', async () => (await commentsOf(mock)).find((c) => c.id !== STALE.id));
-      assert.deepEqual({ ...kept, id: '', at: 0 }, { id: '', path: DESIGN, version: 3, heading: 'Stream or build the file first?', quote: PASSAGE, text: 'Say what a failed stream leaves behind.', at: 0, sentAt: null });
+      assert.deepEqual({ ...kept, id: '', at: 0 }, { id: '', path: DESIGN, version: 3, heading: 'Stream or build the file first?', quote: PASSAGE, text: 'Say what a failed stream leaves behind.', at: 0, sentAt: null, archivedAt: null });
       await page.until('the passage marked', markCount, 1);
       assert.deepEqual(await page.eval(marked), { [kept.id]: PASSAGE });
       assert.equal(await page.eval(explainOf, `${BODY} mark[data-comment]`), 'Say what a failed stream leaves behind.', 'the comment on hover');
@@ -145,15 +145,31 @@ export const comments: Check[] = [
       assert.deepEqual(edit.body, { comment: kept.id, text: 'Say what a failed stream leaves on disk.' });
       await page.until('the edit in the panel', (id: string) => document.querySelector(`#task-sheet [data-comments-panel] li[data-doc-comment="${id}"] p`)?.textContent === 'Say what a failed stream leaves on disk.', kept.id);
 
-      await page.click(`${PANEL} li[data-doc-comment="${kept.id}"] button`, 'Delete');
+      const openShown = () => document.querySelectorAll('#task-sheet [data-comments-panel] > ul > li[data-doc-comment]').length;
+      await page.click(`${PANEL} li[data-doc-comment="${kept.id}"] button`, 'Archive');
       await page.until('gone from the panel', () => document.querySelectorAll('#task-sheet [data-comments-panel] > ul > li[data-doc-comment]').length === 0);
       await page.until('the mark gone', () => !document.querySelector('#task-sheet [data-document-body] mark[data-comment]'));
+      const archivedOne = await until('archived, kept', async () => (await commentsOf(mock)).find((c) => c.id === kept.id && typeof c.archivedAt === 'number'));
+      assert.deepEqual([archivedOne.text, archivedOne.sentAt], ['Say what a failed stream leaves on disk.', null]);
       const [toast] = await until('the toast', () => page.eval(toastsOf, 'info'));
-      assert.equal(toast.text, 'Deleted the comment “Say what a failed stream leaves on disk.”\nUndo');
+      assert.equal(toast.text, 'Archived the comment “Say what a failed stream leaves on disk.”\nUndo');
       await page.click('[data-toast] button', 'Undo');
-      const back = await until('the comment back', async () => (await commentsOf(mock)).find((c) => c.text === 'Say what a failed stream leaves on disk.'));
+      const back = await until('the comment back', async () => (await commentsOf(mock)).find((c) => c.id === kept.id && c.archivedAt === null));
       assert.deepEqual([back.path, back.version, back.heading, back.quote, back.at, back.sentAt], [DESIGN, 3, kept.heading, PASSAGE, kept.at, null], 'as it was');
       await page.until('marked again', markCount, 1);
+
+      await page.click(`${PANEL} li[data-doc-comment="${kept.id}"] button`, 'Archive');
+      await page.until('under Archived', () => document.querySelector('#task-sheet [data-archived-comments] summary')?.textContent === 'Archived · 1');
+      assert.equal(await page.eval(openShown), 0);
+      await page.click('#task-sheet [data-archived-comments] summary');
+      await page.until('the archived one shown', (id: string) => {
+        const li = document.querySelector<HTMLElement>(`#task-sheet [data-archived-comments] li[data-doc-comment="${id}"]`);
+        return !!li?.checkVisibility() && li.querySelector('p')?.textContent === 'Say what a failed stream leaves on disk.' && li.textContent?.includes('Not sent');
+      }, kept.id);
+      await page.click(`#task-sheet [data-archived-comments] li[data-doc-comment="${kept.id}"] button`, 'Restore');
+      await page.until('open again', () => document.querySelectorAll('#task-sheet [data-comments-panel] > ul > li[data-doc-comment]').length === 1);
+      await page.until('Archived gone', () => !document.querySelector('#task-sheet [data-archived-comments]'));
+      await page.until('marked once more', markCount, 1);
 
       await page.click('#task-sheet nav[aria-label="Documents"] button', 'Outline');
       await page.until('the outline', headingIs, 'Outline: Invoice CSV export');
@@ -199,7 +215,7 @@ export const comments: Check[] = [
     },
   },
   {
-    name: 'CM.2 Send 3 comments in the panel posts one /rpi:rpi update command naming the document on its own first line, then each passage comment with its heading and passage quoted and the whole-document one as such, held with Undo; once sent they move under Sent with the time, the marks go, and the comment on another document stays open; while Claude works it is disabled and says why',
+    name: 'CM.2 Send 3 comments in the panel posts one /rpi:rpi update command naming the document on its own first line, then each passage comment with its heading and passage quoted and the whole-document one as such, held with Undo; once sent they move under Sent with the time, the marks go, and the comment on another document stays open; a sent one archived goes back under Sent when restored; while Claude works it is disabled and says why',
     scenario: 'workflow',
     clock: 'fast',
     async run({ page, mock, shot }) {
@@ -251,9 +267,12 @@ export const comments: Check[] = [
       await shot('document-comments-sent');
       assert.deepEqual(await page.eval(counts), { [OUTLINE]: '1 comment' });
 
-      await page.click('#task-sheet [data-sent-comments] li[data-doc-comment="c-whole"] button', 'Delete');
-      await until('the sent comment deleted', async () => !(await commentsOf(mock)).some((c) => c.id === 'c-whole'));
+      await page.click('#task-sheet [data-sent-comments] li[data-doc-comment="c-whole"] button', 'Archive');
+      await until('the sent comment archived', async () => typeof (await commentsOf(mock)).find((c) => c.id === 'c-whole')?.archivedAt === 'number');
       await page.until('Sent · 2', () => document.querySelector('#task-sheet [data-sent-comments] summary')?.textContent === 'Sent · 2');
+      await page.click('#task-sheet [data-archived-comments] summary');
+      await page.click('#task-sheet [data-archived-comments] li[data-doc-comment="c-whole"] button', 'Restore');
+      await page.until('back under Sent', () => document.querySelector('#task-sheet [data-sent-comments] summary')?.textContent === 'Sent · 3' && !document.querySelector('#task-sheet [data-archived-comments]'));
     },
   },
   {

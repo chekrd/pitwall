@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isArchived } from './codeRef.ts';
 import type { DocComment, Review } from './db.ts';
 import { pruneOutdated, type Outdated, type Phase, type Workflow } from './rpi.ts';
 
@@ -14,43 +15,47 @@ function cleanText(text: string) {
   return t;
 }
 
-// `at` and `sentAt` come from an Undo, which puts a deleted comment back as it was.
 export interface NewComment {
   path: string;
   version: number | null;
   quote: string | null;
   heading: string | null;
   text: string;
-  at?: number | undefined;
-  sentAt?: number | null | undefined;
 }
 
-// A task full of comments makes room by forgetting its oldest sent one; one with only open comments takes no more.
+// A task full of comments makes room by forgetting its oldest archived one, then its oldest sent one; one with only
+// open comments takes no more.
 export function addComment(r: Review, body: NewComment, now = Date.now()): Review {
   let comments = r.comments;
   if (comments.length >= MAX_COMMENTS) {
-    const oldest = comments.filter((c) => c.sentAt !== null).toSorted((a, b) => a.sentAt! - b.sentAt!)[0];
+    const oldest = comments.filter(isArchived).toSorted((a, b) => a.archivedAt! - b.archivedAt!)[0]
+      ?? comments.filter((c) => c.sentAt !== null).toSorted((a, b) => a.sentAt! - b.sentAt!)[0];
     if (!oldest) throw new Error(`a task holds at most ${MAX_COMMENTS} comments`);
     comments = comments.filter((c) => c !== oldest);
   }
   const comment: DocComment = {
     id: randomUUID(), path: body.path, version: body.version, quote: body.quote, heading: body.quote === null ? null : body.heading,
-    text: cleanText(body.text), at: body.at ?? now, sentAt: body.sentAt ?? null,
+    text: cleanText(body.text), at: now, sentAt: null, archivedAt: null,
   };
-  return { ...r, comments: [...comments, comment].toSorted((a, b) => a.at - b.at) };
+  return { ...r, comments: [...comments, comment] };
 }
 
 export function editComment(r: Review, body: { comment: string; text: string }): Review {
   const found = r.comments.find((c) => c.id === body.comment);
   if (!found) throw new Error('this comment is gone');
   if (found.sentAt !== null) throw new Error('this comment was sent already');
+  if (isArchived(found)) throw new Error('this comment is archived; restore it first');
   return { ...r, comments: r.comments.map((c) => (c === found ? { ...c, text: cleanText(body.text) } : c)) };
 }
 
-export const removeComments = (r: Review, ids: readonly unknown[]): Review => ({ ...r, comments: r.comments.filter((c) => !ids.includes(c.id)) });
+export function archiveComment(r: Review, body: { comment: string; archived: boolean }, now = Date.now()): Review {
+  const found = r.comments.find((c) => c.id === body.comment);
+  if (!found) throw new Error('this comment is gone');
+  return { ...r, comments: r.comments.map((c) => (c === found ? { ...c, archivedAt: body.archived ? (found.archivedAt ?? now) : null } : c)) };
+}
 
 export const markSent = (r: Review, ids: readonly unknown[], now = Date.now()): Review =>
-  ({ ...r, comments: r.comments.map((c) => (ids.includes(c.id) && c.sentAt === null ? { ...c, sentAt: now } : c)) });
+  ({ ...r, comments: r.comments.map((c) => (ids.includes(c.id) && c.sentAt === null && !isArchived(c) ? { ...c, sentAt: now } : c)) });
 
 export function markOutdated(r: Review, marks: Outdated): Review {
   if (!Object.keys(marks).length) throw new Error('no later phase of this document is under way');

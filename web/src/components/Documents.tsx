@@ -125,6 +125,7 @@ export function Documents({ session, name, item, view }: { session: Session; nam
               known={[...documents, ...files].map((d) => d.path).join('\n')}
               open={comments.open.filter((c) => c.path === shown.entry.path)}
               sent={comments.sent.filter((c) => c.path === shown.entry.path)}
+              archived={comments.archived.filter((c) => c.path === shown.entry.path)}
               titleOf={(path) => documents.find((d) => d.path === path)?.title ?? fileName(path)}
               versions={versionOf(shown.entry.path)}
               view={view}
@@ -158,6 +159,7 @@ interface ViewProps {
   known: string;
   open: DocComment[];
   sent: DocComment[];
+  archived: DocComment[];
   titleOf: (path: string) => string;
   blocked: string | null;
   invocation: string;
@@ -171,7 +173,7 @@ const NEW = 'new';
 // `known` lists the paths beside it, one a line, so the rewritten links stay the same, and the document is not drawn
 // again, until a file comes or goes. A passage selected in it takes a comment, and the passages commented are marked
 // in whichever version is shown that still has them.
-function DocumentView({ session, name, doc, known, open, sent, titleOf, blocked, invocation, versions, view }: ViewProps) {
+function DocumentView({ session, name, doc, known, open, sent, archived, titleOf, blocked, invocation, versions, view }: ViewProps) {
   const id = session.id;
   const latest = currentVersion(versions);
   const shownVersion = view.version && view.version < latest ? view.version : latest;
@@ -367,6 +369,7 @@ function DocumentView({ session, name, doc, known, open, sent, titleOf, blocked,
           latest={latest}
           open={open}
           sent={sent}
+          archived={archived}
           lit={litId}
           onShow={showComment}
           onSend={sendComments}

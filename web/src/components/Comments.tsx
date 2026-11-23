@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { cutQuote } from '../../../server/codeRef.ts';
+import { cutQuote, isArchived } from '../../../server/codeRef.ts';
 import { sessionAction } from '../api.ts';
 import { active } from '../outbox.ts';
 import { useSends } from '../sends.ts';
@@ -13,17 +13,22 @@ export const fileName = (path: string) => path.split('/').at(-1) ?? path;
 
 export const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
-export const commentAction = <A extends 'add-comment' | 'edit-comment' | 'delete-comment'>(s: Session, action: A, body: ActionBody<A>) =>
+export const commentAction = <A extends 'add-comment' | 'edit-comment' | 'archive-comment'>(s: Session, action: A, body: ActionBody<A>) =>
   sessionAction(s.id, action, body).then(() => true, (err: unknown) => {
     toast('error', err instanceof Error ? err.message : String(err), { session: s.id });
     return false;
   });
 
-// The task's comments on its documents not sent yet, those on their way to Claude left out, and the ones sent.
+// The task's comments on its documents not sent yet, those on their way to Claude left out, the ones sent, and the
+// ones archived, newest first.
 export function useComments(session: Session) {
   const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.comments ?? [] : [])));
-  const all = session.review.comments;
-  return { open: all.filter((c) => c.sentAt === null && !sending.has(c.id)), sent: all.filter((c) => c.sentAt !== null) };
+  const kept = session.review.comments.filter((c) => !isArchived(c));
+  return {
+    open: kept.filter((c) => c.sentAt === null && !sending.has(c.id)),
+    sent: kept.filter((c) => c.sentAt !== null),
+    archived: session.review.comments.filter(isArchived).toSorted((a, b) => b.archivedAt! - a.archivedAt!),
+  };
 }
 
 const MARK = 'mark[data-comment]';
@@ -191,13 +196,15 @@ export function CommentNote({ session, at, onDone }: { session: Session; at: Pas
 
 const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text);
 
-function remove(session: Session, c: DocComment) {
-  void commentAction(session, 'delete-comment', { comment: c.id });
-  toast('info', `Deleted the comment “${short(c.text)}”`, {
+function archive(session: Session, c: DocComment) {
+  void commentAction(session, 'archive-comment', { comment: c.id, archived: true });
+  toast('info', `Archived the comment “${short(c.text)}”`, {
     session: session.id,
-    action: { label: 'Undo', run: () => void commentAction(session, 'add-comment', { path: c.path, version: c.version, quote: c.quote, heading: c.heading, text: c.text, at: c.at, sentAt: c.sentAt }) },
+    action: { label: 'Undo', run: () => void commentAction(session, 'archive-comment', { comment: c.id, archived: false }) },
   });
 }
+
+const restore = (session: Session, c: DocComment) => void commentAction(session, 'archive-comment', { comment: c.id, archived: false });
 
 function Where({ comment: c, latest, onShow }: { comment: DocComment; latest: number; onShow?: ((c: DocComment) => void) | undefined }) {
   const older = c.version !== null && c.version < latest;
@@ -249,7 +256,7 @@ function OpenComment({ session, comment: c, latest, lit, onShow }: { session: Se
           ? (
             <>
               <button type="button" data-explain="Edits the comment's text" onClick={() => setEditing(c.text)}>Edit</button>
-              <button type="button" data-explain="Deletes the comment, with Undo for a moment" onClick={() => remove(session, c)}>Delete</button>
+              <button type="button" data-archive-comment data-explain="Moves the comment under Archived, where Restore brings it back" onClick={() => archive(session, c)}>Archive</button>
             </>
           )
           : (
@@ -297,6 +304,7 @@ interface PanelProps {
   latest: number;
   open: DocComment[];
   sent: DocComment[];
+  archived: DocComment[];
   lit: string | null;
   onShow: (c: DocComment) => void;
   onSend: () => void;
@@ -304,9 +312,9 @@ interface PanelProps {
   blocked: string | null;
 }
 
-// The shown document's comments beside it: those not sent yet, each to edit or delete, a field for one on the whole
-// document, the button that sends them, and the ones sent before.
-export function CommentsPanel({ session, path, version, latest, open, sent, lit, onShow, onSend, sendTip, blocked }: PanelProps) {
+// The shown document's comments beside it: those not sent yet, each to edit or archive, a field for one on the whole
+// document, the button that sends them, the ones sent before, and the archived ones to restore.
+export function CommentsPanel({ session, path, version, latest, open, sent, archived, lit, onShow, onSend, sendTip, blocked }: PanelProps) {
   return (
     <aside className={styles.panel} aria-label="Comments" data-comments-panel>
       <h3 className={styles.label}>Comments{open.length > 0 && <span> · {open.length}</span>}</h3>
@@ -330,7 +338,32 @@ export function CommentsPanel({ session, path, version, latest, open, sent, lit,
                 <div className={styles.actions}>
                   <span className={styles.meta}>Sent {ago(c.sentAt!)}{c.version !== null && ` · on v${c.version}`}</span>
                   <span className={styles.spacer} />
-                  <button type="button" data-explain="Deletes the sent comment, with Undo for a moment" onClick={() => remove(session, c)}>Delete</button>
+                  <button type="button" data-archive-comment data-explain="Moves the sent comment under Archived, where Restore brings it back" onClick={() => archive(session, c)}>Archive</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {archived.length > 0 && (
+        <details className={styles.sent} data-archived-comments>
+          <summary>Archived · {archived.length}</summary>
+          <ul className={styles.list}>
+            {archived.map((c) => (
+              <li key={c.id} className={styles.item} data-doc-comment={c.id} data-archived>
+                <Where comment={c} latest={latest} />
+                <p className={styles.text}>{c.text}</p>
+                <div className={styles.actions}>
+                  <span className={styles.meta}>{c.sentAt === null ? 'Not sent' : `Sent ${ago(c.sentAt)}`} · archived {ago(c.archivedAt!)}</span>
+                  <span className={styles.spacer} />
+                  <button
+                    type="button"
+                    data-restore-comment
+                    data-explain={c.sentAt === null ? 'Puts the comment back among those not sent yet' : 'Puts the comment back under Sent'}
+                    onClick={() => restore(session, c)}
+                  >
+                    Restore
+                  </button>
                 </div>
               </li>
             ))}
