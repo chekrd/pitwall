@@ -208,7 +208,7 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word, on the model and effort picked in it, which the next report starts on',
+    name: 'P4.19 Bug report: B opens it from the Wall and Esc closes it unfiled; the top bar\'s Bug from a reply box keeps that box as the page it reports, and Enter uploads the recorder\'s report and starts a Pitwall task with the comment word for word, on the model and effort picked in it, which the next report starts on; over a task, a checkbox (unchecked) refers the report to that task\'s Claude Code session',
     async run({ page, mock, shot }) {
       const open = () => !!document.querySelector('#bug-report:modal') && document.activeElement === document.querySelector('#bug-report textarea');
       await page.goto(`${mock.url}/`);
@@ -217,6 +217,7 @@ export const replies: Check[] = [
       await page.until('Bug report, its comment focused', open);
       await page.until('the dialog to settle', settled);
       await shot('bug-report');
+      assert.equal(await page.eval(() => !!document.querySelector('#bug-report input[type=checkbox]')), false, 'over the Wall there is no task session to refer to');
       await page.key('Escape');
       await page.until('Bug report to close', () => !document.querySelector('#bug-report[open]'));
 
@@ -245,6 +246,11 @@ export const replies: Check[] = [
           select.dispatchEvent(new Event('change', { bubbles: true }));
         }
       });
+      const refer = '#bug-report input[type=checkbox]';
+      assert.match(await page.eval(() => document.querySelector('#bug-report input[type=checkbox]')!.closest('label')!.textContent), /Refer to this task's session: Fix invoice PDF rounding s-invoice/);
+      assert.equal(await page.eval(() => document.querySelector<HTMLInputElement>('#bug-report input[type=checkbox]')!.checked), false, 'unchecked until asked');
+      await page.click(refer);
+      await page.eval(() => document.querySelector<HTMLTextAreaElement>('#bug-report textarea')!.focus());
       await page.key('Enter');
       const [created] = await logged(mock, 'the task', (e) => e.method === 'POST' && e.path === '/api/worktrees');
       const [uploaded] = await logged(mock, 'the report', (e) => e.method === 'POST' && e.path === '/api/uploads');
@@ -254,9 +260,11 @@ export const replies: Check[] = [
       assert.match(created.body.name, /^bug-\d{10}$/);
       assert.ok(created.body.prompt.includes(`\`\`\`\`\n${comment}\nand \`Z\` did nothing\n\`\`\`\``), created.body.prompt);
       assert.match(created.body.prompt, /\/bug-\d{10}\.json \(JSON\)/);
+      assert.match(created.body.prompt, /It is about the task "Fix invoice PDF rounding" \(task s-invoice, worktree [^)]+\), whose Claude Code session is s-invoice\./);
       assert.ok(uploaded.at <= created.at);
       const report = JSON.parse(uploaded.raw!);
       assert.equal(report.comment, `${comment}\nand \`Z\` did nothing`);
+      assert.deepEqual([report.task.id, report.task.conversation], ['s-invoice', 's-invoice']);
       const types = new Set(report.events.map((e: unknown[]) => e[1]));
       for (const t of ['load', 'focusin', 'keydown', 'beforeinput', 'input', 'paste', 'route', 'ux', 'bug-report-open', 'bug-report']) assert.ok(types.has(t), `the report records ${t}`);
       assert.match(report.snapshot.active, /^textarea#\d+ draft=s-invoice/);
@@ -268,6 +276,7 @@ export const replies: Check[] = [
       await page.click('[data-bug-report]');
       await page.until('Bug report again', open);
       assert.deepEqual(await page.eval(picker), [['Model', 'Fable 5.1'], ['Effort', 'Max']], 'the next report starts on the model and effort picked');
+      assert.equal(await page.eval(() => document.querySelector<HTMLInputElement>('#bug-report input[type=checkbox]')!.checked), false, 'the next report starts unchecked');
     },
   },
   {

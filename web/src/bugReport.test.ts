@@ -11,6 +11,14 @@ test('the prompt keeps the comment exactly as written, backticks and blank lines
   assert.match(prompt, /Reproduce the bug in pnpm e2e, fix it, and deliver the fix to main/);
 });
 
+test('a report about a task names its Claude Code session and where its transcript is; one about the board names none', () => {
+  const task = { id: 't-1', title: 'Fix rounding', worktree: '/code/wt', conversation: 'c-42' };
+  const prompt = bugPrompt('It hung', '/up/bug.json', task);
+  assert.match(prompt, /It is about the task "Fix rounding" \(task t-1, worktree \/code\/wt\), whose Claude Code session is c-42\./);
+  assert.match(prompt, /~\/\.claude\/projects\/\*\/c-42\.jsonl/);
+  assert.doesNotMatch(bugPrompt('It hung', '/up/bug.json'), /Claude Code session/);
+});
+
 test('with no comment, the prompt says so and leans on the report', () => {
   const prompt = bugPrompt('  \n', '/up/bug.json');
   assert.match(prompt, /I wrote nothing about it/);
