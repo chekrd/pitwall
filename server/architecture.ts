@@ -319,6 +319,24 @@ export async function seedArchitecture(main: string, worktree: string) {
   return true;
 }
 
+// After the main checkout's model was written anew: a worktree that had the model it replaced, or none, gets the new
+// one; any other holds a task's own changes and keeps them. Answers the worktrees it wrote.
+export async function refreshCopies(main: string, worktrees: string[], replaced: string | null) {
+  const model = await readModel(main);
+  if (!model) return [];
+  const written: string[] = [];
+  for (const worktree of worktrees) {
+    const own = await readModel(worktree);
+    if (own && (own.stamp !== replaced || own.stamp === model.stamp)) continue;
+    const dir = await ownFolder(worktree, true);
+    if (!dir) continue;
+    await replaceFiles(dir, model.files);
+    await ignorePitwall(worktree);
+    written.push(worktree);
+  }
+  return written;
+}
+
 export class KeepRefused extends Error {}
 
 interface Backup {

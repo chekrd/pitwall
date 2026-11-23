@@ -260,7 +260,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
   },
 
   // Billing's main checkout holds the project's architecture model; Retry failed webhooks changes it in its worktree,
-  // and Fix invoice PDF rounding has a copy that does not parse.
+  // Fix invoice PDF rounding has a copy that does not parse, and Upgrade Stripe SDK an untouched copy.
   architecture: (now) => {
     const scenario = base(now, queue(now));
     const worktree = (id: string) => scenario.sessions.find((s) => s.id === id)!.worktree;
@@ -268,6 +268,7 @@ export const scenarios: Record<string, (now: number) => Scenario> = {
       [`${HOME}/code/billing-api`]: STANDING_MODEL,
       [worktree('s-hooks')]: RETRIES_MODEL,
       [worktree('s-invoice')]: BROKEN_MODEL,
+      [worktree('s-stripe')]: STANDING_MODEL,
     };
     return scenario;
   },

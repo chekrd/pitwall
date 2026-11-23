@@ -1,0 +1,44 @@
+@layer components {
+  .dialog {
+    width: min(540px, calc(100% - 32px));
+    padding: 24px 26px;
+    border-color: var(--line-2);
+    font-size: 15px;
+    &[open] { display: flex; flex-direction: column; gap: 12px; }
+    h2 { font-size: 22px; font-weight: 650; line-height: 1.25; }
+    p { line-height: 1.5; }
+    footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+    footer button { height: 42px; padding: 0 16px; border-radius: 13px; font-size: 15px; }
+  }
+
+  .repos {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      &:hover { background: var(--hover); }
+      &:has(input:disabled) { cursor: default; }
+    }
+    input { flex: none; margin: 3px 0 0; }
+  }
+
+  .repo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    strong { font-weight: 650; }
+    code { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+  }
+
+  .muted { font-size: 14px; color: var(--muted); }
+}

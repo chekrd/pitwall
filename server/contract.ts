@@ -89,6 +89,7 @@ export const actionBodies = {
   'close-aside': z.strictObject({ aside: z.string() }),
   'keep-architecture': z.strictObject({ model: z.string(), stamp: z.string() }),
   'restore-architecture': z.strictObject({ undo: z.string() }),
+  'regenerate-architecture': z.strictObject({ repos: z.array(z.string()).min(1) }),
 };
 
 // POST /api/sessions/:id/<action>.

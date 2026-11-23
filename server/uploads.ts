@@ -11,7 +11,6 @@ const safeName = (name: string) => name.split(/[\\/]/).at(-1)!.replace(/[^\w.-]+
 export async function saveUpload(name: string, bytes: ArrayBuffer) {
   if (!bytes.byteLength) throw new Error('empty file');
   if (bytes.byteLength > MAX_BYTES) throw new Error(`files over ${MAX_BYTES / 1024 / 1024} MB are not accepted`);
-  void prune();
   const dir = join(UPLOADS_DIR, randomUUID());
   await mkdir(dir, { recursive: true });
   const path = join(dir, safeName(name));
@@ -36,7 +35,7 @@ export function keepUploads(paths: () => Iterable<string>) {
   kept = paths;
 }
 
-async function prune() {
+export async function pruneUploads() {
   const dirs = await readdir(UPLOADS_DIR).catch(() => []);
   const keep = new Set([...kept()].map((p) => dirname(p)));
   for (const d of dirs) {

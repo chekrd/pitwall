@@ -117,10 +117,10 @@ export const taskPage: Check[] = [
         await page.click(`[data-tile][data-session="${id}"] button[aria-label="Session actions"]`);
         return page.until(`the menu of ${id}`, menuItems);
       };
-      assert.deepEqual(await open('s-stripe'), ['Open in Ghostty', 'Continue', 'Open in Finder', 'Open in VS Code', 'Archive', 'Remove from list', 'Clear task…']);
+      assert.deepEqual(await open('s-stripe'), ['Open in Ghostty', 'Continue', 'Open in Finder', 'Open in VS Code', 'Regenerate architecture…', 'Archive', 'Remove from list', 'Clear task…']);
       await page.key('Escape');
       await page.until('the menu to close', () => !document.querySelector(':popover-open'));
-      assert.deepEqual(await open('s-invoice'), ['Open in Ghostty', 'Open session in terminal', 'Open in Finder', 'Open in VS Code', 'Quit Claude', 'Archive', 'Clear task…']);
+      assert.deepEqual(await open('s-invoice'), ['Open in Ghostty', 'Open session in terminal', 'Open in Finder', 'Open in VS Code', 'Regenerate architecture…', 'Quit Claude', 'Archive', 'Clear task…']);
       await shot('session-menu');
       await page.click(':popover-open button', 'Open in Ghostty');
       const [shell] = await logged(mock, 'the shell', (e) => e.path === '/api/shell');

@@ -3,10 +3,11 @@ import { api, sessionAction } from '../api.ts';
 import { closeSheetOf } from '../router.ts';
 import { sends } from '../sends.ts';
 import { patchSession, unpatch, useStore } from '../store.ts';
-import type { ActionBody, ActionName, Session, WorktreeView } from '../types.ts';
+import type { ActionBody, ActionName, Regeneration, Session, WorktreeView } from '../types.ts';
 import { tilde } from '../util.ts';
 import { askDeleteWorktree } from './DeleteWorktreeDialog.tsx';
 import { Icon } from './Icon.tsx';
+import { askRegenerate } from './RegenerateDialog.tsx';
 import styles from './SessionMenu.module.css';
 import { toast, UNDO_KBD } from './Toasts.tsx';
 
@@ -51,12 +52,42 @@ function quit(session: Session) {
   sessionAction(session.id, 'quit').catch(failed(session.id));
 }
 
+type Mark = { state: 'running' | 'failed'; text: string; note: string };
+
+const names = (r: Regeneration, keys: string[]) => r.repos.filter((x) => keys.includes(x.key)).map((x) => x.name).join(', ');
+
+// While a repository's architecture is being regenerated the item and the ⋯ button turn; once a run failed they show an
+// icon that names its log, until the next run.
+function regenerationMark(r: Regeneration | null | undefined, home: string): Mark | null {
+  if (!r) return null;
+  if (r.running.length) {
+    const which = names(r, r.running);
+    return { state: 'running', text: `Regenerating the architecture of ${which}`, note: `Opus is writing ${which}'s model in its main checkout` };
+  }
+  if (!r.failed.length) return null;
+  const which = names(r, r.failed.map((f) => f.key));
+  const logs = r.failed.map((f) => tilde(f.log, home)).join(', ');
+  return { state: 'failed', text: `Regenerating the architecture of ${which} failed; an agent can read why in ${logs}`, note: `Failed for ${which}; its log says why` };
+}
+
+function RegenerationMark({ mark, corner = false }: { mark: Mark; corner?: boolean }) {
+  return mark.state === 'running' ? (
+    <span className={styles.spinner} data-corner={corner || undefined} data-regenerating role="img" aria-label={mark.text} />
+  ) : (
+    <span className={styles.failed} data-corner={corner || undefined} data-regeneration-failed role="img" aria-label={mark.text} data-explain={mark.text}>
+      <Icon name="alert" size={corner ? 11 : 13} />
+    </span>
+  );
+}
+
 export function SessionMenu({ session, worktree, name }: { session: Session; worktree: WorktreeView | undefined; name: string }) {
   const id = useId();
   const exited = session.status === 'exited';
   const clearing = !!session.clearing;
   const { home } = useStore();
   const path = tilde(session.worktree, home);
+  const regeneration = clearing ? null : session.regeneration;
+  const mark = regenerationMark(regeneration, home);
   const pick = (run: () => unknown) => () => {
     document.getElementById(id)?.hidePopover();
     run();
@@ -66,8 +97,17 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
 
   return (
     <>
-      <button type="button" className={styles.more} popoverTarget={id} aria-label="Session actions" data-tip="More actions">
+      <button
+        type="button"
+        className={styles.more}
+        popoverTarget={id}
+        aria-label="Session actions"
+        data-tip={mark ? undefined : 'More actions'}
+        data-explain={mark ? `More actions. ${mark.text}` : undefined}
+        data-regeneration={mark?.state}
+      >
         <Icon name="more" size={18} />
+        {mark && <RegenerationMark mark={mark} corner />}
       </button>
       <div id={id} popover="auto" className={styles.menu}>
         <Item label="Open in Ghostty" note={`New shell in ${tilde(session.cwd, home)}`} onClick={pick(() => api('POST', '/api/shell', { worktree: session.cwd }).catch(reportError))} />
@@ -78,6 +118,14 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         )}
         <Item label="Open in Finder" note={path} onClick={act('finder', {})} />
         <Item label="Open in VS Code" note={path} onClick={act('vscode', {})} />
+        {regeneration && (
+          <Item
+            label="Regenerate architecture…"
+            note={mark?.note ?? (regeneration.repos.length > 1 ? "Opus writes each repository's model afresh, in its main checkout" : "Opus writes the repository's model afresh, in its main checkout")}
+            mark={mark}
+            onClick={pick(() => askRegenerate(session))}
+          />
+        )}
         {!exited && !clearing && (
           <Item
             label="Quit Claude"
@@ -114,10 +162,10 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
   );
 }
 
-function Item({ label, note, danger = false, onClick }: { label: string; note: string; danger?: boolean; onClick: () => void }) {
+function Item({ label, note, danger = false, mark = null, onClick }: { label: string; note: string; danger?: boolean; mark?: Mark | null; onClick: () => void }) {
   return (
-    <button type="button" className={styles.item} data-ux={label} data-danger={danger || undefined} onClick={onClick}>
-      <span className={styles.label}>{label}</span>
+    <button type="button" className={styles.item} data-ux={label} data-danger={danger || undefined} data-regeneration={mark?.state} onClick={onClick}>
+      <span className={styles.label}>{label}{mark && <RegenerationMark mark={mark} />}</span>
       <span className={styles.note}>{note}</span>
     </button>
   );

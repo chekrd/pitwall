@@ -1,5 +1,5 @@
 // LikeC4 models of a made-up billing service: the standing one in its main checkout, a task's that adds a retry queue
-// for webhooks, and one that does not parse.
+// for webhooks, one that does not parse, and the one a regeneration writes.
 
 const SPEC = `specification {
   element actor {
@@ -117,4 +117,18 @@ export const BROKEN_MODEL = {
   'spec.c4': SPEC,
   'model.c4': model('Tells the shop about paid invoices', '      retries = queue \'Retry queue\' {\n        technology \'Postgres table\'\n\n', 'reports paid invoices'),
   'views.c4': VIEWS,
+};
+
+// What Regenerate architecture writes in the main checkout: the standing model with the ledger it lacked, its overview
+// naming what it describes.
+export const REGENERATED_MODEL = {
+  'spec.c4': SPEC,
+  'model.c4': STANDING_MODEL['model.c4'].replace(/\n}\n$/, `
+  ledger = system 'Ledger' {
+    description 'Books every payment'
+  }
+  billing.api.payments -> ledger 'books payments'
+}
+`),
+  'views.c4': VIEWS.replace("title 'Billing in context'", "title 'Billing in context, as on develop'"),
 };

@@ -63,6 +63,12 @@ const shapes = {
     </>
   ),
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  alert: (
+    <>
+      <path d="M10.3 4.6a2 2 0 0 1 3.4 0l7 12.2a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3z" />
+      <path d="M12 9.5v4M12 16.8v.01" />
+    </>
+  ),
   external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
 } satisfies Record<string, ReactNode>;
 

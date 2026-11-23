@@ -11,6 +11,7 @@ Keep the repository's architecture as a [LikeC4](https://likec4.dev) model: text
 - One model per repository, split across a few files: `spec.c4` (the kinds), `model.c4` (or `model-<area>.c4` for a large system), `views.c4`. Only `.c4` files directly in that folder are read; no subfolders, no `likec4.config.json`.
 - git ignores `.pitwall/` through the repository's `.git/info/exclude`. Never commit the model and never add it to `.gitignore`.
 - The repository's main checkout holds the project's model, and a new worktree starts with a copy of it. Change only the copy in your worktree, never the main checkout: the user decides on the board whether your model becomes the project's.
+- The project's model describes the repository's own architecture as on its base branch, not a task's change, and its `index` view says so in its title or description. Pitwall's **Regenerate architecture…** has Claude write it afresh in the main checkout with this skill, the one time the main checkout's model is written by Claude.
 
 ## What to do
 

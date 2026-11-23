@@ -34,6 +34,9 @@ import type { Drift } from '../../server/claudeFormat.ts';
 import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
+import { SESSIONS_DIR } from '../../server/config.ts';
+import { regenerating, regenerationPrompt } from '../../server/regenerate.ts';
+import { REGENERATED_MODEL } from './architectureModels.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
 import { contentType, outdatedBy, RPI_DIR, RPI_NEEDS_WORKTREE, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
 import { cycleFolder, cycleMessage } from '../../server/cycles.ts';
@@ -151,6 +154,10 @@ const upstreams = new Map<string, Upstream>();
 const uncommitted = new Map<string, string[]>();
 let schedules: Schedule[] = [];
 const transcripts = new Map<string, string>();
+// The next regeneration fails with this error, once its moment of work is over.
+let regenerateFails: string | null = null;
+// While held, a regeneration waits after its moment of work until /mock/regenerate-release lets it finish or fail.
+let regenerateHold: { done: Promise<void>; release: (error?: string) => void } | null = null;
 
 // As the server's: Esc stops a turn, and the pause prompt runs a short turn that stops the background tasks.
 const pausing = pauser({
@@ -252,7 +259,7 @@ function snapshot(): State {
     return { home: HOME, roots: state.roots, repos: state.repos, sessions: old } as unknown as State;
   }
   return {
-    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id), architecture: architecture.of(s.id) })),
+    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id), architecture: architecture.of(s.id), regeneration: regenerations.of(s.id) })),
     usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, terminalNotices, pitwall: `${HOME}/git/github/pitwall`,
   };
 }
@@ -302,10 +309,14 @@ function load(name: string) {
   typed.length = 0;
   clearIgnored = false;
   typingMs = TYPING_MS;
+  regenerateFails = null;
+  regenerateHold?.release('the mock loaded another scenario meanwhile');
+  regenerateHold = null;
   state = make(Date.now());
   // A version folder of an earlier load is left to the HOME's removal, as a read of that load may still be writing it.
   docs = storeOf();
   architecture = architectures();
+  regenerations = regenerationsFor(state);
   writeDocuments(state.documents, state.architecture);
   artifactHtml = new Map(Object.entries(state.artifactHtml ?? {}));
   seeded = seedVersions(docs, state.documentVersions).catch((err) => console.warn('document versions', err));
@@ -496,6 +507,45 @@ const asides = asking({
   discard: async () => {},
 });
 
+// As the server's, with a run that writes the regenerated model after a moment of work instead of a claude -p run on
+// Opus. One per scenario, so a run from before a load changes nothing of the next.
+function regenerationsFor(scenario: Scenario) {
+  const mainOf = (r: RepoView) => r.worktrees.find((w) => w.isMain)?.path ?? r.path;
+  return regenerating({
+    roots: (id) => {
+      const s = scenario === state ? find(id) : undefined;
+      return s ? modelRoots(s, scenario.repos) : [];
+    },
+    checkout: (main) => {
+      const repo = scenario.repos.find((r) => mainOf(r) === main);
+      return { base: repo?.base ?? null, worktrees: repo?.worktrees.filter((w) => !w.isMain).map((w) => w.path) ?? [] };
+    },
+    logFile: (id, repo) => join(SESSIONS_DIR, id, 'architecture', `${repo}.log`),
+    prompt: (repo) => regenerationPrompt(repo, 'The architecture skill.'),
+    run: async ({ cwd, log }) => {
+      const fails = regenerateFails;
+      regenerateFails = null;
+      const hold = regenerateHold;
+      log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: `${cwd}/src/api/index.ts` } }] } }));
+      await pause(1200);
+      await hold?.done;
+      if (scenario !== state) throw new Error('the mock loaded another scenario meanwhile');
+      if (fails) throw new Error(fails);
+      await mkdir(join(cwd, ARCHITECTURE_DIR), { recursive: true });
+      if (!written.includes(cwd)) written.push(cwd);
+      for (const [name, text] of Object.entries(REGENERATED_MODEL)) await writeFile(join(cwd, ARCHITECTURE_DIR, name), text);
+      log(JSON.stringify({ type: 'result', is_error: false, result: 'Wrote the model.' }));
+    },
+    changed: () => {
+      if (scenario !== state) return;
+      push();
+      void refreshDocuments().catch((err) => console.warn('documents', err));
+    },
+  });
+}
+
+let regenerations = regenerationsFor(state);
+
 // As the server's: a new cycle's request goes as New task would send it, in the folder the cycle gets, after a /clear.
 async function cycleReply(s: Session, body: ActionInput<'answer'>) {
   if (!documentRoots(s).length) throw new Error(RPI_NEEDS_WORKTREE);
@@ -584,6 +634,7 @@ const actions: ActionHandlers<Session> = {
     await restoreArchitecture(body.undo);
     await refreshDocuments();
   },
+  'regenerate-architecture': (s, body) => void regenerations.start(s.id, body.repos),
   dismiss: (s, body) => {
     checkDecision(s, body.key);
     closeQuestion({ get: find, update }, s.id, body.key ?? null);
@@ -1333,6 +1384,22 @@ route('POST', '/mock/clear-hold', () => {
 route('POST', '/mock/clear-release', ({ body }) => {
   clearHold?.release(body.error ? String(body.error) : undefined);
   clearHold = null;
+  return {};
+});
+route('POST', '/mock/regenerate-fail', ({ body }) => {
+  regenerateFails = String(body.error ?? 'claude -p exited 1: mock failure');
+  return { error: regenerateFails };
+});
+route('POST', '/mock/regenerate-hold', () => {
+  let release!: (error?: string) => void;
+  const done = new Promise<void>((resolve, reject) => (release = (error) => (error ? reject(new Error(error)) : resolve())));
+  done.catch(() => {});
+  regenerateHold = { done, release };
+  return {};
+});
+route('POST', '/mock/regenerate-release', ({ body }) => {
+  regenerateHold?.release(body.error ? String(body.error) : undefined);
+  regenerateHold = null;
   return {};
 });
 route('POST', '/mock/delay', ({ body }) => {

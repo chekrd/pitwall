@@ -1,5 +1,6 @@
 @layer components {
   .more {
+    position: relative;
     display: grid;
     place-items: center;
     width: 34px;
@@ -68,7 +69,41 @@
     &:hover { background: var(--hover); }
   }
 
-  .label { font-weight: 650; color: var(--text); [data-danger] > & { color: var(--danger); } }
+  .label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 650;
+    color: var(--text);
+    [data-danger] > & { color: var(--danger); }
+  }
 
   .note { max-width: 100%; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+
+  .spinner {
+    flex: none;
+    width: 11px;
+    height: 11px;
+    border: 2px solid var(--line-2);
+    border-top-color: var(--accent-ink);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  .failed { display: inline-grid; place-items: center; color: var(--danger); }
+
+  .spinner[data-corner], .failed[data-corner] {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    pointer-events: none;
+  }
+
+  .spinner[data-corner] { width: 10px; height: 10px; }
+
+  .failed[data-corner] {
+    padding: 1px;
+    border-radius: 50%;
+    background: var(--card);
+  }
 }

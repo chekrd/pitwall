@@ -21,6 +21,7 @@ import { actionBodies, bodies, isAction, type ActionHandlers, type ActionName, t
 import { HOST, PORT, ROOT, UPLOADS_DIR, WEB_DIST } from './config.ts';
 import { repos, roots, schedules, sessions, uxEvents } from './db.ts';
 import { contentType } from './rpi.ts';
+import { RegenerateRefused } from './regenerate.ts';
 import { openDecision, Refusal } from './decision.ts';
 import { folderDiff } from './folderTasks.ts';
 import { fullDiff, listBranches, repoRoot, upstreamOf } from './git.ts';
@@ -90,7 +91,7 @@ const decodedPath = (segments: string[]) => {
   }
 };
 
-const withMarks = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: tasksWorkflows.of(s.id), architecture: tasksArchitecture.of(s.id) })) });
+const withMarks = (all: ReturnType<typeof snapshot>) => ({ ...all, sessions: all.sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: tasksWorkflows.of(s.id), architecture: tasksArchitecture.of(s.id), regeneration: S.regeneration(s.id) })) });
 
 const stateWith = (usage: Usage | null) =>
   ({ ...withMarks(snapshot()), schedules: schedules.all(), usage, pause: S.pauseState(), drift: drift(), terminalNotices: terminalNotices(), pitwall: ROOT });
@@ -134,6 +135,7 @@ const actions: ActionHandlers<string> = {
   'close-aside': async (id, b) => { await S.closeAside(id, b.aside); },
   'keep-architecture': async (id, b) => keepArchitecture(modelOf(id, b.model), b.stamp),
   'restore-architecture': async (_id, b) => { await restoreArchitecture(b.undo); },
+  'regenerate-architecture': (id, b) => { S.regenerateArchitecture(id, b.repos); },
 };
 
 const answering: ReadonlySet<ActionName> = new Set(['answer', 'answer-menu', 'answer-round', 'decline-menu', 'dismiss']);
@@ -173,7 +175,7 @@ export function createApp({ usage, ui }: AppDeps) {
   // A refusal is the page acting on a decision that moved on, not a fault. Node's own errors carry a code too.
   app.onError((err, c) => {
     const refused = err instanceof Refusal;
-    const invalid = refused || err instanceof Invalid || err instanceof KeepRefused;
+    const invalid = refused || err instanceof Invalid || err instanceof KeepRefused || err instanceof RegenerateRefused;
     if (!invalid) console.error(c.req.method, c.req.path, err);
     return c.json({ error: err instanceof Error ? err.message : String(err), ...(refused && { code: err.code }) }, invalid ? 400 : 500);
   });

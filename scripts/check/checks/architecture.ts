@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import type { Page } from '../cdp.ts';
-import { logged, openSheetOf, sidewaysScroll, type Check } from '../helpers.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { logged, menuItems, openSheetOf, settled, sidewaysScroll, type Check } from '../helpers.ts';
 import type { Mock } from '../mock.ts';
 import { STANDING_MODEL } from '../../mock/architectureModels.ts';
 
@@ -82,6 +84,43 @@ async function openArchitecture(page: Page, mock: Mock, id: string) {
 }
 
 const CONTEXT = ['billing', 'customer', 'shop', 'stripe'];
+const REGENERATED_CONTEXT = [...CONTEXT, 'ledger'];
+
+const MORE = '#task-sheet header button[aria-label="Session actions"]';
+
+async function openRegenerate(page: Page) {
+  await page.click(MORE);
+  await page.until('the menu', menuItems);
+  await page.click(':popover-open button', 'Regenerate architecture…');
+  await page.until('the dialog', () => !!document.querySelector<HTMLDialogElement>('dialog#regenerate-architecture')?.open);
+}
+
+// The open dialog's repositories, once it lists at least `count`.
+const dialogRepos = (count = 1) => {
+  const d = document.querySelector<HTMLDialogElement>('dialog#regenerate-architecture');
+  const rows = d?.open ? [...d.querySelectorAll<HTMLElement>('[data-regenerate-repo]')].map((l) => {
+    const box = l.querySelector('input')!;
+    return { name: l.dataset.regenerateRepo, path: l.querySelector('code')?.textContent, checked: box.checked, disabled: box.disabled };
+  }) : [];
+  return rows.length >= count ? rows : null;
+};
+
+const confirmDisabled = () => document.querySelector<HTMLButtonElement>('dialog#regenerate-architecture [data-regenerate-confirm]')?.disabled;
+
+const closeDialog = async (page: Page) => {
+  await page.key('Escape');
+  await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#regenerate-architecture')?.open);
+};
+
+async function folderTask(mock: Mock) {
+  const home = await mock.home();
+  const { sessionId } = await mock.post('/api/folder-tasks', { folder: `${home}/code`, name: 'ledger-sync', prompt: 'Book payments in the ledger' });
+  await mock.post('/mock/open-worktree', { id: sessionId, repo: 'storefront' });
+  await mock.post('/mock/open-worktree', { id: sessionId, repo: 'billing-api' });
+  return sessionId as string;
+}
+
+const regenerations = (mock: Mock) => logged(mock, 'the regeneration', (e) => e.action === 'regenerate-architecture');
 const CONTAINERS = ['billing', 'billing.api', 'billing.db', 'customer', 'shop', 'stripe'];
 const COMPONENTS = ['billing.api', 'billing.api.invoices', 'billing.api.payments', 'billing.api.retries', 'billing.api.webhooks', 'billing.db', 'shop', 'stripe'];
 
@@ -278,6 +317,139 @@ export const architecture: Check[] = [
       await page.until('the list', () => !!document.querySelector('[data-change-list]'));
       assert.deepEqual(await page.eval(sidewaysScroll), []);
       await shot('architecture-narrow');
+    },
+  },
+  {
+    name: 'ARCH.8 Regenerate architecture… in the ⋯ menu asks in a dialog with a checkbox per repository, all checked, each naming the main checkout whose model it replaces: the task\'s own repository, or each worktree a task across a folder of repos opened; with none checked it cannot go, Esc sends nothing, and it sends the ones checked',
+    scenario: 'architecture',
+    async run({ page, mock, shot, themes }) {
+      await openSheetOf(page, mock, 's-cart');
+      await page.click(MORE);
+      const items = await page.until('the menu', menuItems);
+      assert.deepEqual(items, ['Open in Ghostty', 'Open session in terminal', 'Open in Finder', 'Open in VS Code', 'Regenerate architecture…', 'Quit Claude', 'Archive', 'Clear task…'], 'offered with no model yet');
+      await page.key('Escape');
+      await page.until('the menu closed', () => !document.querySelector(':popover-open'));
+      await openRegenerate(page);
+      assert.deepEqual(await page.until('the repository', dialogRepos), [{ name: 'storefront', path: '~/code/storefront/.pitwall/architecture', checked: true, disabled: false }]);
+      assert.match(await page.eval(() => document.querySelector<HTMLDialogElement>('dialog#regenerate-architecture')!.innerText), /there is no Undo/);
+      await themes(async () => shot('regenerate-dialog'));
+      await page.click('dialog#regenerate-architecture [data-regenerate-repo="storefront"] input');
+      await page.until('Regenerate disabled with nothing checked', confirmDisabled);
+      await closeDialog(page);
+      assert.equal(await page.eval(() => location.pathname), '/s/s-cart/overview', 'Esc closes only the dialog');
+
+      const id = await folderTask(mock);
+      await openSheetOf(page, mock, id);
+      await openRegenerate(page);
+      const repos = await page.until('both repositories', dialogRepos, 2);
+      assert.deepEqual(repos, [
+        { name: 'storefront', path: '~/code/storefront/.pitwall/architecture', checked: true, disabled: false },
+        { name: 'billing-api', path: '~/code/billing-api/.pitwall/architecture', checked: true, disabled: false },
+      ]);
+      await shot('regenerate-dialog-folder');
+      assert.equal((await mock.log()).some((e) => e.action === 'regenerate-architecture'), false, 'nothing sent before Regenerate');
+      await page.click('dialog#regenerate-architecture [data-regenerate-repo="storefront"] input');
+      assert.equal(await page.eval(confirmDisabled), false);
+      await page.click('dialog#regenerate-architecture [data-regenerate-confirm]');
+      const [sent] = await regenerations(mock);
+      assert.deepEqual([sent.sessionId, sent.body, sent.status], [id, { repos: ['billing-api'] }, 204]);
+      await page.until('the dialog closed', () => !document.querySelector<HTMLDialogElement>('dialog#regenerate-architecture')?.open);
+    },
+  },
+  {
+    name: 'ARCH.9 while a regeneration runs a spinner turns on the ⋯ button and the menu item, the dialog shows the repository as being regenerated, and a second run for that main checkout is refused; once done, a task whose copy was the replaced model draws the new one, and a task with its own changes keeps them',
+    scenario: 'architecture',
+    async run({ page, mock, shot }) {
+      await openArchitecture(page, mock, 's-stripe');
+      await until(page, 'the copy of the project\'s model drawn', CONTEXT);
+      const [hooks] = (await summary(mock, 's-hooks')).models;
+      await mock.post('/mock/regenerate-hold');
+      await openRegenerate(page);
+      assert.deepEqual(await page.until('the repository', dialogRepos), [{ name: 'billing-api', path: '~/code/billing-api/.pitwall/architecture', checked: true, disabled: false }]);
+      await page.click('dialog#regenerate-architecture [data-regenerate-confirm]');
+      const [sent] = await regenerations(mock);
+      assert.deepEqual([sent.body, sent.status], [{ repos: [''] }, 204]);
+
+      const spinning = (selector: string) => {
+        const mark = document.querySelector(selector);
+        return !!mark && getComputedStyle(mark).animationName !== 'none';
+      };
+      await page.until('the spinner on ⋯', spinning, `${MORE} [data-regenerating]`);
+      await page.click(MORE);
+      await page.until('the spinner on the menu item', spinning, ':popover-open button[data-regeneration="running"] [data-regenerating]');
+      assert.match(await page.eval(() => document.querySelector(':popover-open button[data-regeneration="running"]')?.textContent ?? ''), /Opus is writing billing-api's model in its main checkout/);
+      await shot('regenerate-running');
+      await page.click(':popover-open button', 'Regenerate architecture…');
+      assert.deepEqual(await page.until('the repository being regenerated', dialogRepos), [{ name: 'billing-api', path: '~/code/billing-api/.pitwall/architecture', checked: false, disabled: true }]);
+      assert.equal(await page.eval(() => document.querySelector('[data-regenerating-note]')?.textContent), 'Being regenerated now');
+      assert.equal(await page.eval(confirmDisabled), true);
+      await closeDialog(page);
+
+      const refused = await fetch(`${mock.url}/api/sessions/s-hooks/regenerate-architecture`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repos: [''] }),
+      });
+      assert.equal(refused.status, 400);
+      assert.match((await refused.json()).error, /billing-api's architecture is being regenerated already/);
+
+      await mock.post('/mock/regenerate-release');
+      await until(page, 'the regenerated model drawn', REGENERATED_CONTEXT);
+      assert.equal(await page.eval(() => document.querySelector<HTMLSelectElement>('[data-diagram-picker]')?.selectedOptions[0]?.textContent), 'Billing in context, as on develop');
+      await page.until('the spinner gone', () => !document.querySelector('[data-regeneration]'));
+      const [after] = (await summary(mock, 's-hooks')).models;
+      assert.equal(after.stamp, hooks.stamp, 'the task\'s own changes stay');
+      assert.notEqual(after.standing, hooks.standing, 'against the new project model');
+      assert.equal((await summary(mock, 's-stripe')).models[0].stamp, after.standing, 'the untouched copy is the new model');
+    },
+  },
+  {
+    name: 'ARCH.10 a regeneration that fails shows only an icon on the ⋯ button, on the Wall too, and on the menu item, whose tooltip names the run\'s log; the next run clears it',
+    scenario: 'architecture',
+    async run({ page, mock, shot, themes }) {
+      await openSheetOf(page, mock, 's-hooks');
+      await mock.post('/mock/regenerate-fail', { error: 'claude -p exited 1: mock failure' });
+      await openRegenerate(page);
+      await page.click('dialog#regenerate-architecture [data-regenerate-confirm]');
+      await regenerations(mock);
+      await page.until('the icon on ⋯', () => !!document.querySelector('#task-sheet header button[aria-label="Session actions"] [data-regeneration-failed]'));
+      const log = '~/Library/Application Support/pitwall/sessions/s-hooks/architecture/billing-api.log';
+      const explain = await page.eval(() => document.querySelector('#task-sheet header button[aria-label="Session actions"]')?.getAttribute('data-explain') ?? '');
+      assert.ok(explain.includes(log), explain);
+      const home = await mock.home();
+      assert.match(readFileSync(join(home, log.slice(2)), 'utf8'), /Failed: claude -p exited 1: mock failure\n$/);
+
+      await page.click(MORE);
+      await page.until('the menu in place', settled);
+      await page.hover(':popover-open button[data-regeneration="failed"] [data-regeneration-failed]');
+      const tip = await page.until('the tooltip', () => document.querySelector('#tooltip:popover-open')?.textContent ?? null);
+      assert.ok(tip.includes(log), tip);
+      await themes(async () => shot('regenerate-failed'));
+
+      await page.goto(`${mock.url}/`);
+      await page.until('the icon on the tile', () => !!document.querySelector('[data-tile][data-session="s-hooks"] button[aria-label="Session actions"] [data-regeneration-failed]'));
+
+      await openSheetOf(page, mock, 's-hooks');
+      await openRegenerate(page);
+      await page.click('dialog#regenerate-architecture [data-regenerate-confirm]');
+      await page.until('the icon gone once the next run is done', () => !document.querySelector('[data-regeneration]'));
+      assert.match(readFileSync(join(home, log.slice(2)), 'utf8'), /Done\. Worktrees given the new model: [^\n]*stripe-18\/billing-api\n$/);
+    },
+  },
+  {
+    name: 'ARCH.11 in a narrow window the Regenerate architecture dialog of a task across a folder of repos fits, with nothing scrolling sideways',
+    scenario: 'architecture',
+    narrow: true,
+    async run({ page, mock, shot }) {
+      const id = await folderTask(mock);
+      await openSheetOf(page, mock, id);
+      await openRegenerate(page);
+      await page.until('both repositories', dialogRepos, 2);
+      assert.deepEqual(await page.eval(sidewaysScroll), []);
+      const fits = await page.eval(() => {
+        const r = document.querySelector('dialog#regenerate-architecture')!.getBoundingClientRect();
+        return r.left >= 0 && r.right <= innerWidth;
+      });
+      assert.ok(fits, 'the dialog is inside the window');
+      await shot('regenerate-dialog-narrow');
     },
   },
 ];

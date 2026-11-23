@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createApp, socketServer, UI_INDEX } from './app.ts';
+import { cleanup } from './cleanup.ts';
 import { onDrift } from './claudeFormat.ts';
 import { HOST, PORT, USAGE_FILE } from './config.ts';
 import { schedules, uxEvents } from './db.ts';
@@ -8,7 +9,7 @@ import { untilNextMinute } from './schedule.ts';
 import * as S from './sessions.ts';
 import { plan } from './tasks.ts';
 import { readEntry, watchEntry } from './uiEntry.ts';
-import { keepUploads } from './uploads.ts';
+import { keepUploads, pruneUploads } from './uploads.ts';
 import { watchUsage } from './usage.ts';
 import { KEEP_DAYS } from './uxlog.ts';
 import { notify, onChange, refreshWorkspace } from './workspace.ts';
@@ -23,9 +24,10 @@ const app = createApp({ usage, ui });
 keepUploads(() => schedules.all().flatMap((s) => s.task.files ?? []));
 onChange(S.sendDueDrafts);
 
-const pruneUx = () => uxEvents.prune(Date.now() - KEEP_DAYS * 86_400_000);
-pruneUx();
-setInterval(pruneUx, 86_400_000).unref();
+cleanup([
+  { name: 'uploads', run: pruneUploads },
+  { name: 'usage events', run: () => uxEvents.prune(Date.now() - KEEP_DAYS * 86_400_000) },
+]).start();
 
 await refreshWorkspace({ scan: true });
 await sync();

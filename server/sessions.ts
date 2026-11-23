@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { answering, Called } from './answering.ts';
@@ -9,7 +9,7 @@ import { listCommands } from './commands.ts';
 import { knowsCommand, rpiInvocation, slashName } from './slash.ts';
 import { conversationMeta, describeTool, exchanges, guessedTranscriptFile, hookedConversation, liveConversations, parseMenu, promptImage, signal, transcriptFile, type ConversationLog, type LiveProcess } from './conversations.ts';
 import { report } from './claudeFormat.ts';
-import { SESSIONS_DIR } from './config.ts';
+import { ROOT, SESSIONS_DIR } from './config.ts';
 import { handOver, taskOf } from './handover.ts';
 import { sessions, type Session, type Starting } from './db.ts';
 import { quote } from './env.ts';
@@ -18,7 +18,9 @@ import { CLAUDE, headless } from './headless.ts';
 import { asking, type AskBody } from './asides.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
-import { documentRoots, notify, repoView, taskWorktrees, workspace, type RepoView } from './workspace.ts';
+import { architectureRoots, documentRoots, notify, repoView, taskWorktrees, workspace, type RepoView } from './workspace.ts';
+import { ARCHITECTURE_DIR } from './architecture.ts';
+import { regenerating, regenerationPrompt, skillText } from './regenerate.ts';
 import { folderArgs } from './folderTasks.ts';
 import { inSync, retired, sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
@@ -372,6 +374,48 @@ export const closeAside = (id: string, aside: unknown) => asides.close(id, aside
 export const settleAsides = () => asides.settle(sessions.all());
 export const sweepAsides = () => asides.sweep(sessions.all());
 export const dropAsides = (gone: Session[]) => Promise.all(gone.map((s) => asides.drop(s)));
+
+const REGENERATE_MS = 45 * 60_000;
+const ARCHITECTURE_CHECK = `node ${join(ROOT, 'scripts', 'architecture.ts')} check`;
+const REGENERATE_TOOLS = 'Read,Grep,Glob,Write,Edit,Bash';
+
+// A run on Opus in the repository's main checkout, without MCP servers or hooks, as asides run. dontAsk refuses what
+// the allowed tools do not name, whatever the user's own permission mode is (under auto, the list alone limits nothing):
+// the run writes only the model, and its shell reads or runs the model's check.
+export const REGENERATE_ARGS = [
+  '--model', 'opus', '--permission-mode', 'dontAsk', '--settings', JSON.stringify({ disableAllHooks: true }), '--strict-mcp-config',
+  '--tools', REGENERATE_TOOLS,
+  '--allowedTools', 'Read', 'Grep', 'Glob', `Write(${ARCHITECTURE_DIR}/**)`, `Edit(${ARCHITECTURE_DIR}/**)`, `Bash(${ARCHITECTURE_CHECK})`,
+];
+
+const regenerations = regenerating({
+  roots: (id) => {
+    const s = sessions.get(id);
+    return s ? architectureRoots(s) : [];
+  },
+  checkout: (main) => {
+    const repo = workspace().find((r) => (r.worktrees.find((w) => w.isMain)?.path ?? r.path) === main);
+    return { base: repo?.base ?? null, worktrees: repo?.worktrees.filter((w) => !w.isMain).map((w) => w.path) ?? [] };
+  },
+  logFile: (id, repo) => join(SESSIONS_DIR, id, 'architecture', `${repo.replace(/[^\w.-]+/g, '-')}.log`),
+  prompt: async (repo) => regenerationPrompt(repo, skillText(await readFile(join(ROOT, 'config', 'skills', 'architecture', 'SKILL.md'), 'utf8'), ROOT)),
+  run: async ({ cwd, prompt, log }) => {
+    const out = await headless(prompt, {
+      cwd,
+      timeoutMs: REGENERATE_MS,
+      onEvent: (e) => log(JSON.stringify(e)),
+      args: [
+        ...REGENERATE_ARGS,
+      ],
+    });
+    log(JSON.stringify(out));
+    if (out.is_error) throw new Error(String(out.result || 'the run ended in an error'));
+  },
+  changed: notify,
+});
+
+export const regenerateArchitecture = (id: string, repos: string[]) => void regenerations.start(id, repos);
+export const regeneration = (id: string) => regenerations.of(id);
 
 const ends = turnEnds();
 const autoSending = new Set<string>();
