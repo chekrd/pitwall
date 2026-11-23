@@ -6,6 +6,8 @@ import { until } from '../cdp.ts';
 import { BOARD_HANDOFF } from '../../../server/rpi.ts';
 
 const DIR = '.pitwall/artifacts/invoice-export';
+const REQUEST = `${DIR}/01-request-invoice-export.md`;
+const QUESTIONS = `${DIR}/02-research-questions-invoice-export.md`;
 const RESEARCH = `${DIR}/03-research-invoice-export.md`;
 const DESIGN = `${DIR}/04-design-discussion-invoice-export.md`;
 const OUTLINE = `${DIR}/05-structure-outline-invoice-export.md`;
@@ -441,6 +443,39 @@ export const comments: Check[] = [
       await until('no mark left once sent', async () => !Object.keys(await outdatedOf(mock)).length, POSTED_MS);
       await page.until('the strip without outdated phases', () => !document.querySelector('#task-sheet [data-phase-strip] li[data-outdated]'));
       await page.until('the usual next step again', () => document.querySelector('#task-sheet [data-next-steps] button')?.textContent === 'Implement the next phase');
+    },
+  },
+  {
+    name: 'CM.6a the request, whose phase the research questions stand for, offers Rework later phases too: it marks the research questions and every later phase outdated, and the rework of the research questions is the only next step',
+    scenario: 'workflow',
+    clock: 'fast',
+    async run({ page, mock }) {
+      await page.goto(docUrl(mock, REQUEST));
+      await page.until('the request', headingIs, 'Original Request: Invoice CSV export');
+      await page.until('Rework later phases enabled', () => document.querySelector<HTMLButtonElement>('#task-sheet [data-rework-later]')?.disabled === false);
+      assert.match(await page.eval(explainOf, '#task-sheet [data-rework-later]') ?? '', /^Marks Questions, Research, Design discussion, Outline and Implement outdated/);
+      await page.click('#task-sheet [data-rework-later]', 'Rework later phases');
+      const marks = await until('the marks', async () => {
+        const o = await outdatedOf(mock);
+        return Object.keys(o).length === 5 && o;
+      });
+      assert.deepEqual(Object.fromEntries(Object.entries(marks).map(([p, m]) => [p, m.because])),
+        { questions: REQUEST, research: REQUEST, 'design-discussion': REQUEST, outline: REQUEST, implement: REQUEST });
+      await page.until('outdated on the strip', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-phase-strip] li[data-outdated]')].map((li) => li.dataset.phase)) === want,
+        JSON.stringify(['questions', 'research', 'design-discussion', 'outline', 'implement']));
+      const questionsRework = [
+        `/rpi:rpi update ${QUESTIONS}`,
+        `\`${REQUEST}\` changed after this document was written. Bring this document in line with the latest version of each and keep what still holds.`,
+        '',
+        BOARD_HANDOFF,
+      ].join('\n');
+      const [post] = await logged(mock, 'the rework sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
+      assert.deepEqual(post.body, { key: null, text: questionsRework, fresh: true, rework: 'questions' });
+      await page.until('the rework as the only next step', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLButtonElement>('#task-sheet [data-next-steps] button')].map((b) => `${b.dataset.variant === 'primary' ? '*' : ''}${b.textContent}`)) === want, JSON.stringify(['*Rework Questions']));
+
+      await page.click(`#task-sheet nav[aria-label="Documents"] button[data-document="${QUESTIONS}"]`);
+      const banner = await page.until('the banner on the research questions', () => document.querySelector<HTMLElement>('#task-sheet [data-outdated-banner]')?.innerText.replace(/\s+/g, ' '));
+      assert.equal(banner, 'Outdated: Original Request: Invoice CSV export changed after this was written. Rework now Keep as is');
     },
   },
   {

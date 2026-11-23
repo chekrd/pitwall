@@ -213,6 +213,9 @@ export interface Workflow {
   steps: WorkflowStep[];
   current: Phase | null;
   outline: Progress | null;
+  // The newest request. The questions step stands for the research questions once there are some, though the request
+  // comes before them.
+  request?: string | null;
   documents: number;
   folders: number;
   stamp: string;
@@ -240,7 +243,7 @@ export function stampOf(folders: TaskFolder[]) {
 
 // The phases of one task folder, from its documents alone: the furthest phase with a document is current, the ones
 // before it done, or skipped when they have none; the outline's checklist tells how far implementation got.
-export function stepsOf(docs: DocumentEntry[]): Pick<Workflow, 'flow' | 'steps' | 'current' | 'outline'> {
+export function stepsOf(docs: DocumentEntry[]): Pick<Workflow, 'flow' | 'steps' | 'current' | 'outline' | 'request'> {
   const typed = docs.filter((d) => d.type);
   const has = (p: Phase) => typed.some((d) => PHASE_OF[d.type!] === p);
   const declared = newest(typed.filter((d) => d.flow))?.flow ?? null;
@@ -259,7 +262,8 @@ export function stepsOf(docs: DocumentEntry[]): Pick<Workflow, 'flow' | 'steps' 
       : i === furthest ? (phase === 'implement' && finished ? 'done' : 'current') : 'next';
     return { phase, state, document: own?.path ?? null };
   });
-  return { flow, steps, current: steps.find((s) => s.state === 'current')?.phase ?? null, outline };
+  const request = newest(typed.filter((d) => d.type === 'request'))?.path ?? null;
+  return { flow, steps, current: steps.find((s) => s.state === 'current')?.phase ?? null, outline, request };
 }
 
 // The task's workflow is the folder last written to; a task with no documents has none.
@@ -392,17 +396,18 @@ export interface OutdatedMark {
 
 export type Outdated = Partial<Record<Phase, OutdatedMark>>;
 
-type Steps = Pick<Workflow, 'folder' | 'steps' | 'outline' | 'versions'>;
+type Steps = Pick<Workflow, 'folder' | 'steps' | 'outline' | 'versions' | 'request'>;
 
 // The phase `path` is the document of; only a phase's newest document stands for it.
 const stepOfDocument = (w: Pick<Workflow, 'steps'>, path: string) => w.steps.findIndex((s) => s.phase !== 'implement' && s.document === path);
 
 // The phases after the one of `path` that have got under way: each with a document, done or current, and Implement
-// once the outline's implementation has started.
-export function laterUnderWay(w: Pick<Workflow, 'steps' | 'outline'>, path: string): Phase[] {
-  const at = stepOfDocument(w, path);
-  if (at < 0) return [];
-  return w.steps.slice(at + 1)
+// once the outline's implementation has started. After the request, that is the questions phase on.
+export function laterUnderWay(w: Pick<Workflow, 'steps' | 'outline' | 'request'>, path: string): Phase[] {
+  const own = stepOfDocument(w, path);
+  const from = own >= 0 ? own + 1 : path === w.request ? w.steps.findIndex((s) => s.phase === 'questions') : -1;
+  if (from < 0) return [];
+  return w.steps.slice(from)
     .filter((s) => (s.phase === 'implement' ? !!w.outline?.started : !!s.document && (s.state === 'done' || s.state === 'current')))
     .map((s) => s.phase);
 }

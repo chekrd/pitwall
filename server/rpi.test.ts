@@ -237,6 +237,18 @@ test('the later phases under way of a document: each after it with a document, d
   assert.deepEqual(laterUnderWay(atDesign, docAt('02-research-t.md')), ['design-discussion'], 'the current one counts, the ones not yet do not');
 });
 
+test('the request stands before the research questions, which its phase stands for: a change to it outdates them and every later phase under way', () => {
+  const REQUEST = docAt('00-request-t.md');
+  assert.deepEqual(laterUnderWay(underWay({ request: REQUEST }), REQUEST), ['questions', 'research', 'design-discussion', 'outline', 'implement']);
+  assert.deepEqual(laterUnderWay(underWay(), REQUEST), [], 'not the request');
+  const marks = outdatedBy(underWay({ request: REQUEST }), REQUEST, 50);
+  assert.deepEqual(marks.questions, { document: docAt('01-research-questions-t.md'), version: 1, because: REQUEST, at: 50, earlier: {} });
+  assert.equal(firstOutdated(underWay(), marks), 'questions');
+  const alone = stepsOf([REQ]);
+  assert.equal(alone.request, alone.steps[0].document, 'with no research questions the request is the questions phase\'s own');
+  assert.deepEqual(laterUnderWay(alone, alone.request!), []);
+});
+
 test('marking the later phases outdated keeps each document at its version now, the earlier ones marked with it, and Implement with none', () => {
   const marks = outdatedBy(underWay(), docAt('02-research-t.md'), 50);
   assert.deepEqual(marks, {
