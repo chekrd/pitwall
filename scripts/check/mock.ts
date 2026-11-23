@@ -36,7 +36,7 @@ export interface UxRow {
 
 export type Mock = ReturnType<typeof client>;
 
-function client(url: string, stop: () => Promise<void>, alive = () => true) {
+function client(url: string, stop: () => Promise<void>, gone: () => string | null = () => null) {
   refuseLive(url);
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await fetch(url + path, {
@@ -49,7 +49,8 @@ function client(url: string, stop: () => Promise<void>, alive = () => true) {
   return {
     url,
     stop,
-    alive,
+    alive: () => !gone(),
+    gone,
     post: (path: string, body: unknown = {}) => call('POST', path, body),
     get: (path: string) => call('GET', path),
     log: (): Promise<Entry[]> => call('GET', '/mock/log'),
@@ -69,8 +70,10 @@ export async function startMock(o: { port?: number | undefined; dist: string }) 
   let output = '';
   child.stdout.on('data', (d) => (output += d));
   let exited = false;
-  child.once('exit', () => {
+  let ended = '';
+  child.once('exit', (code, signal) => {
     exited = true;
+    ended = signal ? `the mock was ended by ${signal}` : `the mock exited with code ${code}`;
     children.delete(child);
   });
   const url = await until('the mock to listen', () => {
@@ -85,5 +88,5 @@ export async function startMock(o: { port?: number | undefined; dist: string }) 
     child.kill('SIGTERM');
     for (let i = 0; i < 40 && !exited; i++) await sleep(50);
     if (!exited) child.kill('SIGKILL');
-  }, () => !exited);
+  }, () => (exited ? ended : null));
 }

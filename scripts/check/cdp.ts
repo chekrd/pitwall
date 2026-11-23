@@ -101,9 +101,15 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--use-mock-keychain', '--password-store=basic',
     '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', '--mute-audio',
     `--host-resolver-rules=MAP *:${LIVE_PORT} ~NOTFOUND`, 'about:blank',
-  ], { stdio: 'ignore' });
+  ], { stdio: ['ignore', 'ignore', 'pipe'] });
   let exited = false;
-  child.once('exit', () => (exited = true));
+  let ended = '';
+  let said = '';
+  child.stderr.on('data', (d) => (said = (said + d).slice(-2000)));
+  child.once('exit', (code, signal) => {
+    exited = true;
+    ended = signal ? `the browser was ended by ${signal}` : `the browser exited with code ${code}`;
+  });
 
   const discard = () => {
     discards.delete(discard);
@@ -370,6 +376,12 @@ export async function launch(binary = process.env.BROWSER || BRAVE) {
   return {
     newPage,
     alive: () => !exited && socket.readyState === WebSocket.OPEN,
+    gone: () => {
+      if (!exited && socket.readyState === WebSocket.OPEN) return null;
+      const why = exited ? ended : 'the browser closed its DevTools connection and still ran';
+      const last = said.trim().split('\n').slice(-5).join('\n');
+      return last ? `${why}; it last wrote:\n${last}` : why;
+    },
     async close() {
       await Promise.race([send('Browser.close').catch(() => {}), sleep(3000)]);
       socket.close();

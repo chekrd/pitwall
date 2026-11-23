@@ -16,7 +16,8 @@ import { startMock, type Mock } from './mock.ts';
 // and its screenshots, so both schemes are covered; --matrix instead runs every check in each scheme, at 1100×900
 // and with reduced motion too. --shots saves each check's screenshots under <dir>/<look>/; failures always land in
 // .e2e/. A check fails on an error in the page and on a request to any host but 127.0.0.1, where the mocks are.
-// A build older than its sources is refused, unless --stale.
+// A build older than its sources is refused, unless --stale. A check whose browser or mock goes away under it runs
+// once more on new ones, and its line says why they went.
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const FAILURES = join(ROOT, '.e2e');
@@ -206,6 +207,7 @@ async function runOne(mock: Mock, browser: Browser, check: Check, look: Look) {
 const results: (string | undefined)[] = [];
 let printed = 0;
 let failed = 0;
+let reran = 0;
 const report = (i: number, line: string) => {
   results[i] = line;
   while (results[printed] !== undefined) console.log(results[printed++]);
@@ -226,12 +228,9 @@ const startBrowser = async () => {
 async function work(next: () => number | undefined) {
   let mock = await startOwnMock();
   let browser = await startBrowser();
-  for (let i = next(); i !== undefined; i = next()) {
-    const [check, look] = runs[i];
-    const started = Date.now();
+  const attempt = async (check: Check, look: Look) => {
     let failure: { err: unknown; file: string | null } | null;
     try {
-      // A browser or mock that died takes down only the check it died in.
       if (!browser.alive()) {
         browsers.delete(browser);
         await browser.close().catch(() => {});
@@ -251,15 +250,32 @@ async function work(next: () => number | undefined) {
     } catch (err) {
       failure = { err, file: null };
     }
+    if (!failure) return { failure, gone: null };
+    // The process's exit can come a moment after the connection it held closed.
+    await sleep(500);
+    return { failure, gone: browser.gone() ?? mock.gone() };
+  };
+  for (let i = next(); i !== undefined; i = next()) {
+    const [check, look] = runs[i];
+    const started = Date.now();
+    // A browser or mock that went away under a check fails the run, not the check, which gets one more on new ones.
+    let { failure, gone } = await attempt(check, look);
+    const firstGone = gone;
+    if (gone) {
+      reran++;
+      ({ failure, gone } = await attempt(check, look));
+    }
     const took = `${((Date.now() - started) / 1000).toFixed(1)} s`;
+    const again = firstGone ? `\n      run again, as ${firstGone.split('\n').join('\n      ')}` : '';
     if (!failure) {
-      report(i, `ok    ${check.name} [${lookName(look)}] ${took}`);
+      report(i, `ok    ${check.name} [${lookName(look)}] ${took}${again}`);
       continue;
     }
     failed++;
     const message = failure.err instanceof Error ? (failure.err.stack ?? failure.err.message) : String(failure.err);
     const shot = failure.file ? relative(process.cwd(), failure.file) : 'none';
-    report(i, `FAIL  ${check.name} [${lookName(look)}] ${took}\n      ${message.split('\n').join('\n      ')}\n      screenshot: ${shot}`);
+    const lost = gone ? `\n      ${gone.split('\n').join('\n      ')}` : '';
+    report(i, `FAIL  ${check.name} [${lookName(look)}] ${took}${again}\n      ${message.split('\n').join('\n      ')}${lost}\n      screenshot: ${shot}`);
   }
 }
 
@@ -269,7 +285,8 @@ try {
   let taken = 0;
   const next = () => (taken < runs.length ? taken++ : undefined);
   await Promise.all(Array.from({ length: workers }, () => work(next)));
-  console.log(`${runs.length - failed} passed, ${failed} failed in ${Math.round((Date.now() - began) / 1000)} s`);
+  const again = reran ? `, ${reran} run again after their browser or mock went away` : '';
+  console.log(`${runs.length - failed} passed, ${failed} failed${again} in ${Math.round((Date.now() - began) / 1000)} s`);
 } finally {
   await stop();
 }
