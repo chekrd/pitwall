@@ -166,7 +166,9 @@ test('a task folder with nothing but its worktrees goes whole', async () => {
   await openWorktree({ repo: 'web', task_folder: path });
   task('tidy-task', null, path, 9301);
   running('tidy-task', 9301, path);
-  assert.equal((await deleteWorktreeLoss('tidy-task')).loose, 0);
+  mkdirSync(join(path, '.pitwall', 'artifacts', 'tidy'), { recursive: true });
+  writeFileSync(join(path, '.pitwall', 'artifacts', 'tidy', '01-request-tidy.md'), '# Tidy\n');
+  assert.equal((await deleteWorktreeLoss('tidy-task')).loose, 0, 'its .pitwall/ is no loose file');
   await deleteWorktree('tidy-task', { discard: true });
   assert.ok(!existsSync(path));
   assert.deepEqual(signalled, [9301]);
