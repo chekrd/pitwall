@@ -11,16 +11,17 @@ import { parseArgs, promisify } from 'node:util';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { z } from 'zod';
 import { answering, CLEAR, closeQuestion, liveTty, type Reply } from '../../server/answering.ts';
-import type { Target } from '../../server/delivery.ts';
+import { sendTo, type Target } from '../../server/delivery.ts';
+import { claudePrompt } from './claudePrompt.ts';
 import { clearings } from '../../server/clearing.ts';
-import { exchanges, fileMeta } from '../../server/conversations.ts';
+import { exchanges, fileMeta, type LiveState } from '../../server/conversations.ts';
 import {
   actionBodies, bodies, isAction, type ActionHandlers, type ActionInput, type Responses, type Route, type RouteInput, type Snapshot, type State,
 } from '../../server/contract.ts';
 import type { FullDiff, Upstream } from '../../server/git.ts';
 import type { Session } from '../../server/db.ts';
 import { checkDecision, DECLINED, Refusal } from '../../server/decision.ts';
-import { failure, NotPermitted } from '../../server/ghostty.ts';
+import { failure, NotPermitted, type Keystroke } from '../../server/ghostty.ts';
 import { handOver, taskOf } from '../../server/handover.ts';
 import { menuKeystrokes, type MenuAnswer } from '../../server/menu.ts';
 import { archivePatch, pickedUp } from '../../server/restart.ts';
@@ -418,18 +419,29 @@ const CLEARED_MS_MOCK = 3000;
 
 const isCommand = (s: Session, text: string) => text.startsWith('!') || knowsCommand(commandsIn(s.worktree), text);
 
-// The board typing into a session's terminal; a /clear there starts a new conversation that takes the task over, as
-// the server's sync sees it a moment later.
-function typeInto(to: Target, text: string) {
-  const s = state.sessions.find((x) => x.tty === to.tty && x.pid === to.pid);
-  typed.push({ session: s?.id ?? null, text });
-  if (s && text === CLEAR && !clearIgnored) {
-    later(TYPING_MS + 400, () => {
-      const now = find(s.id);
-      if (now) update(now.id, { ...handOver(now, randomUUID(), Date.now()), status: 'idle' });
-    });
-  }
-  return pause(typingMs);
+// The board typing into a session's terminal as the server does, into Claude Code's prompt, which logs what Enter sent;
+// a /clear there starts a new conversation that takes the task over, as the server's sync sees it a moment later.
+function typeInto(scenario: Scenario, to: Target, text: string, files?: string[]) {
+  const at = () => (scenario === state ? state.sessions.find((x) => x.tty === to.tty && x.pid === to.pid) : undefined);
+  const s = at();
+  const prompt = claudePrompt((sent) => {
+    typed.push({ session: s?.id ?? null, text: sent });
+    if (s && sent === CLEAR && !clearIgnored) {
+      later(TYPING_MS + 400, () => {
+        const now = find(s.id);
+        if (now) update(now.id, { ...handOver(now, randomUUID(), Date.now()), status: 'idle' });
+      });
+    }
+  });
+  const read = async (): Promise<LiveState> => {
+    const now = at();
+    return now ? { file: { sessionId: now.conversation, status: 'idle' }, ps: { start: '', tty: now.tty, pgid: 1, tpgid: 1 } } : { file: null, ps: null };
+  };
+  const terminal = { paste: prompt.paste, keys: async (strokes: Keystroke[]) => {
+    await prompt.keys(strokes);
+    await pause(typingMs);
+  } };
+  return sendTo(terminal, to, read, text, files, 0);
 }
 
 // One per scenario: a send still waiting its turn when another scenario loads is refused, not run on the new one.
@@ -440,7 +452,7 @@ function answeringFor(scenario: Scenario) {
   };
   return answering({
     store: { get, update },
-    send: typeInto,
+    send: (to, text, files) => typeInto(scenario, to, text, files),
     keys: () => pause(typingMs),
     clearedMs: CLEARED_MS_MOCK,
     notify: push,

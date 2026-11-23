@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { LiveState } from './conversations.ts';
 import { Refusal } from './decision.ts';
-import { hindrance, pressIn, sendTo, Unsent, type Driver, type Target } from './delivery.ts';
+import { commandPastes, hindrance, PASTE_CHARS, pressIn, sendTo, Unsent, type Driver, type Target } from './delivery.ts';
 import { PartlyTyped, type Keystroke } from './ghostty.ts';
 
 const target: Target = { pid: 7, tty: '/dev/ttys003', conversation: 'c1' };
@@ -71,4 +71,18 @@ test('keys are checked before the first one, and none go to a terminal that fail
   const gone = terminal(state({ sessionId: 'c2' }));
   await assert.rejects(pressIn(gone.d, target, gone.read, [{ key: 'escape' }]), Refusal);
   assert.deepEqual(gone.log, ['check']);
+});
+
+test('a command goes in a line per paste, a long line in pieces, so Claude Code shows none as [Pasted text] and runs it', async () => {
+  const t = terminal(state());
+  await sendTo(t.d, target, t.read, '/rpi:rpi Add a PDF export\nSame columns.\n\nEnd here.', [], 0);
+  assert.deepEqual(t.log, ['check', 'paste /rpi:rpi Add a PDF export\n', 'check', 'paste Same columns.\n', 'check', 'paste \n', 'check', 'paste End here.', 'check', 'keys enter']);
+  const long = `/rpi:rpi ${'a'.repeat(PASTE_CHARS)}\u{1F600}\nb`;
+  const pieces = commandPastes(long);
+  assert.equal(pieces.join(''), long);
+  assert.ok(pieces.every((p) => p.length <= PASTE_CHARS && (p.match(/\n/g) ?? []).length <= 1));
+  assert.equal(pieces.length, 3);
+  const answer = terminal(state());
+  await sendTo(answer.d, target, answer.read, 'one\ntwo\nthree\nfour', [], 0);
+  assert.deepEqual(answer.log, ['check', 'paste one\ntwo\nthree\nfour', 'check', 'keys enter'], 'an answer is no command and goes in one paste');
 });

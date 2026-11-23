@@ -44,6 +44,27 @@ async function verify(t: Target, read: Read, typed: boolean) {
 
 const CONTROL = /[^\P{Cc}\n\t]/gu;
 
+// Claude Code shows a paste of over 800 characters or 2 line breaks (fewer in a terminal under 13 rows) as a
+// placeholder, [Pasted text #1 +5 lines], and a prompt that starts with one is no command: it goes to Claude as pasted
+// text. Pastes in a row stay apart, so a command goes in a line at a time, each line in pieces of at most 800.
+export const PASTE_CHARS = 800;
+
+export function commandPastes(text: string) {
+  const pieces: string[] = [];
+  for (const line of text.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
+    let piece = '';
+    for (const char of line) {
+      if (piece.length + char.length > PASTE_CHARS) {
+        pieces.push(piece);
+        piece = '';
+      }
+      piece += char;
+    }
+    pieces.push(piece);
+  }
+  return pieces;
+}
+
 // A paste of text arrives as one prompt even with several lines; Enter goes separately once the TUI has taken it in.
 // Control characters are dropped so the text cannot end the paste and type keys itself. Claude Code turns a paste of
 // nothing but image paths into image attachments, so images go in a paste of their own first; other files stay paths
@@ -62,7 +83,8 @@ export async function sendTo(d: Driver, to: Target, read: Read, text: string, fi
     await pause();
   }
   const clean = [...files.filter((f) => !images.includes(f)), text.replaceAll('\r\n', '\n').replace(CONTROL, '')].filter(Boolean).join(' ');
-  if (clean) await paste(images.length ? ` ${clean}` : clean);
+  const body = images.length && clean ? ` ${clean}` : clean;
+  for (const piece of body.startsWith('/') ? commandPastes(body) : [body].filter(Boolean)) await paste(piece);
   await pause();
   await verify(to, read, typed);
   await d.keys([{ key: 'enter' }]);
