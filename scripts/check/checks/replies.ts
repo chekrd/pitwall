@@ -312,7 +312,7 @@ export const replies: Check[] = [
     },
   },
   {
-    name: 'P5.2.23 Terminal posts a send held on its session at once, before it asks for the terminal',
+    name: 'P5.2.23 Open session in terminal posts a send held on its session at once, before it asks for the terminal',
     async run({ page, mock }) {
       await openDecision(page, mock);
       await page.key('Enter');
@@ -320,12 +320,12 @@ export const replies: Check[] = [
       await page.click(toWall);
       await page.until('the Wall', tiles);
       await page.click('[data-tile][data-session="s-cart"] button[aria-label="Session actions"]');
-      await page.click(':popover-open button', 'Terminal');
+      await page.click(':popover-open button', 'Open session in terminal');
       const opened = Date.now();
       const [focus] = await logged(mock, 'the terminal request', (e) => e.action === 'focus');
       const sent = await actions(mock);
       assert.deepEqual(sent.map((e) => [e.action, e.sessionId, e.status]), [['answer', 's-cart', 204], ['focus', 's-cart', 204]]);
-      assert.ok(sent[0].at - opened < 1000 && focus.at - opened < 3000, `posted ${sent[0].at - opened} ms and focused ${focus.at - opened} ms after Terminal`);
+      assert.ok(sent[0].at - opened < 1000 && focus.at - opened < 3000, `posted ${sent[0].at - opened} ms and focused ${focus.at - opened} ms after Open session in terminal`);
     },
   },
   {

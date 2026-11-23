@@ -70,14 +70,14 @@ export function SessionMenu({ session, worktree, name }: { session: Session; wor
         <Icon name="more" size={18} />
       </button>
       <div id={id} popover="auto" className={styles.menu}>
+        <Item label="Open in Ghostty" note={`New shell in ${tilde(session.cwd, home)}`} onClick={pick(() => api('POST', '/api/shell', { worktree: session.cwd }).catch(reportError))} />
         {clearing ? null : exited ? (
           <Item label="Continue" note="Resume the conversation in a hidden terminal" onClick={act('focus', {})} />
         ) : (
-          <Item label="Terminal" note="Show its terminal in Ghostty" onClick={pick(() => openTerminal(session.id).catch(reportError))} />
+          <Item label="Open session in terminal" note="Show its terminal in Ghostty" onClick={pick(() => openTerminal(session.id).catch(reportError))} />
         )}
         <Item label="Open in Finder" note={path} onClick={act('finder', {})} />
         <Item label="Open in VS Code" note={path} onClick={act('vscode', {})} />
-        <Item label="Open in Ghostty" note={`New shell in ${tilde(session.cwd, home)}`} onClick={pick(() => api('POST', '/api/shell', { worktree: session.cwd }).catch(reportError))} />
         {!exited && !clearing && (
           <Item
             label="Quit Claude"
