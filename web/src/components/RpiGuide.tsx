@@ -208,7 +208,14 @@ export function RpiGuide() {
             Every step sends <code>/clear</code>, then rpi's command for the task's folder, so each phase starts in a new conversation; only{' '}
             <strong>Implement the next phase</strong> stays in the conversation: each outline phase goes to a new implementer anyway, and the conversation keeps what you said while checking the last one. Steps go only at the end of a turn.
           </li>
-          <li>Select a passage in Documents to comment on it; <strong>Send comments</strong> has rpi update that document from them.</li>
+          <li>
+            Comment on a passage you select in Documents, or on the whole document in the comments beside it; <strong>Send comments</strong> has rpi update that
+            document from them.
+          </li>
+          <li>
+            When a document changes after later phases were built on it, <strong>Rework later phases</strong> marks them outdated and reworks them in order, each
+            the next step until it is done; <strong>Keep as is</strong> takes a mark off.
+          </li>
           <li><strong>Implements with</strong>, beside Implement, picks the model rpi's implementer writes the code with; the task's own model reviews what it hands back.</li>
         </ul>
       </section>

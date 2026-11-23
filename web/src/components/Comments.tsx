@@ -1,62 +1,29 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
-import { cutQuote, isDocumentRef } from '../../../server/codeRef.ts';
-import { currentVersion } from '../../../server/rpi.ts';
-import { showTab } from '../router.ts';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { cutQuote } from '../../../server/codeRef.ts';
+import { sessionAction } from '../api.ts';
 import { active } from '../outbox.ts';
 import { useSends } from '../sends.ts';
-import type { DocumentRef, Parked, Session } from '../types.ts';
-import { explain, TIPS } from './explain.ts';
-import { park } from './Later.tsx';
+import type { ActionBody, DocComment, Session } from '../types.ts';
+import { ago } from '../util.ts';
+import { explain, type Explanation } from './explain.ts';
 import styles from './Comments.module.css';
 import { toast } from './Toasts.tsx';
-import { documentItem } from './Workflow.tsx';
-
-export type Comment = Parked & { ref: DocumentRef };
 
 export const fileName = (path: string) => path.split('/').at(-1) ?? path;
 
 export const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
-// The task's comments on its documents still under Later, those on their way to Claude left out.
-export function useComments(session: Session): Comment[] {
-  const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.drafts ?? [] : [])));
-  return session.parked.filter((d): d is Comment => isDocumentRef(d.ref) && !sending.has(d.id));
-}
+export const commentAction = <A extends 'add-comment' | 'edit-comment' | 'delete-comment'>(s: Session, action: A, body: ActionBody<A>) =>
+  sessionAction(s.id, action, body).then(() => true, (err: unknown) => {
+    toast('error', err instanceof Error ? err.message : String(err), { session: s.id });
+    return false;
+  });
 
-// The comment Later asked the Documents tab to show, until it has.
-let wanted: { path: string; id: string } | null = null;
-const listeners = new Set<() => void>();
-const changed = () => {
-  for (const fn of listeners) fn();
-};
-const subscribe = (fn: () => void) => {
-  listeners.add(fn);
-  return () => void listeners.delete(fn);
-};
-
-export const useWantedComment = () => useSyncExternalStore(subscribe, () => wanted);
-
-export function shownComment() {
-  wanted = null;
-  changed();
-}
-
-// The version a task's document is at now, or null for one the board has not read.
-export function documentVersion(session: Session, path: string) {
-  const v = session.workflow?.versions?.[path];
-  return v ? currentVersion(v) : null;
-}
-
-export function openComment(session: Session, comment: Comment) {
-  if (!session.workflow) {
-    toast('info', `${fileName(comment.ref.path)} is gone from the task's folder; the comment stays under Later`, { session: session.id });
-    return;
-  }
-  wanted = { path: comment.ref.path, id: comment.id };
-  changed();
-  const { version } = comment.ref;
-  const latest = documentVersion(session, comment.ref.path);
-  showTab('documents', documentItem(comment.ref.path), { version: version && latest && version < latest ? version : undefined });
+// The task's comments on its documents not sent yet, those on their way to Claude left out, and the ones sent.
+export function useComments(session: Session) {
+  const sending = new Set(useSends().filter(active).flatMap((i) => (i.sessionId === session.id ? i.body.comments ?? [] : [])));
+  const all = session.review.comments;
+  return { open: all.filter((c) => c.sentAt === null && !sending.has(c.id)), sent: all.filter((c) => c.sentAt !== null) };
 }
 
 const MARK = 'mark[data-comment]';
@@ -166,34 +133,40 @@ export function pickedIn(root: Element, scroller: HTMLElement): Picked | null {
   };
 }
 
-// A comment written about a passage selected in a document. Enter keeps it under Later, so nothing reaches Claude from
-// here; it goes with the document's other comments, from Later, or by itself when armed.
-export function CommentNote({ session, at, onDone }: { session: Session; at: DocumentRef; onDone: () => void }) {
+// Enter does the field's job and Shift+Enter breaks the line; Esc, when given, cancels.
+const onEnter = (run: () => void, cancel?: () => void) => (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  if (e.key === 'Escape' && cancel) {
+    e.preventDefault();
+    e.stopPropagation();
+    cancel();
+  }
+  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+  e.preventDefault();
+  run();
+};
+
+export interface Passage {
+  path: string;
+  version: number;
+  quote: string;
+  heading: string | null;
+}
+
+// A comment written about a passage selected in a document; Enter adds it to the document's comments, and nothing
+// reaches Claude until they are sent.
+export function CommentNote({ session, at, onDone }: { session: Session; at: Passage; onDone: () => void }) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => field.current?.focus({ preventScroll: true }), []);
-  const keep = (auto: boolean) => {
+  const add = () => {
     const t = text.trim();
     if (!t || saving) return;
     setSaving(true);
-    void park(session, 'park', { text: t, auto, ref: at }).then((ok) => {
+    void commentAction(session, 'add-comment', { ...at, text: t }).then((ok) => {
       setSaving(false);
-      if (!ok) return;
-      const where = `a comment on ${fileName(at.path)}`;
-      toast('info', auto ? `Goes to Claude when it's your turn: ${where}` : `Kept for later: ${where}`, { session: session.id });
-      onDone();
+      if (ok) onDone();
     });
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      onDone();
-    }
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    keep(false);
   };
   return (
     <div className={styles.note} data-comment-note>
@@ -201,18 +174,169 @@ export function CommentNote({ session, at, onDone }: { session: Session; at: Doc
       <textarea
         className={styles.field}
         aria-label={`A comment on ${fileName(at.path)}`}
-        placeholder="Write what should change. Enter keeps it for later; Shift+Enter breaks the line."
+        placeholder="Write what should change. Enter adds it; Shift+Enter breaks the line."
         ref={field}
         value={text}
         onChange={(e) => setText(e.currentTarget.value)}
-        onKeyDown={onKeyDown}
+        onKeyDown={onEnter(add, onDone)}
       />
       <div className={styles.actions}>
         <button type="button" onClick={onDone} data-explain="Esc">Cancel</button>
         <span className={styles.spacer} />
-        <button type="button" {...explain(TIPS.autoKeep)} disabled={!text.trim() || saving} onClick={() => keep(true)}>Send when it's my turn</button>
-        <button type="button" data-variant="primary" {...explain(TIPS.keep)} disabled={!text.trim() || saving} onClick={() => keep(false)}>Keep for later</button>
+        <button type="button" data-variant="primary" data-explain="Adds it to this document's comments; nothing is sent" disabled={!text.trim() || saving} onClick={add}>Add comment</button>
       </div>
     </div>
+  );
+}
+
+const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text);
+
+function remove(session: Session, c: DocComment) {
+  void commentAction(session, 'delete-comment', { comment: c.id });
+  toast('info', `Deleted the comment “${short(c.text)}”`, {
+    session: session.id,
+    action: { label: 'Undo', run: () => void commentAction(session, 'add-comment', { path: c.path, version: c.version, quote: c.quote, heading: c.heading, text: c.text, at: c.at, sentAt: c.sentAt }) },
+  });
+}
+
+function Where({ comment: c, latest, onShow }: { comment: DocComment; latest: number; onShow?: ((c: DocComment) => void) | undefined }) {
+  const older = c.version !== null && c.version < latest;
+  return (
+    <div className={styles.where}>
+      {c.quote === null
+        ? <span className={styles.whole} data-whole-label>Whole document</span>
+        : (
+          <button type="button" className={styles.passage} data-comment-passage disabled={!onShow} data-explain="Shows the passage in the document" onClick={() => onShow?.(c)}>
+            {c.heading && <span className={styles.heading}>{c.heading}</span>}
+            <blockquote className={styles.quote}>{c.quote}</blockquote>
+          </button>
+        )}
+      {older && (
+        <span className={styles.version} data-comment-version data-explain={`Written on v${c.version}; the document is at v${latest} now, which Claude is told when it gets the comment`}>
+          v{c.version}, now v{latest}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function OpenComment({ session, comment: c, latest, lit, onShow }: { session: Session; comment: DocComment; latest: number; lit: boolean; onShow: (c: DocComment) => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const save = () => {
+    const text = editing?.trim();
+    if (!text) return;
+    if (text !== c.text) void commentAction(session, 'edit-comment', { comment: c.id, text });
+    setEditing(null);
+  };
+  return (
+    <li className={styles.item} data-doc-comment={c.id} data-lit={lit || undefined}>
+      <Where comment={c} latest={latest} onShow={onShow} />
+      {editing === null
+        ? <p className={styles.text}>{c.text}</p>
+        : (
+          <textarea
+            className={styles.edit}
+            aria-label="Edit the comment"
+            value={editing}
+            autoFocus
+            onChange={(e) => setEditing(e.currentTarget.value)}
+            onKeyDown={onEnter(save, () => setEditing(null))}
+          />
+        )}
+      <div className={styles.actions}>
+        <span className={styles.spacer} />
+        {editing === null
+          ? (
+            <>
+              <button type="button" data-explain="Edits the comment's text" onClick={() => setEditing(c.text)}>Edit</button>
+              <button type="button" data-explain="Deletes the comment, with Undo for a moment" onClick={() => remove(session, c)}>Delete</button>
+            </>
+          )
+          : (
+            <>
+              <button type="button" onClick={() => setEditing(null)}>Cancel</button>
+              <button type="button" data-variant="primary" disabled={!editing.trim()} onClick={save}>Save</button>
+            </>
+          )}
+      </div>
+    </li>
+  );
+}
+
+function WholeField({ session, path, version }: { session: Session; path: string; version: number }) {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const add = () => {
+    const t = text.trim();
+    if (!t || saving) return;
+    setSaving(true);
+    void commentAction(session, 'add-comment', { path, version, quote: null, heading: null, text: t }).then((ok) => {
+      setSaving(false);
+      if (ok) setText('');
+    });
+  };
+  return (
+    <textarea
+      className={styles.wholeField}
+      data-whole-comment-field
+      aria-label="Comment on the whole document"
+      placeholder="Comment on the whole document"
+      value={text}
+      disabled={saving}
+      onChange={(e) => setText(e.currentTarget.value)}
+      onKeyDown={onEnter(add)}
+    />
+  );
+}
+
+interface PanelProps {
+  session: Session;
+  path: string;
+  // The version shown, which a comment written now is on, and the document's latest.
+  version: number;
+  latest: number;
+  open: DocComment[];
+  sent: DocComment[];
+  lit: string | null;
+  onShow: (c: DocComment) => void;
+  onSend: () => void;
+  sendTip: Explanation;
+  blocked: string | null;
+}
+
+// The shown document's comments beside it: those not sent yet, each to edit or delete, a field for one on the whole
+// document, the button that sends them, and the ones sent before.
+export function CommentsPanel({ session, path, version, latest, open, sent, lit, onShow, onSend, sendTip, blocked }: PanelProps) {
+  return (
+    <aside className={styles.panel} aria-label="Comments" data-comments-panel>
+      <h3 className={styles.label}>Comments{open.length > 0 && <span> · {open.length}</span>}</h3>
+      {open.length > 0
+        ? <ul className={styles.list}>{open.map((c) => <OpenComment key={c.id} session={session} comment={c} latest={latest} lit={lit === c.id} onShow={onShow} />)}</ul>
+        : <p className={styles.none}>Select a passage to comment on it, or write about the whole document below. Nothing reaches Claude until you send them.</p>}
+      <WholeField session={session} path={path} version={version} />
+      {open.length > 0 && (
+        <button type="button" className={styles.send} data-variant="primary" data-send-comments disabled={!!blocked} {...explain(blocked ? { does: blocked } : sendTip)} onClick={onSend}>
+          Send {plural(open.length, 'comment')}
+        </button>
+      )}
+      {sent.length > 0 && (
+        <details className={styles.sent} data-sent-comments>
+          <summary>Sent · {sent.length}</summary>
+          <ul className={styles.list}>
+            {sent.map((c) => (
+              <li key={c.id} className={styles.item} data-doc-comment={c.id} data-sent>
+                <Where comment={c} latest={latest} />
+                <p className={styles.text}>{c.text}</p>
+                <div className={styles.actions}>
+                  <span className={styles.meta}>Sent {ago(c.sentAt!)}{c.version !== null && ` · on v${c.version}`}</span>
+                  <span className={styles.spacer} />
+                  <button type="button" data-explain="Deletes the sent comment, with Undo for a moment" onClick={() => remove(session, c)}>Delete</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </aside>
   );
 }

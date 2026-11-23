@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cutQuote, documentCommentsMessage, draftMessage, MAX_QUOTE } from './codeRef.ts';
-import { BOARD_HANDOFF } from './rpi.ts';
+import { cutQuote, draftMessage, MAX_QUOTE } from './codeRef.ts';
 import { actionBodies } from './contract.ts';
 import type { Parked, Session } from './db.ts';
 import { addParked, editParked, endsOnQuestion, removeParked, turnEnds } from './parked.ts';
@@ -9,7 +8,7 @@ import { addParked, editParked, endsOnQuestion, removeParked, turnEnds } from '.
 const session = (patch: Partial<Session>): Session => ({
   id: 's', conversation: 's', history: [], repoId: 1, worktree: '/w', cwd: '/w', pid: 1, tty: '/dev/ttys1', title: null, firstPrompt: null, status: 'working',
   question: null, diffstat: null, lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: 't2', waitingFor: null,
-  dismissedAsk: null, round: null, dismissedRound: null, prs: [], activity: null, menu: null, answered: null, artifacts: [], links: [], model: null, effort: null, context: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], asides: [], aliveAt: null,
+  dismissedAsk: null, round: null, dismissedRound: null, prs: [], activity: null, menu: null, answered: null, artifacts: [], links: [], model: null, effort: null, context: null, interrupted: null, turnError: null, scheduled: null, starting: null, parked: [], review: { comments: [], outdated: {} }, asides: [], aliveAt: null,
   archived: false, createdAt: 0, updatedAt: 0, ...patch,
 });
 
@@ -167,30 +166,6 @@ test('a kept draft keeps the lines it was written about, and the turn end sends 
   assert.equal(w.observe([idle], [], 200)[0]?.text, 'About `a.ts` line 3:\n```\nlet a = 1;\n```\n\nMake it const.');
 });
 
-const DESIGN = '.pitwall/artifacts/invoice-export/04-design-discussion-invoice-export.md';
-const stream = { kind: 'document' as const, path: DESIGN, heading: 'Stream or build the file first?', quote: 'Streaming starts the download at once;\nbuilding first can report a row count.' };
-const units = { kind: 'document' as const, path: DESIGN, heading: 'Resolved Design Questions', quote: 'Amounts are written in major units with two decimals' };
-
-test('a comment on a document keeps its path, heading and passage; sent on its own it reads as prose about them, without a command', () => {
-  const [kept] = addParked([], { text: 'Say what a failed stream leaves behind.', ref: stream }, 50);
-  assert.deepEqual(kept.ref, stream);
-  assert.equal(draftMessage(kept), `About \`${DESIGN}\`, under “Stream or build the file first?”:\n> Streaming starts the download at once;\n> building first can report a row count.\n\nSay what a failed stream leaves behind.`);
-  assert.equal(draftMessage({ text: 'Shorter.', ref: { ...stream, heading: null, quote: 'Intro\n\nMore' } }), `About \`${DESIGN}\`:\n> Intro\n>\n> More\n\nShorter.`);
-  const { w, idle } = ended({}, [{ ...kept, auto: true, armedAt: 100 }]);
-  assert.equal(w.observe([idle], [], 200)[0]?.text, draftMessage(kept), 'armed, it goes alone the same way');
-});
-
-test("a document's comments go as one rpi command: update and the path on its first line, then each comment's heading, passage and text", () => {
-  const drafts = [{ text: 'Say what a failed stream leaves behind.', ref: stream }, { text: 'Keep minor units in the file too.', ref: units }, { text: 'Not a comment.' }];
-  assert.equal(documentCommentsMessage('/rpi:rpi', DESIGN, drafts), [
-    `/rpi:rpi update ${DESIGN}`,
-    'Under “Stream or build the file first?”:\n> Streaming starts the download at once;\n> building first can report a row count.\n\nSay what a failed stream leaves behind.',
-    'Under “Resolved Design Questions”:\n> Amounts are written in major units with two decimals\n\nKeep minor units in the file too.',
-    BOARD_HANDOFF,
-  ].join('\n\n'));
-  assert.equal(documentCommentsMessage('/rpi', DESIGN, [{ text: 'Why?', ref: { ...units, heading: null } }]), `/rpi update ${DESIGN}\n\n> Amounts are written in major units with two decimals\n\nWhy?\n\n${BOARD_HANDOFF}`);
-});
-
 test('a passage is kept trimmed, its blank lines at most one, and cut with an ellipsis at 600 characters', () => {
   assert.equal(cutQuote('  Streaming starts  \n\n\n\nat once.\n'), 'Streaming starts\n\nat once.');
   const long = cutQuote('word '.repeat(200));
@@ -198,34 +173,10 @@ test('a passage is kept trimmed, its blank lines at most one, and cut with an el
   assert.ok(long.endsWith('word…'));
 });
 
-test('a stored draft about lines from before document comments still parses and reads as before; a document ref is checked too', () => {
+test('a stored draft about lines still parses and reads as before; a draft about a document passage is no longer taken', () => {
   const park = actionBodies.park;
   const old = { text: 'Round it.', ref: { path: 'a.ts', side: 'new', start: 3, end: 3, lines: ['let a = 1;'] } };
   assert.deepEqual(park.parse(old), old);
   assert.equal(draftMessage(old as Parked), 'About `a.ts` line 3:\n```\nlet a = 1;\n```\n\nRound it.');
-  assert.deepEqual(park.parse({ text: 'x', ref: stream }).ref, stream);
-  assert.equal(park.safeParse({ text: 'x', ref: { ...stream, quote: 'q'.repeat(MAX_QUOTE + 1) } }).success, false);
-  assert.equal(park.safeParse({ text: 'x', ref: { ...stream, quote: '' } }).success, false);
-  assert.equal(park.safeParse({ text: 'x', ref: { kind: 'document', path: DESIGN, quote: 'q' } }).success, false, 'the heading is named, null when there is none');
-});
-
-test('a comment carries the version it was written on; only one on a version older than the latest says so, and one without a version reads as before', () => {
-  const onTwo = { ...stream, version: 2 };
-  assert.deepEqual(actionBodies.park.parse({ text: 'x', ref: onTwo }).ref, onTwo);
-  assert.equal(actionBodies.park.safeParse({ text: 'x', ref: { ...stream, version: 0 } }).success, false);
-  const moved = 'written on version 2; the document is at version 3 now, so the passage may have moved';
-  assert.equal(draftMessage({ text: 'Why?', ref: onTwo }, 3), `About \`${DESIGN}\`, under “Stream or build the file first?” (${moved}):\n> Streaming starts the download at once;\n> building first can report a row count.\n\nWhy?`);
-  assert.equal(draftMessage({ text: 'Why?', ref: onTwo }, 2), draftMessage({ text: 'Why?', ref: stream }), 'on the latest, as before');
-  assert.equal(draftMessage({ text: 'Why?', ref: stream }, 3), draftMessage({ text: 'Why?', ref: stream }), 'an unknown version, as before');
-  assert.equal(draftMessage({ text: 'Why?', ref: onTwo }, null), draftMessage({ text: 'Why?', ref: stream }), 'a document the board has not read');
-  assert.deepEqual(documentCommentsMessage('/rpi', DESIGN, [{ text: 'Why?', ref: onTwo }, { text: 'And?', ref: { ...units, heading: null, version: 1 } }, { text: 'Now.', ref: { ...units, version: 3 } }], 3).split('\n\n'), [
-    `/rpi update ${DESIGN}`,
-    `Under “Stream or build the file first?” (${moved}):\n> Streaming starts the download at once;\n> building first can report a row count.`, 'Why?',
-    'Written on version 1; the document is at version 3 now, so the passage may have moved:\n> Amounts are written in major units with two decimals', 'And?',
-    'Under “Resolved Design Questions”:\n> Amounts are written in major units with two decimals', 'Now.', BOARD_HANDOFF,
-  ]);
-  const parked: Parked[] = [{ id: 'c', text: 'Why?', auto: true, armedAt: 150, at: 0, ref: onTwo }];
-  const w = turnEnds((task, path) => (task === 's' && path === DESIGN ? 3 : null));
-  w.observe([session({ parked })], [], 100);
-  assert.equal(w.observe([session({ status: 'idle', parked, lastMessage: done })], [], 200)[0]?.text, draftMessage({ text: 'Why?', ref: onTwo }, 3), 'armed, it says so too');
+  assert.equal(park.safeParse({ text: 'x', ref: { kind: 'document', path: 'a.md', heading: null, quote: 'q' } }).success, false);
 });

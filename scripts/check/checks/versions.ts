@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { until } from '../cdp.ts';
-import type { Page } from '../cdp.ts';
 import { logged, openSheetOf, POSTED_MS, sidewaysScroll, stateOf, type Check } from '../helpers.ts';
 import type { Mock } from '../mock.ts';
+import { select } from './comments.ts';
 
 const DIR = '.pitwall/artifacts/invoice-export';
 const DESIGN = `${DIR}/04-design-discussion-invoice-export.md`;
@@ -49,28 +49,6 @@ const versionCounts = () => Object.fromEntries([...document.querySelectorAll<HTM
     const v = b.querySelector('[data-version-count]')?.textContent;
     return v ? [[b.dataset.document, v]] : [];
   }));
-
-const endsOf = (text: string) => {
-  const root = document.querySelector('#task-sheet [data-document-body] [data-markdown]')!;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
-    const at = node.data.indexOf(text);
-    if (at < 0) continue;
-    const range = document.createRange();
-    range.setStart(node, at);
-    range.setEnd(node, at + text.length);
-    (node.parentElement as HTMLElement).scrollIntoView({ block: 'center' });
-    const rects = [...range.getClientRects()];
-    return { from: { x: rects[0].left + 1, y: rects[0].top + rects[0].height / 2 }, to: { x: rects.at(-1)!.right - 1, y: rects.at(-1)!.top + rects.at(-1)!.height / 2 } };
-  }
-  return null;
-};
-
-async function select(page: Page, text: string) {
-  const at = await page.until(`"${text}" in the document`, endsOf, text);
-  await page.drag(at.from, at.to);
-  assert.equal(await page.eval(() => getSelection()?.toString()), text);
-}
 
 const frameOf = () => {
   const f = document.querySelector('#task-sheet iframe');
@@ -165,7 +143,7 @@ export const versions: Check[] = [
     },
   },
   {
-    name: 'VER.3 a comment on an older version carries it: marked only in that version, not in the latest where its passage still stands; Later says v2, now v3, opens that version at the passage, and Send now tells Claude it was written on an older version',
+    name: 'VER.3 a comment on an older version carries it: marked in that version and in any other that still has its passage; the panel says v2, now v3, and the comments sent tell Claude it was written on an older version',
     scenario: 'workflow',
     clock: 'fast',
     async run({ page, mock, shot }) {
@@ -177,29 +155,24 @@ export const versions: Check[] = [
       await page.type('Is the row count worth the wait?');
       await page.key('Enter');
       await page.until('the box to close', () => !document.querySelector('#task-sheet [data-comment-note]'));
-      const kept = (await stateOf(mock, 's-export')).parked.find((p: { text: string }) => p.text === 'Is the row count worth the wait?');
-      assert.deepEqual(kept.ref, { kind: 'document', path: DESIGN, heading: 'Stream or build the file first?', quote: PASSAGE, version: 2 });
+      const kept = await until('the comment kept', async () => (await stateOf(mock, 's-export')).review.comments.find((c: { text: string }) => c.text === 'Is the row count worth the wait?'));
+      assert.deepEqual([kept.path, kept.heading, kept.quote, kept.version], [DESIGN, 'Stream or build the file first?', PASSAGE, 2]);
       await page.until('marked in v2', () => document.querySelectorAll('#task-sheet [data-document-body] mark[data-comment]').length > 0);
       assert.deepEqual(await page.eval(marked), [kept.id]);
 
       await page.click('#task-sheet [data-versions] button', 'v3');
       await page.until('v3', () => document.querySelector<HTMLElement>('#task-sheet [data-document-body]')?.innerText.includes('Recommendation: stream'));
-      assert.ok((await page.eval(bodyText)).includes(PASSAGE), 'the passage stands in v3 too');
-      assert.deepEqual(await page.eval(marked), [], 'but the comment is marked only in the version it was written on');
-
-      await page.key('1');
-      const caption = await page.until('the comment under Later', (id: string) => document.querySelector(`#task-sheet [data-later] li[data-parked="${id}"] [data-comment-version]`)?.textContent, kept.id);
+      await page.until('marked in v3 too, where its passage still stands', () => document.querySelectorAll('#task-sheet [data-document-body] mark[data-comment]').length > 0);
+      assert.deepEqual(await page.eval(marked), [kept.id]);
+      const caption = await page.until('the version in the panel', (id: string) => document.querySelector(`#task-sheet [data-comments-panel] li[data-doc-comment="${id}"] [data-comment-version]`)?.textContent, kept.id);
       assert.equal(caption, 'v2, now v3');
-      await shot('later-comment-on-older-version');
-      await page.click(`#task-sheet [data-later] li[data-parked="${kept.id}"] [data-document-ref] button`);
-      await page.until('v2 opened at the passage, lit', (want: string) => location.pathname + location.search === want &&
-        [...document.querySelectorAll('#task-sheet [data-document-body] mark[data-lit]')].map((m) => m.textContent).join('') === 'Streaming starts the download at once',
-      `/s/s-export/documents/${encodeURIComponent(DESIGN)}?v=2`);
+      await shot('comment-on-older-version');
 
-      await page.key('1');
-      await page.click(`#task-sheet [data-later] li[data-parked="${kept.id}"] button`, 'Send now');
+      await page.until('Send enabled', () => document.querySelector<HTMLButtonElement>('#task-sheet [data-send-comments]')?.disabled === false);
+      await page.click('#task-sheet [data-send-comments]');
       const [post] = await logged(mock, 'the comment sent', (e) => e.action === 'answer' && e.sessionId === 's-export', POSTED_MS);
-      assert.equal(post.body.text, `About \`${DESIGN}\`, under “Stream or build the file first?” (written on version 2; the document is at version 3 now, so the passage may have moved):\n> ${PASSAGE}\n\nIs the row count worth the wait?`);
+      assert.equal(post.body.text.split('\n\n').slice(0, 3).join('\n\n'),
+        `/rpi:rpi update ${DESIGN}\n\nUnder “Stream or build the file first?” (written on version 2; the document is at version 3 now, so the passage may have moved):\n> ${PASSAGE}\n\nIs the row count worth the wait?`);
     },
   },
   {

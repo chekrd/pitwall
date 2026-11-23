@@ -84,10 +84,13 @@ const rpiTasks = (now: number) => [
     lastTurn: 't-export-5',
     artifacts: EXPORT_FLOW_PAGES.map((_, i) => ({ id: `art-export-${i + 1}`, title: EXPORT_FLOW, at: now - (50 - 20 * i) * MIN, version: i + 1 })),
     // A comment on the outline whose passage has been rewritten since, so it is no longer marked.
-    parked: [{
-      id: 'p-export-batch', text: 'Name the batch size, and why it is 500.', auto: false, armedAt: null, at: now - 30 * MIN,
-      ref: { kind: 'document', path: '.pitwall/artifacts/invoice-export/05-structure-outline-invoice-export.md', heading: 'Phase 2: GET /invoices/export streams a month', quote: 'Stream 500 invoices at a time' },
-    }],
+    review: {
+      comments: [{
+        id: 'p-export-batch', path: '.pitwall/artifacts/invoice-export/05-structure-outline-invoice-export.md', version: null,
+        heading: 'Phase 2: GET /invoices/export streams a month', quote: 'Stream 500 invoices at a time', text: 'Name the batch size, and why it is 500.', at: now - 30 * MIN, sentAt: null,
+      }],
+      outdated: {},
+    },
   }),
   session({
     id: 's-search-page', repoId: 4, worktree: RPI_WORKTREES[1][1], tty: '/dev/ttys024', pid: 83190,

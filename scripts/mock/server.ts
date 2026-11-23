@@ -34,7 +34,8 @@ import { readEntry, watchEntry } from '../../server/uiEntry.ts';
 import { cleanBatch, type UxEvent } from '../../server/uxlog.ts';
 import { ARCHITECTURE_DIR, architectures, architectureView, keepArchitecture, modelRoots, restoreArchitecture } from '../../server/architecture.ts';
 import { documentFile, taskFolders, workflows } from '../../server/documents.ts';
-import { contentType, currentVersion, RPI_DIR, RPI_NEEDS_WORKTREE, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
+import { contentType, outdatedBy, RPI_DIR, RPI_NEEDS_WORKTREE, rpiPrompt, taskDirName, withoutHandoff } from '../../server/rpi.ts';
+import { addComment, editComment, keepPhase, markOutdated, markSent, pruneReview, removeComments } from '../../server/review.ts';
 import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
@@ -225,6 +226,12 @@ async function refreshDocuments() {
     store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' }))),
     models.refresh(state.sessions.map((s) => ({ id: s.id, models: modelRoots(s, state.repos) }))),
   ]);
+  if (store === docs) {
+    for (const s of state.sessions) {
+      const review = pruneReview(s.review, store.of(s.id));
+      if (review !== s.review) update(s.id, { review });
+    }
+  }
   if ((changed && store === docs) || (modelsChanged && models === architecture)) push();
 }
 setInterval(() => void refreshDocuments().catch((err) => console.warn('documents', err)), 1000);
@@ -281,7 +288,7 @@ function load(name: string) {
   dropUntil = 0;
   announced = null;
   pausing.cancel();
-  ends = turnEnds(latestOf);
+  ends = turnEnds();
   drift = [];
   ghosttyRefuses = false;
   terminalNotices = [];
@@ -442,11 +449,7 @@ function answeringFor(scenario: Scenario) {
 let answers = answeringFor(state);
 
 // As the server's: armed drafts go out as one message at a real end of the turn.
-const latestOf = (id: string, path: string) => {
-  const v = docs.of(id)?.versions?.[path];
-  return v ? currentVersion(v) : null;
-};
-let ends = turnEnds(latestOf);
+let ends = turnEnds();
 
 function sendDueDrafts() {
   if (args.legacy) return;
@@ -480,7 +483,10 @@ const asides = asking({
 async function answerWithDrafts(s: Session, body: ActionInput<'answer'>) {
   await answers.answer(s.id, body);
   const now = find(s.id);
-  if (now && body.drafts?.length) update(now.id, { parked: removeParked(now.parked, body.drafts) });
+  if (!now) return;
+  if (body.drafts?.length) update(now.id, { parked: removeParked(now.parked, body.drafts) });
+  if (body.comments?.length) update(now.id, { review: markSent(now.review, body.comments) });
+  if (body.rework === 'implement') update(now.id, { review: keepPhase(now.review, 'implement') });
 }
 
 function legacyAnswer(s: Session, reply: Reply, commands = true) {
@@ -534,6 +540,15 @@ const actions: ActionHandlers<Session> = {
     if (body.auto) ends.armed(s);
   },
   unpark: (s, body) => update(s.id, { parked: removeParked(s.parked, [body.draft]) }),
+  'add-comment': (s, body) => update(s.id, { review: addComment(s.review, body) }),
+  'edit-comment': (s, body) => update(s.id, { review: editComment(s.review, body) }),
+  'delete-comment': (s, body) => update(s.id, { review: removeComments(s.review, [body.comment]) }),
+  'mark-outdated': (s, body) => {
+    const workflow = docs.of(s.id);
+    if (!workflow) throw new Error('this task has no documents');
+    update(s.id, { review: markOutdated(s.review, outdatedBy(workflow, body.because, Date.now())) });
+  },
+  'keep-outdated': (s, body) => update(s.id, { review: keepPhase(s.review, body.phase) }),
   'ask-aside': (s, body) => ({ id: asides.ask(s.id, body) }),
   'stop-aside': (s, body) => asides.stop(s.id, body.aside),
   'close-aside': (s, body) => asides.close(s.id, body.aside),
@@ -678,7 +693,7 @@ function startSession(repoId: number | null, worktree: string, o: { id?: string;
     firstPrompt: withoutHandoff(o.prompt ?? '') || null, status: working ? 'working' : 'idle', question: null, diffstat: null,
     lastMessage: null, lastPrompt: null, unanswered: null, lastTurn: null, waitingFor: null, dismissedAsk: null, round: null, dismissedRound: null, prs: [],
     activity: working ? { step: args.legacy ? 'Thinking' : null, since: now } : null, menu: null, answered: null, artifacts: [], links: [],
-    model: o.model || null, effort: o.effort || null, context: null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, starting: null, parked: [], asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,
+    model: o.model || null, effort: o.effort || null, context: null, interrupted: null, turnError: null, scheduled: o.scheduled ?? null, starting: null, parked: [], review: { comments: [], outdated: {} }, asides: [], aliveAt: null, archived: false, createdAt: now, updatedAt: now,
   });
   push();
   return id;

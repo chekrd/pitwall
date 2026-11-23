@@ -6,7 +6,7 @@ import type { Command } from './commands.ts';
 import type { ConversationLog } from './conversations.ts';
 import type { FullDiff, Upstream } from './git.ts';
 import type { pauser } from './pause.ts';
-import type { TaskFolder } from './rpi.ts';
+import type { Phase, TaskFolder } from './rpi.ts';
 import type { WorktreeLoss } from './removal.ts';
 import type { Run, Schedule, TaskRequest } from './schedule.ts';
 import type { DocumentVersion } from './versions.ts';
@@ -21,6 +21,8 @@ const key = z.string().nullable().optional();
 const none = z.strictObject({});
 const files = z.array(z.string()).optional();
 const workflow = z.enum(['rpi']).optional();
+const phase = z.enum(['questions', 'research', 'design', 'design-discussion', 'prd', 'tdd', 'outline', 'implement']) satisfies z.ZodType<Phase>;
+const ids = z.array(z.string()).optional();
 
 // What New task posts to start a task now; a schedule keeps the same with every field filled in.
 const repoTask = z.strictObject({
@@ -43,8 +45,8 @@ const optionalPaused = z.strictObject({ paused: z.boolean().optional() });
 
 export const actionBodies = {
   answer: z.strictObject({
-    key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: z.array(z.string()).optional(),
-    fresh: z.boolean().optional(),
+    key, choice: z.string().optional(), text: z.string().optional(), files: z.array(z.string()).optional(), drafts: ids,
+    fresh: z.boolean().optional(), comments: ids, rework: phase.optional(),
   }),
   dismiss: z.strictObject({ key }),
   rename: z.strictObject({ title: z.string() }),
@@ -63,19 +65,21 @@ export const actionBodies = {
   'dismiss-clear-error': none,
   park: z.strictObject({
     text: z.string(), auto: z.boolean().optional(),
-    ref: z.union([
-      z.strictObject({
-        path: z.string().min(1).max(1000), side: z.enum(['old', 'new']), start: z.number().int().min(1), end: z.number().int().min(1),
-        lines: z.array(z.string().max(MAX_REF_LINE)).max(MAX_REF_LINES),
-      }).refine((r) => r.start <= r.end, 'the lines run backwards'),
-      z.strictObject({
-        kind: z.literal('document'), path: z.string().min(1).max(1000), heading: z.string().max(500).nullable(), quote: z.string().min(1).max(MAX_QUOTE),
-        version: z.number().int().min(1).optional(),
-      }),
-    ]).optional(),
+    ref: z.strictObject({
+      path: z.string().min(1).max(1000), side: z.enum(['old', 'new']), start: z.number().int().min(1), end: z.number().int().min(1),
+      lines: z.array(z.string().max(MAX_REF_LINE)).max(MAX_REF_LINES),
+    }).refine((r) => r.start <= r.end, 'the lines run backwards').optional(),
   }),
   'edit-park': z.strictObject({ draft: z.string(), text: z.string().optional(), auto: z.boolean().optional() }),
   unpark: z.strictObject({ draft: z.string() }),
+  'add-comment': z.strictObject({
+    path: z.string().min(1).max(1000), version: z.number().int().min(1).nullable(), quote: z.string().min(1).max(MAX_QUOTE).nullable(),
+    heading: z.string().max(500).nullable(), text: z.string(), at: z.number().optional(), sentAt: z.number().nullable().optional(),
+  }),
+  'edit-comment': z.strictObject({ comment: z.string(), text: z.string() }),
+  'delete-comment': z.strictObject({ comment: z.string() }),
+  'mark-outdated': z.strictObject({ because: z.string().min(1).max(1000) }),
+  'keep-outdated': z.strictObject({ phase }),
   'ask-aside': z.strictObject({
     text: z.string(), aside: z.string().nullable().optional(), about: z.strictObject({ round: z.string(), question: z.string() }).optional(),
     model: z.string().optional(), effort: z.string().optional(),

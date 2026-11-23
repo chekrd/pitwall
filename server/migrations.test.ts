@@ -108,7 +108,39 @@ test('step 12 makes each stored artifact version 1 of its title', () => {
   add.run('two', JSON.stringify([{ id: 'a', title: 'Flow', at: 1 }, { id: 'b', title: 'States', at: 2 }]), 'two');
   add.run('none', null, 'none');
   migrate(db);
-  assert.equal(version(db), 12);
+  assert.equal(version(db), migrations.length);
   const rows = Object.fromEntries(db.prepare('SELECT id, artifacts FROM sessions').all().map((r) => [r.id, r.artifacts && JSON.parse(String(r.artifacts))]));
   assert.deepEqual(rows, { two: [{ id: 'a', title: 'Flow', at: 1, version: 1 }, { id: 'b', title: 'States', at: 2, version: 1 }], none: null });
+});
+
+test('step 13 moves each draft about a document passage out of Later into the comments, unsent, and leaves the other drafts', () => {
+  const db = new DatabaseSync(':memory:');
+  migrate(db, migrations.slice(0, 12));
+  const doc = '.pitwall/artifacts/t/04-design-discussion-t.md';
+  const lines = { id: 'l', text: 'Make it const.', auto: true, armedAt: 5, at: 1, ref: { path: 'a.ts', side: 'new', start: 3, end: 3, lines: ['let a = 1;'] } };
+  const plain = { id: 'p', text: 'Also the credit notes.', auto: false, armedAt: null, at: 2 };
+  const onV2 = { id: 'c1', text: 'Why stream?', auto: false, armedAt: null, at: 3, ref: { kind: 'document', path: doc, heading: 'Stream?', quote: 'Streaming starts', version: 2 } };
+  const old = { id: 'c2', text: 'Name the batch.', auto: true, armedAt: 4, at: 4, ref: { kind: 'document', path: doc, heading: null, quote: 'Stream 500' } };
+  const add = db.prepare("INSERT INTO sessions (id, worktree, cwd, status, parked, created_at, updated_at, conversation) VALUES (?, '/r', '/r', 'idle', ?, 1, 1, ?)");
+  add.run('mixed', JSON.stringify([lines, onV2, plain, old]), 'mixed');
+  add.run('drafts', JSON.stringify([plain]), 'drafts');
+  add.run('none', null, 'none');
+  migrate(db);
+  assert.equal(version(db), migrations.length);
+  const rows = Object.fromEntries(db.prepare('SELECT id, parked, review FROM sessions').all()
+    .map((r) => [r.id, { parked: r.parked && JSON.parse(String(r.parked)), review: r.review && JSON.parse(String(r.review)) }]));
+  assert.deepEqual(rows, {
+    mixed: {
+      parked: [lines, plain],
+      review: {
+        comments: [
+          { id: 'c1', path: doc, version: 2, quote: 'Streaming starts', heading: 'Stream?', text: 'Why stream?', at: 3, sentAt: null },
+          { id: 'c2', path: doc, version: null, quote: 'Stream 500', heading: null, text: 'Name the batch.', at: 4, sentAt: null },
+        ],
+        outdated: {},
+      },
+    },
+    drafts: { parked: [plain], review: null },
+    none: { parked: null, review: null },
+  });
 });

@@ -1,5 +1,5 @@
 import { checkDecision, decisionKey, Refusal } from '../../server/decision.ts';
-import type { MenuAnswer, RoundAnswers, Session, SessionStatus } from './types.ts';
+import type { MenuAnswer, Phase, RoundAnswers, Session, SessionStatus } from './types.ts';
 import { menuStuck } from './util.ts';
 
 export type Action = 'answer' | 'answer-menu' | 'answer-round' | 'decline-menu' | 'dismiss';
@@ -20,6 +20,10 @@ export interface Body {
   drafts?: string[];
   // A command typed after a /clear, once Claude has started the new conversation.
   fresh?: boolean;
+  // Document comments the send carries, sent once it went out.
+  comments?: string[];
+  // The outdated phase the send reworks.
+  rework?: Phase;
 }
 
 export interface Request {

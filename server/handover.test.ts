@@ -28,7 +28,7 @@ test('a hand-over keeps the old conversation as history and drops only what its 
   assert.deepEqual(patch.history, [{ id: 'a', lastMessage: 'Done with the parser.', until: 5 }]);
   assert.equal(patch.conversation, 'a2');
   assert.deepEqual([patch.lastMessage, patch.lastTurn, patch.question, patch.menu], [null, null, null, null]);
-  for (const kept of ['title', 'firstPrompt', 'artifacts', 'links', 'parked', 'asides']) assert.ok(!(kept in patch), kept);
+  for (const kept of ['title', 'firstPrompt', 'artifacts', 'links', 'parked', 'review', 'asides']) assert.ok(!(kept in patch), kept);
   const back = handOver({ conversation: 'a2', history: patch.history, lastMessage: null }, 'a', 9);
   assert.deepEqual(back.history, [{ id: 'a2', lastMessage: null, until: 9 }]);
 });

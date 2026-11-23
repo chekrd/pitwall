@@ -1,4 +1,4 @@
-import type { CodeRef, DocumentRef, Parked } from './db.ts';
+import type { CodeRef, DocComment, Parked } from './db.ts';
 import { BOARD_HANDOFF } from './rpi.ts';
 
 // Also imported by the UI, so nothing imported here may load the server.
@@ -16,8 +16,6 @@ function fenced(lines: readonly string[]) {
 
 export const MAX_QUOTE = 600;
 
-export const isDocumentRef = (r: Parked['ref']): r is DocumentRef => r?.kind === 'document';
-
 // A passage as a comment keeps it: trimmed, and at most MAX_QUOTE characters, the rest cut with an ellipsis.
 export function cutQuote(text: string) {
   const t = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -26,34 +24,30 @@ export function cutQuote(text: string) {
 
 const quoted = (quote: string) => quote.split('\n').map((l) => (l.trim() ? `> ${l}` : '>')).join('\n');
 
-const commented = (r: DocumentRef, text: string) => `${quoted(r.quote)}\n\n${text}`;
-
 // Only a comment written on a version of its document older than `latest` says which, as its passage may have moved.
-export function olderVersion(r: DocumentRef, latest: number | null | undefined) {
-  return r.version && latest && r.version < latest ? `written on version ${r.version}; the document is at version ${latest} now, so the passage may have moved` : null;
+export function olderVersion(c: Pick<DocComment, 'version'>, latest: number | null | undefined) {
+  return c.version && latest && c.version < latest ? `written on version ${c.version}; the document is at version ${latest} now, so the passage may have moved` : null;
 }
 
-// The comments on one document as one rpi command, `update <path>` on the command's own first line; each comment
-// follows as its heading, the passage quoted, then what was written about it. `latest` is the document's version now.
-export function documentCommentsMessage(invocation: string, path: string, drafts: readonly Pick<Parked, 'text' | 'ref'>[], latest?: number | null) {
-  const parts = drafts.flatMap(({ ref: r, text }) => {
-    if (!isDocumentRef(r)) return [];
-    const older = olderVersion(r, latest);
-    if (r.heading) return [`Under “${r.heading}”${older ? ` (${older})` : ''}:\n${commented(r, text)}`];
-    return [older ? `${older[0].toUpperCase()}${older.slice(1)}:\n${commented(r, text)}` : commented(r, text)];
-  });
-  return [`${invocation} update ${path}`, ...parts, BOARD_HANDOFF].join('\n\n');
+function commentPart(c: Pick<DocComment, 'quote' | 'heading' | 'text' | 'version'>, latest: number | null | undefined) {
+  if (c.quote === null) return `About the whole document:\n${c.text}`;
+  const older = olderVersion(c, latest);
+  const body = `${quoted(c.quote)}\n\n${c.text}`;
+  if (c.heading) return `Under “${c.heading}”${older ? ` (${older})` : ''}:\n${body}`;
+  return older ? `${older[0].toUpperCase()}${older.slice(1)}:\n${body}` : body;
 }
 
-// What Claude gets for a draft: the lines or the passage it was written about, when it was, then the draft. `latest`
-// is the version a commented document is at now.
-export function draftMessage(p: Pick<Parked, 'text' | 'ref'>, latest?: number | null) {
+// The comments on one document as one rpi command, `update <path>` on the command's own first line; each comment on a
+// passage follows as its heading, the passage quoted, then what was written about it, and each on the whole document
+// as itself. `latest` is the document's version now.
+export function documentCommentsMessage(invocation: string, path: string, comments: readonly Pick<DocComment, 'quote' | 'heading' | 'text' | 'version'>[], latest?: number | null) {
+  return [`${invocation} update ${path}`, ...comments.map((c) => commentPart(c, latest)), BOARD_HANDOFF].join('\n\n');
+}
+
+// What Claude gets for a draft: the lines it was written about, when it was, then the draft.
+export function draftMessage(p: Pick<Parked, 'text' | 'ref'>) {
   const r = p.ref;
   if (!r) return p.text;
-  if (isDocumentRef(r)) {
-    const older = olderVersion(r, latest);
-    return `About \`${r.path}\`${r.heading ? `, under “${r.heading}”` : ''}${older ? ` (${older})` : ''}:\n${commented(r, p.text)}`;
-  }
   const where = r.side === 'old' ? ` as the base branch has them (the diff removes or changes them)` : '';
   const count = r.end - r.start + 1;
   const cut = r.lines.length && r.lines.length < count ? ` (the first ${r.lines.length} of ${count} lines)` : '';

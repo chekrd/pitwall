@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import { IMPLEMENTER_MODELS, nextSteps, stepMessage, type ImplementerModel, type NextStep } from '../../../server/rpi.ts';
+import { firstOutdated, IMPLEMENTER_MODELS, nextSteps, reworkStep, stepMessage, type ImplementerModel, type NextStep } from '../../../server/rpi.ts';
 import { rpiInvocation } from '../../../server/slash.ts';
+import type { Body } from '../outbox.ts';
 import { hold } from '../sends.ts';
 import type { Command, Session, Workflow } from '../types.ts';
 import { modelName } from '../util.ts';
-import { fileName, plural, useComments } from './Comments.tsx';
 import { useCommands } from './Composer.tsx';
 import { explain, SENDS } from './explain.ts';
 import { Icon } from './Icon.tsx';
@@ -22,33 +22,38 @@ export function sendBlocked(s: Session, commands: readonly Command[] | null) {
   return null;
 }
 
-const tip = (step: NextStep) => step.fresh
+export const stepTip = (step: NextStep) => step.fresh
   ? { ...SENDS.prompt(`/clear”, then, once Claude has started the new conversation, “${step.command}`), sees: "a new conversation: /clear leaves this one behind, and rpi reads the task's documents" }
   : SENDS.prompt(step.command);
 
+export function sendStep(session: Session, name: string, step: NextStep, model: ImplementerModel) {
+  const text = stepMessage(step, model);
+  const body: Body = { key: null, text };
+  if (step.fresh) body.fresh = true;
+  if (step.rework) body.rework = step.rework;
+  void hold(session, { action: 'answer', body, label: step.fresh ? `/clear, then ${step.command}` : step.command, command: true }, name, { box: false });
+}
+
+// The step that reworks the first outdated phase, which comes before any other.
+export function firstRework(session: Session, workflow: Workflow, invocation: string) {
+  const outdated = session.review.outdated;
+  const phase = firstOutdated(workflow, outdated);
+  return phase ? reworkStep(workflow, outdated, phase, invocation) : null;
+}
+
 // rpi's next steps from the phase under way, each sent as rpi's own command for the task's folder and flow, after a
-// /clear when it starts a phase, as rpi runs each phase in a context of its own.
+// /clear when it starts a phase, as rpi runs each phase in a context of its own. While a phase is outdated, its rework
+// is the only step.
 export function PhaseSteps({ session, name, workflow, place }: { session: Session; name: string; workflow: Workflow; place: 'overview' | 'documents' }) {
   const commands = useCommands(session.worktree, true);
-  const comments = useComments(session);
   const [model, setModel] = useState<ImplementerModel>('opus');
-  const steps = nextSteps(workflow, rpiInvocation(commands ?? []));
+  const invocation = rpiInvocation(commands ?? []);
+  const rework = firstRework(session, workflow, invocation);
+  const steps = rework ? [rework] : nextSteps(workflow, invocation);
   if (!steps.length) return null;
   const blocked = sendBlocked(session, commands);
-  const current = workflow.steps.find((s) => s.state === 'current')?.document;
-  const open = current ? comments.filter((c) => c.ref.path === current).length : 0;
-  const send = (step: NextStep) => {
-    const text = stepMessage(step, model);
-    const body = step.fresh ? { key: null, text, fresh: true } : { key: null, text };
-    void hold(session, { action: 'answer', body, label: step.fresh ? `/clear, then ${step.command}` : step.command, command: true }, name, { box: false });
-  };
   return (
     <div className={styles.steps} data-place={place} data-next-steps>
-      {open > 0 && (
-        <span className={styles.unsent} data-unsent-comments data-explain={`The ${fileName(current!)} document has comments under Later that Claude has not had yet`}>
-          {plural(open, 'comment')} not sent
-        </span>
-      )}
       {steps.map((step) => (
         <Pair key={step.label} with={step === steps.find((s) => s.implements) && (
           <label className={picker.select} data-implementer-model data-explain="The model rpi's implementer writes the code with; the task's own model still reviews and fixes what it hands back">
@@ -60,7 +65,15 @@ export function PhaseSteps({ session, name, workflow, place }: { session: Sessio
             <Icon name="chevron-down" size={14} />
           </label>
         )}>
-          <button type="button" data-variant={step.usual ? 'primary' : undefined} data-step={step.label} disabled={!!blocked} {...explain(blocked ? { does: blocked } : tip(step))} onClick={() => send(step)}>
+          <button
+            type="button"
+            data-variant={step.usual ? 'primary' : undefined}
+            data-step={step.label}
+            data-rework={step.rework}
+            disabled={!!blocked}
+            {...explain(blocked ? { does: blocked } : stepTip(step))}
+            onClick={() => sendStep(session, name, step, model)}
+          >
             {step.label}
           </button>
         </Pair>

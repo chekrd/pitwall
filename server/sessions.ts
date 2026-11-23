@@ -24,10 +24,11 @@ import { inSync, retired, sync } from './ingest.ts';
 import { pauser, RESUME_PROMPT } from './pause.ts';
 import { archivePatch } from './restart.ts';
 import { addParked, editParked, removeParked, turnEnds } from './parked.ts';
+import { addComment, editComment, keepPhase, markOutdated, markSent, removeComments, type NewComment } from './review.ts';
 import type { Scheduled } from './schedule.ts';
 import { checkUploads } from './uploads.ts';
 import { tasksWorkflows } from './documents.ts';
-import { currentVersion, withoutHandoff } from './rpi.ts';
+import { outdatedBy, withoutHandoff, type Phase } from './rpi.ts';
 
 const run = promisify(execFile);
 
@@ -232,13 +233,47 @@ const answers = answering({ store: sessions, send: terminal.send, keys: terminal
 
 export const { answerMenu, answerRound, declineMenu, dismiss } = answers;
 
-// A send from the board may carry drafts, which leave the task once it went out.
-export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: unknown }) {
+// A send from the board may carry drafts, which leave the task once it went out, document comments, which are sent
+// then, or the rework of an outdated phase, whose mark Implement loses then as it has no document to change.
+export async function answer(id: string, reply: Parameters<typeof answers.answer>[1] & { drafts?: string[] | undefined; comments?: string[] | undefined; rework?: Phase | undefined }) {
   await answers.answer(id, reply);
-  if (Array.isArray(reply.drafts) && reply.drafts.length) {
-    sessions.update(id, { parked: removeParked(must(id).parked, reply.drafts) });
-    notify();
-  }
+  const s = must(id);
+  const drafts = reply.drafts ?? [];
+  const comments = reply.comments ?? [];
+  const implemented = reply.rework === 'implement' && !!s.review.outdated.implement;
+  if (!drafts.length && !comments.length && !implemented) return;
+  let review = markSent(s.review, comments);
+  if (implemented) review = keepPhase(review, 'implement');
+  sessions.update(id, { ...(drafts.length && { parked: removeParked(s.parked, drafts) }), review });
+  notify();
+}
+
+export function addDocComment(id: string, body: NewComment) {
+  sessions.update(id, { review: addComment(must(id).review, body) });
+  notify();
+}
+
+export function editDocComment(id: string, body: { comment: string; text: string }) {
+  sessions.update(id, { review: editComment(must(id).review, body) });
+  notify();
+}
+
+export function deleteDocComment(id: string, comment: string) {
+  sessions.update(id, { review: removeComments(must(id).review, [comment]) });
+  notify();
+}
+
+// Every phase after the document's that is under way, by the workflow the board last read.
+export function markLaterOutdated(id: string, because: string) {
+  const workflow = tasksWorkflows.of(id);
+  if (!workflow) throw new Error('this task has no documents');
+  sessions.update(id, { review: markOutdated(must(id).review, outdatedBy(workflow, because, Date.now())) });
+  notify();
+}
+
+export function keepOutdated(id: string, phase: Phase) {
+  sessions.update(id, { review: keepPhase(must(id).review, phase) });
+  notify();
 }
 
 export function park(id: string, body: Parameters<typeof addParked>[1]) {
@@ -317,10 +352,7 @@ export const settleAsides = () => asides.settle(sessions.all());
 export const sweepAsides = () => asides.sweep(sessions.all());
 export const dropAsides = (gone: Session[]) => Promise.all(gone.map((s) => asides.drop(s)));
 
-const ends = turnEnds((id, path) => {
-  const versions = tasksWorkflows.of(id)?.versions;
-  return versions?.[path] ? currentVersion(versions[path]) : null;
-});
+const ends = turnEnds();
 const autoSending = new Set<string>();
 
 // A sync writes a turn's end before it reads the reply that ended it, so drafts wait for the sync to finish, whose

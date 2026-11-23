@@ -14,6 +14,7 @@ import { describeLinks } from './linkAbout.ts';
 import { mergeLinks } from './links.ts';
 import { architectureRoots, documentRoots, notify, refreshWorkspace, repoView, taskFolderOf, workspace } from './workspace.ts';
 import { tasksWorkflows } from './documents.ts';
+import { pruneReview } from './review.ts';
 import { tasksArchitecture } from './architecture.ts';
 import { folderDiff, prWorktree } from './folderTasks.ts';
 
@@ -281,6 +282,12 @@ async function syncLive() {
   }
   const tasks = sessions.all().map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' }));
   if (await tasksWorkflows.refresh(tasks)) changed = true;
+  for (const s of sessions.all()) {
+    const review = pruneReview(s.review, tasksWorkflows.of(s.id));
+    if (review === s.review) continue;
+    sessions.update(s.id, { review });
+    changed = true;
+  }
   if (await tasksArchitecture.refresh(sessions.all().map((s) => ({ id: s.id, models: architectureRoots(s) })))) changed = true;
   if (changed) notify();
   void describeLinks();

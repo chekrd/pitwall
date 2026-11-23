@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BOARD_HANDOFF, nextSteps, stepMessage, outlineProgress, parseDocument, phaseLabel, rpiPrompt, stepsOf, summarize, taskDirName, withoutHandoff, type DocumentEntry, type Flow, type TaskFolder } from './rpi.ts';
+import { BOARD_HANDOFF, firstOutdated, laterUnderWay, nextSteps, outdatedBy, outlineProgress, parseDocument, phaseLabel, pruneOutdated, reworkStep, rpiPrompt, stepMessage, stepsOf, summarize, taskDirName, withoutHandoff, type DocumentEntry, type Flow, type TaskFolder, type Workflow } from './rpi.ts';
 
 const doc = (name: string, text: string, modifiedAt = 1000): DocumentEntry =>
   ({ path: `.pitwall/artifacts/t/${name}`, name, modifiedAt, size: text.length, ...parseDocument(name, text) });
@@ -187,4 +187,76 @@ test('an implement step names the model for the implementer, and the conversatio
   assert.equal(stepMessage(implement, 'opus'), `${implement.command}\nLaunch outline-implementer-agent with model: opus.\n\n${BOARD_HANDOFF}`);
   assert.equal(stepMessage(implement, ''), `${implement.command}\n\n${BOARD_HANDOFF}`);
   assert.equal(stepMessage(research, 'opus'), `${research.command}\n\n${BOARD_HANDOFF}`);
+});
+
+const T = '.pitwall/artifacts/t';
+const docAt = (name: string) => `${T}/${name}`;
+// Research done, the design discussion done, the outline done with a phase of it implemented.
+const underWay = (patch: Partial<Workflow> = {}): Workflow => ({
+  folder: T, flow: 'design-discussion', current: 'implement', outline: { done: 1, total: 3, unit: 'phase' }, documents: 4, folders: 1, stamp: 's',
+  steps: [
+    { phase: 'questions', state: 'done', document: docAt('01-research-questions-t.md') },
+    { phase: 'research', state: 'done', document: docAt('02-research-t.md') },
+    { phase: 'design-discussion', state: 'done', document: docAt('03-design-discussion-t.md') },
+    { phase: 'outline', state: 'done', document: docAt('04-structure-outline-t.md') },
+    { phase: 'implement', state: 'current', document: docAt('04-structure-outline-t.md') },
+  ],
+  versions: { [docAt('02-research-t.md')]: { latest: 2, settled: true }, [docAt('03-design-discussion-t.md')]: { latest: 3, settled: true }, [docAt('04-structure-outline-t.md')]: { latest: 1, settled: false } },
+  ...patch,
+});
+
+test('the later phases under way of a document: each after it with a document, done or current, and Implement once a phase of the outline is done', () => {
+  assert.deepEqual(laterUnderWay(underWay(), docAt('02-research-t.md')), ['design-discussion', 'outline', 'implement']);
+  assert.deepEqual(laterUnderWay(underWay(), docAt('04-structure-outline-t.md')), ['implement']);
+  assert.deepEqual(laterUnderWay(underWay({ outline: { done: 0, total: 3, unit: 'phase' } }), docAt('04-structure-outline-t.md')), [], 'no phase of the outline done');
+  assert.deepEqual(laterUnderWay(underWay(), docAt('99-notes.md')), [], 'not the document of a phase');
+  const atDesign = underWay({
+    current: 'design-discussion', outline: null,
+    steps: underWay().steps.map((s) => (s.phase === 'design-discussion' ? { ...s, state: 'current' } : s.phase === 'outline' || s.phase === 'implement' ? { ...s, state: 'next', document: null } : s)),
+  });
+  assert.deepEqual(laterUnderWay(atDesign, docAt('02-research-t.md')), ['design-discussion'], 'the current one counts, the ones not yet do not');
+});
+
+test('marking the later phases outdated keeps each document at its version now, the earlier ones marked with it, and Implement with none', () => {
+  const marks = outdatedBy(underWay(), docAt('02-research-t.md'), 50);
+  assert.deepEqual(marks, {
+    'design-discussion': { document: docAt('03-design-discussion-t.md'), version: 3, because: docAt('02-research-t.md'), at: 50, earlier: {} },
+    outline: { document: docAt('04-structure-outline-t.md'), version: 2, because: docAt('02-research-t.md'), at: 50, earlier: { [docAt('03-design-discussion-t.md')]: 3 } },
+    implement: { document: null, version: null, because: docAt('02-research-t.md'), at: 50, earlier: { [docAt('03-design-discussion-t.md')]: 3, [docAt('04-structure-outline-t.md')]: 2 } },
+  }, 'a document not settled yet is at the version it is becoming');
+  assert.equal(firstOutdated(underWay(), marks), 'design-discussion');
+  assert.equal(firstOutdated(underWay(), {}), null);
+});
+
+test("a document's mark goes once a newer version of it settles or a newer document takes the phase; Implement's stays; a phase gone takes its mark", () => {
+  const marks = outdatedBy(underWay(), docAt('02-research-t.md'), 50);
+  assert.deepEqual(Object.keys(pruneOutdated(marks, underWay())), ['design-discussion', 'outline', 'implement']);
+  const writing = underWay({ versions: { ...underWay().versions, [docAt('03-design-discussion-t.md')]: { latest: 3, settled: false } } });
+  assert.deepEqual(Object.keys(pruneOutdated(marks, writing)), ['design-discussion', 'outline', 'implement'], 'not while it is still being written');
+  const settled = underWay({ versions: { ...underWay().versions, [docAt('03-design-discussion-t.md')]: { latest: 4, settled: true } } });
+  assert.deepEqual(Object.keys(pruneOutdated(marks, settled)), ['outline', 'implement']);
+  const replaced = underWay({ steps: underWay().steps.map((s) => (s.phase === 'outline' ? { ...s, document: docAt('05-structure-outline-t.md') } : s)) });
+  assert.deepEqual(Object.keys(pruneOutdated(marks, replaced)), ['design-discussion', 'implement']);
+  assert.deepEqual(Object.keys(pruneOutdated(marks, underWay({ steps: underWay().steps.filter((s) => s.phase !== 'implement') }))), ['design-discussion', 'outline']);
+});
+
+test("a rework step updates the outdated document after a /clear, naming what changed and what was reworked since; Implement's fixes the code", () => {
+  const marks = outdatedBy(underWay(), docAt('02-research-t.md'), 50);
+  const design = reworkStep(underWay(), marks, 'design-discussion', '/rpi:rpi')!;
+  assert.deepEqual({ ...design, command: '' }, { label: 'Rework Design discussion', command: '', usual: true, implements: false, fresh: true, rework: 'design-discussion' });
+  assert.equal(stepMessage(design, 'opus'), [
+    `/rpi:rpi update ${docAt('03-design-discussion-t.md')}`,
+    `\`${docAt('02-research-t.md')}\` changed after this document was written. Bring this document in line with the latest version of each and keep what still holds.`,
+    '',
+    BOARD_HANDOFF,
+  ].join('\n'), 'no implementer named');
+  const reworked = underWay({ versions: { ...underWay().versions, [docAt('03-design-discussion-t.md')]: { latest: 4, settled: true }, [docAt('04-structure-outline-t.md')]: { latest: 2, settled: true } } });
+  assert.equal(reworkStep(reworked, marks, 'outline', '/rpi')!.command.split('\n')[1],
+    `\`${docAt('02-research-t.md')}\` changed after this document was written, and \`${docAt('03-design-discussion-t.md')}\` was reworked since to match it. Bring this document in line with the latest version of each and keep what still holds.`);
+  const reworkedAll = underWay({ versions: { ...underWay().versions, [docAt('03-design-discussion-t.md')]: { latest: 4, settled: true }, [docAt('04-structure-outline-t.md')]: { latest: 3, settled: true } } });
+  assert.equal(reworkStep(reworkedAll, marks, 'implement', '/rpi')!.command, [
+    `/rpi fix the implementation ${T}`,
+    `\`${docAt('02-research-t.md')}\` changed after the code was written, and \`${docAt('03-design-discussion-t.md')}\` and \`${docAt('04-structure-outline-t.md')}\` were reworked since to match it. Bring the code and its tests in line with the outline, \`${docAt('04-structure-outline-t.md')}\`, and keep what still holds.`,
+  ].join('\n'));
+  assert.equal(reworkStep(underWay(), {}, 'outline', '/rpi'), null, 'not outdated');
 });

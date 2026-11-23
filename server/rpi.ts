@@ -312,6 +312,8 @@ export interface NextStep {
   implements: boolean;
   // Sent after a /clear.
   fresh: boolean;
+  // The outdated phase it reworks.
+  rework?: Phase;
 }
 
 export const IMPLEMENTER_MODELS = ['opus', 'sonnet', 'fable'] as const;
@@ -354,6 +356,79 @@ export function nextSteps(w: Pick<Workflow, 'folder' | 'flow' | 'current' | 'ste
     default:
       return [];
   }
+}
+
+// A phase whose work came before an earlier document it builds on was changed. `version` is the version its document
+// was at then (null for Implement), `because` the document changed, and `earlier` the versions the documents of the
+// phases marked with it and before it were at, which tells which of them were reworked since.
+export interface OutdatedMark {
+  document: string | null;
+  version: number | null;
+  because: string;
+  at: number;
+  earlier: Record<string, number>;
+}
+
+export type Outdated = Partial<Record<Phase, OutdatedMark>>;
+
+type Steps = Pick<Workflow, 'folder' | 'steps' | 'outline' | 'versions'>;
+
+// The phase `path` is the document of; only a phase's newest document stands for it.
+const stepOfDocument = (w: Pick<Workflow, 'steps'>, path: string) => w.steps.findIndex((s) => s.phase !== 'implement' && s.document === path);
+
+// The phases after the one of `path` that have got under way: each with a document, done or current, and Implement
+// once a phase of the outline is done.
+export function laterUnderWay(w: Pick<Workflow, 'steps' | 'outline'>, path: string): Phase[] {
+  const at = stepOfDocument(w, path);
+  if (at < 0) return [];
+  return w.steps.slice(at + 1)
+    .filter((s) => (s.phase === 'implement' ? (w.outline?.done ?? 0) > 0 : !!s.document && (s.state === 'done' || s.state === 'current')))
+    .map((s) => s.phase);
+}
+
+// What marking the phases after `path`'s outdated records, each document at the version it is at now.
+export function outdatedBy(w: Steps, path: string, at: number): Outdated {
+  const marks: Outdated = {};
+  const earlier: Record<string, number> = {};
+  for (const phase of laterUnderWay(w, path)) {
+    const document = phase === 'implement' ? null : w.steps.find((s) => s.phase === phase)?.document ?? null;
+    const version = document ? currentVersion(w.versions?.[document]) : null;
+    marks[phase] = { document, version, because: path, at, earlier: { ...earlier } };
+    if (document && version !== null) earlier[document] = version;
+  }
+  return marks;
+}
+
+// A document's mark goes once a newer version of it has settled, or a newer document took its phase's place; a phase
+// gone from the workflow takes its mark along. Implement's goes when its rework is sent.
+export function pruneOutdated(outdated: Outdated, w: Steps): Outdated {
+  return Object.fromEntries(Object.entries(outdated).filter(([phase, mark]) => {
+    const step = w.steps.find((s) => s.phase === phase);
+    if (!step || !mark) return false;
+    if (phase === 'implement') return true;
+    if (step.document !== mark.document) return false;
+    const v = step.document ? w.versions?.[step.document] : undefined;
+    return !(v?.settled && mark.version !== null && v.latest > mark.version);
+  }));
+}
+
+// The outdated phase that comes first in the workflow, which is reworked first.
+export const firstOutdated = (w: Pick<Workflow, 'steps'>, outdated: Outdated) => w.steps.find((s) => outdated[s.phase])?.phase ?? null;
+
+const listed = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+
+// The step that brings an outdated phase in line with what changed before it: rpi's update of its document, or a fix of
+// the code for Implement, each naming the document that changed and those reworked since to match it.
+export function reworkStep(w: Steps, outdated: Outdated, phase: Phase, invocation: string): NextStep | null {
+  const mark = outdated[phase];
+  const step = w.steps.find((s) => s.phase === phase);
+  if (!mark || !step || (phase !== 'implement' && !step.document)) return null;
+  const reworked = Object.entries(mark.earlier).filter(([doc, v]) => (w.versions?.[doc]?.latest ?? 0) > v).map(([doc]) => `\`${doc}\``);
+  const changed = (what: string) => `\`${mark.because}\` changed after ${what} was written${reworked.length ? `, and ${listed(reworked)} ${reworked.length === 1 ? 'was' : 'were'} reworked since to match it` : ''}.`;
+  const command = phase === 'implement'
+    ? `${invocation} fix the implementation ${w.folder}\n${changed('the code')} Bring the code and its tests in line with ${step.document ? `the outline, \`${step.document}\`` : 'the outline'}, and keep what still holds.`
+    : `${invocation} update ${step.document}\n${changed('this document')} Bring this document in line with the latest version of each and keep what still holds.`;
+  return { label: `Rework ${PHASE_LABELS[phase]}`, command, usual: true, implements: false, fresh: true, rework: phase };
 }
 
 export const isDocument = (name: string) => /\.md$/i.test(name);

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { draftMessage, isDocumentRef } from './codeRef.ts';
+import { draftMessage } from './codeRef.ts';
 import type { Parked, Session } from './db.ts';
 import { decisionKey } from './decision.ts';
 
@@ -52,8 +52,7 @@ export function endsOnQuestion(message: string | null) {
 // accident; the next one waits for the end of the turn it starts. Not when you replied meanwhile, a prompt in the
 // terminal set Claude working again, or the task is paused or archived. Only ends seen while the board runs count, and
 // arming one while it is already your turn, as no other end is coming.
-// `latest` answers the version a task's document is at now, for a comment written on an older one.
-export function turnEnds(latest: (task: string, path: string) => number | null = () => null) {
+export function turnEnds() {
   const last = new Map<string, Session['status']>();
   const ends = new Map<string, number>();
 
@@ -73,7 +72,7 @@ export function turnEnds(latest: (task: string, path: string) => number | null =
       const armed = s.parked.filter((p) => p.auto && p.armedAt !== null && p.armedAt <= end);
       const replied = !!s.answered && s.answered.at >= end;
       if (!armed.length || replied || s.archived || s.interrupted || s.turnError || pausing.includes(s.id) || decisionKey(s) || endsOnQuestion(s.lastMessage)) continue;
-      due.push({ id: s.id, ids: [armed[0].id], text: draftMessage(armed[0], isDocumentRef(armed[0].ref) ? latest(s.id, armed[0].ref.path) : null) });
+      due.push({ id: s.id, ids: [armed[0].id], text: draftMessage(armed[0]) });
     }
     for (const id of last.keys()) if (!all.some((s) => s.id === id)) last.delete(id);
     return due;

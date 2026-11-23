@@ -85,7 +85,7 @@ export function WallTile({ session, repos }: { session: Session; repos: RepoView
           {session.parked.length > 0 && (
             <span className={styles.later} data-later-count data-explain="Drafts you kept for later, under Later on the task's Overview">Later {session.parked.length}</span>
           )}
-          {session.workflow && <PhaseChip workflow={session.workflow} />}
+          {session.workflow && <PhaseChip workflow={session.workflow} outdated={session.review.outdated} />}
           <PrChips prs={session.prs} status={session.status} />
         </footer>
       )}

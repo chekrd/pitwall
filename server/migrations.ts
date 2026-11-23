@@ -135,6 +135,19 @@ export const migrations: Migration[] = [
       update.run(JSON.stringify(versioned), row.id as string);
     }
   },
+  // 13: comments on rpi documents leave Later for the documents' own panel, each kept there moving to it unsent.
+  (db) => {
+    db.exec('ALTER TABLE sessions ADD COLUMN review TEXT');
+    type Kept = { id: string; text: string; at: number; ref?: { kind?: string; path: string; heading: string | null; quote: string; version?: number } };
+    const update = db.prepare('UPDATE sessions SET parked = ?, review = ? WHERE id = ?');
+    for (const row of db.prepare('SELECT id, parked FROM sessions WHERE parked IS NOT NULL').all()) {
+      const list = JSON.parse(String(row.parked)) as Kept[];
+      const onDocuments = list.filter((p) => p.ref?.kind === 'document');
+      if (!onDocuments.length) continue;
+      const comments = onDocuments.map(({ id, text, at, ref }) => ({ id, path: ref!.path, version: ref!.version ?? null, quote: ref!.quote, heading: ref!.heading, text, at, sentAt: null }));
+      update.run(JSON.stringify(list.filter((p) => p.ref?.kind !== 'document')), JSON.stringify({ comments, outdated: {} }), row.id as string);
+    }
+  },
 ];
 
 export function migrate(db: DatabaseSync, steps = migrations) {

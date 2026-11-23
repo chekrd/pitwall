@@ -6,6 +6,7 @@ import type { Activity, Menu, TurnError, Unanswered } from './conversations.ts';
 import type { DiffStat } from './git.ts';
 import { migrate } from './migrations.ts';
 import type { Round } from './rounds.ts';
+import type { Outdated } from './rpi.ts';
 import type { Schedule, Scheduled } from './schedule.ts';
 import { migrateUx, uxStore } from './uxlog.ts';
 
@@ -95,15 +96,24 @@ export interface CodeRef {
   lines: string[];
 }
 
-// A passage of one of the task's rpi documents a comment was written about: the document's path from the task's own
-// folder, as the documents' routes take it, the nearest heading above the passage, the passage itself and the version
-// of the document it was read in, which comments from before versions lack.
-export interface DocumentRef {
-  kind: 'document';
+// A comment on one of the task's rpi documents: its path from the task's own folder, as the documents' routes take it,
+// the version it was written on (null for one from before versions), and the passage with the nearest heading above
+// it, or null for one on the whole document. `sentAt` is when it reached Claude.
+export interface DocComment {
+  id: string;
   path: string;
+  version: number | null;
+  quote: string | null;
   heading: string | null;
-  quote: string;
-  version?: number | undefined;
+  text: string;
+  at: number;
+  sentAt: number | null;
+}
+
+// The task's comments on its documents, and the phases outdated by a change to a document before them.
+export interface Review {
+  comments: DocComment[];
+  outdated: Outdated;
 }
 
 // A message written for the task's Claude to send later. `armedAt` is when Send when it's my turn was switched on.
@@ -113,7 +123,7 @@ export interface Parked {
   auto: boolean;
   armedAt: number | null;
   at: number;
-  ref?: CodeRef | DocumentRef;
+  ref?: CodeRef;
 }
 
 // A question asked on the side: a fork of the task's conversation answers it, and the task's Claude never sees it.
@@ -203,6 +213,7 @@ export interface Session {
   scheduled: Scheduled | null;
   starting: Starting | null;
   parked: Parked[];
+  review: Review;
   asides: Aside[];
   // When the sync last saw the task's Claude alive, written about once a minute while it runs; null for a row it has
   // not seen alive since this was recorded.
@@ -259,6 +270,7 @@ const toSession = (r: Row): Session => ({
   scheduled: r.scheduled ? JSON.parse(r.scheduled) : null,
   starting: r.starting ? JSON.parse(r.starting) : null,
   parked: r.parked ? JSON.parse(r.parked) : [],
+  review: r.review ? JSON.parse(r.review) : { comments: [], outdated: {} },
   asides: r.asides ? JSON.parse(r.asides) : [],
   aliveAt: r.alive_at ?? null,
   archived: !!r.archived,
@@ -337,6 +349,7 @@ const columns: Record<string, string> = {
   scheduled: 'scheduled',
   starting: 'starting',
   parked: 'parked',
+  review: 'review',
   asides: 'asides',
   archived: 'archived',
   conversation: 'conversation',
@@ -363,7 +376,7 @@ export const sessions = {
       .run(s.id, s.conversation ?? s.id, s.repoId, s.worktree, s.cwd, s.pid, s.tty, s.title, s.firstPrompt, s.status, now, now);
     parsed.delete(s.id);
   },
-  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'prs' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'model' | 'effort' | 'context' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
+  update: (id: string, patch: Partial<Pick<Session, 'title' | 'firstPrompt' | 'status' | 'question' | 'diffstat' | 'lastMessage' | 'lastPrompt' | 'unanswered' | 'lastTurn' | 'waitingFor' | 'dismissedAsk' | 'round' | 'dismissedRound' | 'prs' | 'activity' | 'menu' | 'answered' | 'artifacts' | 'links' | 'model' | 'effort' | 'context' | 'interrupted' | 'turnError' | 'scheduled' | 'starting' | 'parked' | 'review' | 'asides' | 'archived' | 'conversation' | 'history' | 'pid' | 'tty'>>) => {
     const entries = Object.entries(patch);
     if (!entries.length) return;
     const sets = entries.map(([k]) => `${columns[k]} = ?`).join(', ');

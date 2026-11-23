@@ -45,19 +45,6 @@
     }
   }
 
-  .quote {
-    margin: 0;
-    max-height: 8lh;
-    overflow: auto;
-    padding: 2px 0 2px 10px;
-    border-left: 3px solid var(--comment-line);
-    font-size: 13.5px;
-    line-height: 1.5;
-    color: var(--text-2);
-    white-space: pre-line;
-    overflow-wrap: anywhere;
-  }
-
   .where {
     padding: 0;
     border: 0;
@@ -68,8 +55,6 @@
     cursor: pointer;
     &:hover, &:focus-visible { text-decoration: underline; code { color: var(--text); } }
   }
-
-  .version { margin-left: 8px; color: var(--muted); }
 
   .num { display: inline-block; min-width: 4ch; margin-right: 10px; text-align: right; color: var(--muted); user-select: none; }
 

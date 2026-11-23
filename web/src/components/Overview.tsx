@@ -504,7 +504,7 @@ export function Overview({ session, name, branch, repo }: { session: Session; na
                 <h3 className={styles.label} data-explain="The phases of the task's rpi workflow, read from its documents in .pitwall/artifacts; each with a document opens it in Documents">Workflow</h3>
                 <RpiGuideButton workflow={session.workflow} />
               </div>
-              <PhaseStrip session={session.id} workflow={session.workflow} />
+              <PhaseStrip session={session.id} workflow={session.workflow} outdated={session.review.outdated} />
               <PhaseSteps session={session} name={name} workflow={session.workflow} place="overview" />
             </section>
           )}
