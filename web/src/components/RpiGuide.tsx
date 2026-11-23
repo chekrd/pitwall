@@ -8,7 +8,8 @@ import styles from './RpiGuide.module.css';
 
 const DIALOG = 'rpi-guide';
 
-type Mark = Pick<Workflow, 'flow' | 'current'> | null;
+// The model is the one the task runs on, or the one New task picked; null when Claude Code picks it.
+type Mark = (Partial<Pick<Workflow, 'flow' | 'current'>> & { model: string | null }) | null;
 
 let mark: (m: Mark) => void = () => {};
 
@@ -20,7 +21,7 @@ export function openRpiGuide(at: Mark) {
   dialog.focus();
 }
 
-export function RpiGuideButton({ workflow }: { workflow: Workflow | null }) {
+export function RpiGuideButton({ workflow, model }: { workflow: Workflow | null; model: string | null }) {
   return (
     <button
       type="button"
@@ -28,7 +29,7 @@ export function RpiGuideButton({ workflow }: { workflow: Workflow | null }) {
       className={styles.open}
       data-rpi-guide-open
       data-explain="What each rpi phase is for, what you review in it, and which flow suits which change"
-      onClick={() => openRpiGuide(workflow && { flow: workflow.flow, current: workflow.current })}
+      onClick={() => openRpiGuide({ ...(workflow && { flow: workflow.flow, current: workflow.current }), model })}
     >
       How RPI works
     </button>
@@ -42,10 +43,7 @@ interface Entry {
   writes: string;
   check: string;
   not: string;
-  model: string;
 }
-
-const BY_TASK = `The task's model, ${modelName(TASK_MODEL)} unless New task picked another`;
 
 const PHASES: Entry[] = [
   {
@@ -55,7 +53,6 @@ const PHASES: Entry[] = [
     writes: 'Focused questions about how the code works today, with the files to start from. Your request is saved in a document of its own.',
     check: 'The scope: is anything missing or beside the point?',
     not: 'Ask what to change. The questions describe the system as it is.',
-    model: `${BY_TASK}. rpi's research agents look around on Sonnet, rpi's own.`,
   },
   {
     id: 'research',
@@ -63,7 +60,6 @@ const PHASES: Entry[] = [
     writes: 'Answers from the live code, tests and docs, with file references.',
     check: 'The facts: is this how the code really works?',
     not: 'Propose the change. It leaves your request aside, so the findings stay neutral.',
-    model: `rpi's research agents answer the questions on ${modelName(RESEARCH_MODEL)}; the task's model writes the research from what they find.`,
   },
   {
     id: 'design',
@@ -72,7 +68,6 @@ const PHASES: Entry[] = [
     writes: 'The change itself: options with trade-offs and a recommendation, and the one you pick. Claude asks one decision at a time and waits for your answer.',
     check: 'Each choice, then the whole document.',
     not: 'Write code.',
-    model: `${BY_TASK}.`,
   },
   {
     id: 'outline',
@@ -81,7 +76,6 @@ const PHASES: Entry[] = [
     writes: 'The agreed design split into ordered phases, each with its result, files, tests, and automated and manual checks.',
     check: 'The scope and the order of the phases.',
     not: 'Change the approach. It decides the order of the work, not what the work is.',
-    model: `${BY_TASK}.`,
   },
   {
     id: 'implement',
@@ -90,7 +84,6 @@ const PHASES: Entry[] = [
       'Code and tests, though not by the conversation itself: it hands the work to rpi\'s implementer, a subagent that starts with an empty context and reads only the documents, then checks what comes back. With an outline, each phase goes to a new implementer and is ticked off in the outline; without one, the whole change goes to one implementer in one run.',
     check: 'The checks it ran, then test it yourself. It pauses for the manual checks of a phase.',
     not: 'Redesign. Where the code and the design disagree on the result, it asks you.',
-    model: `rpi's implementer writes the code on ${modelName(IMPLEMENTER_MODEL)}; the task's model checks what comes back.`,
   },
 ];
 
@@ -111,6 +104,15 @@ const FLOW_ROWS: { flow: Flow; name: string; use: string }[] = [
   { flow: 'research-only', name: 'Research only', use: 'The research is enough: implement from it.' },
 ];
 
+// null stands for the task's own model.
+const MODEL_ROWS: { phase: string; work: { what: string; model: string | null }[] }[] = [
+  { phase: 'Research questions', work: [{ what: 'Writes the questions', model: null }, { what: "rpi's research agents look around", model: 'sonnet' }] },
+  { phase: 'Research', work: [{ what: "rpi's research agents answer the questions", model: RESEARCH_MODEL }, { what: 'Writes the research from what they find', model: null }] },
+  { phase: 'Design', work: [{ what: 'Writes the design document', model: null }] },
+  { phase: 'Outline', work: [{ what: 'Writes the outline', model: null }] },
+  { phase: 'Implement', work: [{ what: "rpi's implementer writes the code", model: IMPLEMENTER_MODEL }, { what: 'Checks what comes back', model: null }] },
+];
+
 const DESIGN_PHASES: Phase[] = ['design', 'design-discussion', 'prd', 'tdd'];
 
 const Here = () => <span className={styles.here}>This task</span>;
@@ -124,6 +126,7 @@ export function RpiGuide() {
     };
   }, []);
   const current = at?.current ?? null;
+  const taskModel = at?.model ?? null;
   const entryOf = (p: Phase | null) => (p && DESIGN_PHASES.includes(p) ? 'design' : p);
 
   return (
@@ -168,12 +171,35 @@ export function RpiGuide() {
                 <dd>{p.check}</dd>
                 <dt>Does not</dt>
                 <dd>{p.not}</dd>
-                <dt>Model</dt>
-                <dd data-guide-model>{p.model}</dd>
               </dl>
             </li>
           ))}
         </ol>
+      </section>
+
+      <section aria-labelledby="rpi-guide-models">
+        <h3 id="rpi-guide-models">Which model</h3>
+        <p>
+          The rows marked <em>task's model</em> run on the model the task's Claude runs on: {modelName(TASK_MODEL)} for a new RPI task unless New task picks
+          another, and <code>/model</code> changes it. The others are set by the board whatever the task runs on.
+          {taskModel && <> In this task it is <strong data-guide-task-model>{modelName(taskModel)}</strong>.</>}
+        </p>
+        <table className={styles.models}>
+          <thead>
+            <tr><th scope="col">Phase</th><th scope="col">Work</th><th scope="col">Model</th></tr>
+          </thead>
+          <tbody>
+            {MODEL_ROWS.flatMap((row) => row.work.map((w, i) => (
+              <tr key={`${row.phase}-${i}`} data-guide-model-row>
+                {i === 0 && <th scope="row" rowSpan={row.work.length}>{row.phase}</th>}
+                <td>{w.what}</td>
+                {w.model ? <td>{modelName(w.model)}</td> : (
+                  <td data-task-model>{taskModel ? <>{modelName(taskModel)} <span className={styles.aside}>task's model</span></> : "Task's model"}</td>
+                )}
+              </tr>
+            )))}
+          </tbody>
+        </table>
       </section>
 
       <section aria-labelledby="rpi-guide-flows">

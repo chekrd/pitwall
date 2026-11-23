@@ -162,6 +162,17 @@
 
   .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+  .models {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    thead th { font-size: 12px; font-weight: 650; color: var(--muted); }
+    tbody th { font-weight: 650; color: var(--text); }
+    td:last-child { white-space: nowrap; color: var(--text); }
+    td[data-task-model] { color: var(--accent-ink); }
+  }
+
   .board {
     display: flex;
     flex-direction: column;

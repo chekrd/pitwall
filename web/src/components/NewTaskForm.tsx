@@ -667,7 +667,7 @@ function NewTaskForm({ repos, done }: { repos: RepoView[]; done?: () => void }) 
               <p className={styles.hint} data-workflow-hint>
                 Starts Claude on <code>/rpi</code> with the prompt; its documents go to <code>{rpiDir}</code>{pickedFolder ? ' in the task folder' : ', which git is told to ignore'}.
               </p>
-              <RpiGuideButton workflow={null} />
+              <RpiGuideButton workflow={null} model={model || null} />
             </div>
           )}
           {scheduling && (

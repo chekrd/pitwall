@@ -109,7 +109,7 @@ export function Documents({ session, name, item, view }: { session: Session; nam
       {workflow && (
         <div className={styles.strip}>
           <PhaseStrip session={session.id} workflow={workflow} outdated={session.review.outdated} />
-          <RpiGuideButton workflow={workflow} />
+          <RpiGuideButton workflow={workflow} model={session.model} />
           <PhaseSteps session={session} name={name} workflow={workflow} place="documents" />
         </div>
       )}

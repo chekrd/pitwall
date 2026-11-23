@@ -35,6 +35,13 @@ const guideMarks = () => {
   return { phase: here('data-guide-phase'), design: here('data-guide-design'), flow: here('data-guide-flow'), chip: chip?.textContent ?? null };
 };
 const focusOn = (selector: string) => !!document.activeElement?.matches(selector);
+const guideModels = () => ({
+  task: document.querySelector('dialog#rpi-guide [data-guide-task-model]')?.textContent ?? null,
+  rows: [...document.querySelectorAll('dialog#rpi-guide [data-guide-model-row]')].map((tr) => {
+    const cells = [...tr.querySelectorAll('td')];
+    return `${cells[0].textContent}: ${cells[1].textContent}`;
+  }),
+});
 const OPENER = '#task-sheet [data-rpi-guide-open]';
 
 export const workflow: Check[] = [
@@ -257,7 +264,7 @@ export const workflow: Check[] = [
     },
   },
   {
-    name: 'RPI.6 How RPI works opens one guide from Overview\'s Workflow and from Documents\' strip, with the task\'s flow and phase marked and the model of each phase; Esc closes only the guide and gives focus back to the control that opened it; nothing comes from another host',
+    name: 'RPI.6 How RPI works opens one guide from Overview\'s Workflow and from Documents\' strip, with the task\'s flow and phase marked and which model does each phase\'s work, the task\'s own named in its rows; Esc closes only the guide and gives focus back to the control that opened it; nothing comes from another host',
     scenario: 'workflow',
     async run({ page, mock, shot }) {
       await openSheetOf(page, mock, 's-search-page');
@@ -266,14 +273,18 @@ export const workflow: Check[] = [
       await page.until('the guide', guideOpen);
       assert.deepEqual(await page.eval(guideMarks), { phase: ['research'], design: [], flow: ['prd'], chip: 'Research' });
       assert.equal(await page.eval(() => document.querySelector('dialog#rpi-guide h2')?.textContent), 'How RPI works');
-      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('dialog#rpi-guide [data-guide-model]')].map((dd) => dd.textContent)), [
-        "The task's model, Fable unless New task picked another. rpi's research agents look around on Sonnet, rpi's own.",
-        "rpi's research agents answer the questions on Opus; the task's model writes the research from what they find.",
-        "The task's model, Fable unless New task picked another.",
-        "The task's model, Fable unless New task picked another.",
-        "rpi's implementer writes the code on Opus; the task's model checks what comes back.",
-      ], 'the model of each phase');
+      assert.deepEqual(await page.eval(guideModels), {
+        task: 'Opus 5.5',
+        rows: [
+          'Writes the questions: Opus 5.5 task\'s model', 'rpi\'s research agents look around: Sonnet',
+          'rpi\'s research agents answer the questions: Opus', 'Writes the research from what they find: Opus 5.5 task\'s model',
+          'Writes the design document: Opus 5.5 task\'s model', 'Writes the outline: Opus 5.5 task\'s model',
+          'rpi\'s implementer writes the code: Opus', 'Checks what comes back: Opus 5.5 task\'s model',
+        ],
+      }, 'the model of each phase, with this task\'s in its rows');
       await shot('rpi-guide');
+      await page.eval(() => document.querySelector('#rpi-guide-models')!.scrollIntoView({ block: 'start' }));
+      await shot('rpi-guide-models');
       await page.eval(() => document.querySelector('#rpi-guide-flows')!.scrollIntoView({ block: 'start' }));
       await shot('rpi-guide-flows');
       await page.key('Escape');
@@ -297,7 +308,7 @@ export const workflow: Check[] = [
     },
   },
   {
-    name: 'RPI.7 New task shows How RPI works beside the RPI hint; the guide opens over New task with nothing marked, and Esc closes only the guide, leaving New task open with focus on the control',
+    name: 'RPI.7 New task shows How RPI works beside the RPI hint; the guide opens over New task with nothing marked but the model New task picked, and Esc closes only the guide, leaving New task open with focus on the control',
     async run({ page, mock, shot }) {
       await page.goto(`${mock.url}/`);
       await page.until('the tiles', tiles);
@@ -309,6 +320,7 @@ export const workflow: Check[] = [
       await page.click('#new-task [data-rpi-guide-open]');
       await page.until('the guide', guideOpen);
       assert.deepEqual(await page.eval(guideMarks), { phase: [], design: [], flow: [], chip: null });
+      assert.equal((await page.eval(guideModels)).task, 'Fable', 'the model New task starts it on');
       await page.key('Escape');
       await page.until('the guide closed', guideClosed);
       await page.until('focus back on the control', focusOn, '#new-task [data-rpi-guide-open]');
