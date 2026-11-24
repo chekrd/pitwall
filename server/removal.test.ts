@@ -7,7 +7,8 @@ import { beforeEach, test } from 'node:test';
 import type { LiveProcess } from './conversations.ts';
 import { repos, sessions } from './db.ts';
 import { NotPermitted } from './ghostty.ts';
-import { deleteWorktree, deleteWorktreeLoss, dismissTerminalNotice, io, looseFiles, terminalNotices } from './removal.ts';
+import { deleteWorktree, deleteWorktreeLoss, dismissTerminalNotice, io, terminalNotices } from './removal.ts';
+import { looseFiles } from './looseFiles.ts';
 import { claudeOf } from './sessions.ts';
 import { makeTaskFolder, openWorktree } from './folderTasks.ts';
 import { refreshWorkspace } from './workspace.ts';
@@ -158,7 +159,7 @@ test('a task folder counts the files outside its worktrees and keeps a folder th
   assert.equal(sessions.get('folder-task'), undefined);
 });
 
-test('a task folder with nothing but its worktrees goes whole', async () => {
+test('a task folder with nothing but its worktrees, its .pitwall/ and the .DS_Store Finder leaves goes whole', async () => {
   const folder = realpathSync(mkdtempSync(join(tmpdir(), 'pitwall-folder-')));
   for (const name of ['web', 'api']) repos.add(repoIn(folder, name));
   await refreshWorkspace();
@@ -168,7 +169,9 @@ test('a task folder with nothing but its worktrees goes whole', async () => {
   running('tidy-task', 9301, path);
   mkdirSync(join(path, '.pitwall', 'artifacts', 'tidy'), { recursive: true });
   writeFileSync(join(path, '.pitwall', 'artifacts', 'tidy', '01-request-tidy.md'), '# Tidy\n');
-  assert.equal((await deleteWorktreeLoss('tidy-task')).loose, 0, 'its .pitwall/ is no loose file');
+  writeFileSync(join(path, '.DS_Store'), 'Finder\n');
+  writeFileSync(join(path, '.pitwall', '.DS_Store'), 'Finder\n');
+  assert.equal((await deleteWorktreeLoss('tidy-task')).loose, 0, 'neither its .pitwall/ nor a .DS_Store is a loose file');
   await deleteWorktree('tidy-task', { discard: true });
   assert.ok(!existsSync(path));
   assert.deepEqual(signalled, [9301]);

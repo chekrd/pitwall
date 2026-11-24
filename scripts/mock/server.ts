@@ -45,6 +45,7 @@ import { htmlText } from '../../server/htmlText.ts';
 import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
 import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
+import { looseFiles } from '../../server/looseFiles.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
 import { refuseLive } from '../isolate.ts';
@@ -656,9 +657,9 @@ const actions: ActionHandlers<Session> = {
     update(s.id, archivePatch(s, body.archived ?? true));
     settleArchive(s);
   },
-  'delete-worktree': (s, body) => {
+  'delete-worktree': async (s, body) => {
     if (body.discard !== true) {
-      const loss: { files: number; commits: number; gone?: boolean; checkout?: boolean } = deleteLoss(s);
+      const loss = await deleteLoss(s);
       if (!loss.gone && !loss.checkout && loss.files + loss.commits > 0) throw new Error('not everything is pushed: approve throwing it away in Clear task');
     }
     const worktree = repoOf(s.repoId)?.worktrees.find((w) => w.path === s.worktree);
@@ -693,6 +694,7 @@ function clearTask(s: Session, removesPlace: boolean) {
   refusedTabs(s, removesPlace);
   if (s.repoId === null && removesPlace) {
     for (const { repo, worktree } of taskWorktrees(s.worktree)) repo.worktrees = repo.worktrees.filter((w) => w !== worktree);
+    rmSync(s.worktree, { recursive: true, force: true });
     state.sessions = state.sessions.filter((o) => o.worktree !== s.worktree && !o.worktree.startsWith(`${s.worktree}/`));
     push();
     return;
@@ -719,7 +721,7 @@ async function sessionAction(id: string, action: string, raw: Buffer) {
 const longLived = (repo: RepoView, branch: string) =>
   ['master', 'main', 'develop', 'trunk', repo.base, repo.base.replace(/^[^/]+\//, '')].includes(branch) || branch.startsWith('release/');
 
-function deleteLoss(s: Session): WorktreeLoss {
+async function deleteLoss(s: Session): Promise<WorktreeLoss> {
   if (flagged(s.id, 'lossFails')) throw new Error('git status failed: fatal: unable to read the index');
   const repo = repoOf(s.repoId);
   const worktree = repo?.worktrees.find((w) => w.path === s.worktree);
@@ -729,9 +731,11 @@ function deleteLoss(s: Session): WorktreeLoss {
     const repos = taskWorktrees(s.worktree).map(({ repo: r, worktree: w }, i) => ({
       name: r.name, branch: w.branch, deletesBranch: !!w.branch && !longLived(r, w.branch), files: i === 0 ? DELETE_LOSS.files : 0, commits: i === 0 ? DELETE_LOSS.commits : 0,
     }));
+    const left = await looseFiles(s.worktree, new Set(taskWorktrees(s.worktree).map(({ worktree: w }) => w.path)));
+    const loose = left.repository ? 0 : left.files;
     const sum = (k: 'files' | 'commits') => repos.reduce((n, r) => n + r[k], 0);
     // The mock's task folders are never removed behind its back, so none is gone.
-    return { branch: s.worktree.split('/').at(-1)!, deletesBranch: repos.some((r) => r.deletesBranch), files: sum('files'), commits: sum('commits'), gone: false, repos };
+    return { branch: s.worktree.split('/').at(-1)!, deletesBranch: repos.some((r) => r.deletesBranch), files: sum('files') + loose, commits: sum('commits'), gone: false, repos, loose };
   }
   if (!repo || !worktree) return { branch: null, deletesBranch: false, files: 0, commits: 0, checkout: true, gone: true };
   if (worktree.isMain) return { branch: worktree.branch, deletesBranch: false, files: 0, commits: 0, checkout: true };

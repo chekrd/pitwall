@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
-import { readdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { clearings } from './clearing.ts';
 import { alive, liveConversations, signal, type LiveProcess } from './conversations.ts';
 import { SESSIONS_DIR } from './config.ts';
 import { repos, sessions, type Session } from './db.ts';
 import { changedFiles, isClean, removeWorktree, unpushedCommits } from './git.ts';
+import { looseFiles } from './looseFiles.ts';
 import * as ghostty from './ghostty.ts';
 import * as terminal from './terminal.ts';
 import * as tmux from './tmux.ts';
@@ -191,27 +192,6 @@ export async function deleteWorktreeLoss(id: string): Promise<WorktreeLoss> {
   const deletesBranch = !!worktree.branch && !longLived(repo, worktree.branch);
   const [files, commits] = await Promise.all([changedFiles(s.worktree), unpushedCommits(s.worktree)]);
   return { branch: worktree.branch, deletesBranch, files, commits };
-}
-
-// The files in a task folder outside the worktrees given, and whether a repository lies among them at any depth.
-// `.pitwall/` is not counted: it goes unannounced, as it does with a worktree, whose git ignores it.
-export async function looseFiles(dir: string, worktrees: Set<string>): Promise<{ files: number; repository: boolean }> {
-  let files = 0;
-  let repository = false;
-  for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-    const path = join(dir, e.name);
-    if (worktrees.has(path) || (e.name === '.pitwall' && e.isDirectory())) continue;
-    if (e.name === '.git') {
-      repository = true;
-    } else if (e.isDirectory()) {
-      const inner = await looseFiles(path, worktrees);
-      files += inner.files;
-      repository ||= inner.repository;
-    } else {
-      files++;
-    }
-  }
-  return { files, repository };
 }
 
 // Loose files go with the folder, unless a repository among them keeps it.

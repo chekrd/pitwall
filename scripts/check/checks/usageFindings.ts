@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { approveLoss, logged, menuItems, openDecision, openFromWall, openNewTask, openSheetOf, tiles, whole, type Check } from '../helpers.ts';
 
 export const usageFindings: Check[] = [
@@ -256,7 +257,7 @@ export const usageFindings: Check[] = [
     },
   },
   {
-    name: 'M1 New task across a folder of repos: the picker lists the folder first, which hides the worktree options and says where Claude starts; ⌘↵ starts it in an empty task folder; the worktrees Claude opens show in the facts, each PR it opens shows as its own chip named by its repository and linked, the Diff groups them by repository, the tile names the repositories it works in and their branch, and Clear task names each worktree and its loss and clears them all',
+    name: 'M1 New task across a folder of repos: the picker lists the folder first, which hides the worktree options and says where Claude starts; ⌘↵ starts it in an empty task folder; the worktrees Claude opens show in the facts, each PR it opens shows as its own chip named by its repository and linked, the Diff groups them by repository, the tile names the repositories it works in and their branch, and Clear task names each worktree and its loss, counts no .DS_Store Finder left in the folder as one, and clears them all',
     async run({ page, mock, shot }) {
       const submit = () => document.querySelector('dialog#new-task textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await page.goto(`${mock.url}/`);
@@ -332,6 +333,8 @@ export const usageFindings: Check[] = [
       await page.goto(`${mock.url}/`);
       const where = await page.until('its tile', (task: string) => document.querySelector(`[data-tile][data-session="${task}"] [class*="where"]`)?.textContent, id);
       assert.equal(where, 'storefront, billing-api · cart-api');
+      mkdirSync(`${home}/code/worktrees/cart-api`, { recursive: true });
+      writeFileSync(`${home}/code/worktrees/cart-api/.DS_Store`, 'Finder\n');
       await page.click(`[data-tile][data-session="${id}"] button[aria-label="Session actions"]`);
       await page.until('its menu', menuItems);
       await page.click(':popover-open button', 'Clear task');
@@ -353,6 +356,7 @@ export const usageFindings: Check[] = [
       await page.until('the tile to go', (task: string) => !document.querySelector(`[data-tile][data-session="${task}"]`), id);
       const state = await mock.get('/api/state');
       assert.ok(!state.repos.some((r: { worktrees: { path: string }[] }) => r.worktrees.some((w) => w.path.startsWith(`${home}/code/worktrees/cart-api/`))), 'the worktrees went');
+      assert.ok(!existsSync(`${home}/code/worktrees/cart-api`), 'the task folder went');
     },
   },
 ];
