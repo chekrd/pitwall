@@ -176,7 +176,7 @@ export const versions: Check[] = [
     },
   },
   {
-    name: 'VER.4 an artifact published again under its title is one entry with its latest version and a picker; an older version opens in the same sandboxed frame; Changes compares their visible text; a new version from Claude comes in on top, and with many the picker is a menu',
+    name: 'VER.4 an artifact published again under its title is one entry with its latest version and a picker; an older version opens in the same sandboxed frame; Changes compares their visible text; a new version from Claude comes in on top, and with many the picker is a menu, its text in the middle of it',
     scenario: 'workflow',
     async run({ page, mock, shot }) {
       await openSheetOf(page, mock, 's-export');
@@ -223,6 +223,8 @@ export const versions: Check[] = [
         const shown = await page.eval(picker);
         return shown?.length === 5 ? shown : null;
       }), ['*v5 (latest)', 'v4', 'v3', 'v2', 'v1']);
+      assert.equal(await page.eval(() => getComputedStyle(document.querySelector('#task-sheet [data-versions] select')!).alignItems), 'center', 'v5 (latest) sits in the middle of the menu, not at its top');
+      await shot('artifact-versions-menu');
       await page.eval(() => {
         const s = document.querySelector<HTMLSelectElement>('#task-sheet [data-versions] select')!;
         s.value = '2';

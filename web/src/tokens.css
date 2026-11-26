@@ -161,6 +161,7 @@
   }
 
   select, ::picker(select) { appearance: base-select; }
+  select { align-items: center; }
   ::picker(select) { border: 1px solid var(--line-2); border-radius: 14px; background: var(--raised); box-shadow: var(--shadow); }
 
   dialog {
