@@ -507,4 +507,30 @@ export const taskPage: Check[] = [
       assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet article[data-exchange] [data-reply] > div')!.innerText.trim()), 'Reply 0 with bold and code.');
     },
   },
+  {
+    name: 'P4.6.clone-replaced a folder task whose repository was once a clone at its worktree\'s path, registered by a scan, lists that worktree once in its facts and its files once in Diff',
+    async run({ page, mock }) {
+      const home = await mock.home();
+      const { sessionId: id } = await mock.post('/api/folder-tasks', { folder: `${home}/code`, name: 'pr-check', prompt: 'Check PRs' });
+      await mock.post('/mock/open-worktree', { id, repo: 'storefront' });
+      await mock.post('/mock/open-worktree', { id, repo: 'billing-api' });
+      await mock.post('/mock/found-clone', { id, repo: 'storefront' });
+      await openSheetOf(page, mock, id);
+      const listed = await page.until('the worktrees in the facts', () => {
+        const all = [...document.querySelectorAll('[data-task-worktrees] li')];
+        return all.length >= 2 && all.map((li) => li.textContent);
+      });
+      assert.deepEqual(listed, [
+        'storefront ~/code/worktrees/pr-check/storefront on pr-check',
+        'billing-api ~/code/worktrees/pr-check/billing-api on pr-check',
+      ]);
+      await page.key('3');
+      const files = await page.until('the diff', () => {
+        const all = [...document.querySelectorAll('section[data-file]')].map((s) => s.getAttribute('data-file')!);
+        return all.length > 0 && all;
+      });
+      assert.deepEqual(files.filter((f, i) => files.indexOf(f) !== i), [], 'no file twice');
+      assert.ok(files.some((f) => f.startsWith('storefront/')) && files.some((f) => f.startsWith('billing-api/')), files.join(', '));
+    },
+  },
 ];

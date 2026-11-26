@@ -46,6 +46,7 @@ import { knowsCommand, rpiInvocation } from '../../server/slash.ts';
 import { nextUsage } from '../../server/usage.ts';
 import type { TerminalNotice, WorktreeLoss } from '../../server/removal.ts';
 import { looseFiles } from '../../server/looseFiles.ts';
+import { ownCheckouts } from '../../server/checkouts.ts';
 import type { FolderView, RepoView } from '../../server/workspace.ts';
 import { prefixRenames } from '../../server/git.ts';
 import { refuseLive } from '../isolate.ts';
@@ -175,13 +176,16 @@ let pushing = false;
 
 const parentOf = (path: string) => path.slice(0, path.lastIndexOf('/'));
 
+// The repositories as the server lists them.
+const listed = () => ownCheckouts(state.repos);
+
 // As the server's folders(): a folder holding two or more of the repositories.
-const folders = (): FolderView[] => [...Map.groupBy(state.repos, (r) => parentOf(r.path))]
+const folders = (): FolderView[] => [...Map.groupBy(listed(), (r) => parentOf(r.path))]
   .filter(([, rs]) => rs.length > 1)
   .map(([path, rs]) => ({ path, name: path.split('/').at(-1)!, repos: rs.map((r) => r.id) }));
 
 const taskWorktrees = (taskFolder: string) =>
-  state.repos.flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && parentOf(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
+  listed().flatMap((repo) => repo.worktrees.filter((w) => !w.isMain && parentOf(w.path) === taskFolder).map((worktree) => ({ repo, worktree })));
 
 // As the server's documentRoots().
 const documentRoots = (s: Session) => {
@@ -236,7 +240,7 @@ async function refreshDocuments() {
   await seeded;
   const [changed, modelsChanged] = await Promise.all([
     store.refresh(state.sessions.map((s) => ({ id: s.id, base: s.worktree, roots: documentRoots(s), working: s.status === 'working' }))),
-    models.refresh(state.sessions.map((s) => ({ id: s.id, models: modelRoots(s, state.repos) }))),
+    models.refresh(state.sessions.map((s) => ({ id: s.id, models: modelRoots(s, listed()) }))),
   ]);
   if (store === docs) {
     for (const s of state.sessions) {
@@ -260,7 +264,7 @@ function snapshot(): State {
     return { home: HOME, roots: state.roots, repos: state.repos, sessions: old } as unknown as State;
   }
   return {
-    home: HOME, roots: state.roots, repos: state.repos, folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id), architecture: architecture.of(s.id), regeneration: regenerations.of(s.id) })),
+    home: HOME, roots: state.roots, repos: listed(), folders: folders(), schedules, sessions: sessions.map((s) => ({ ...s, ...clearing.of(s.id), workflow: docs.of(s.id), architecture: architecture.of(s.id), regeneration: regenerations.of(s.id) })),
     usage: state.usage, pause: { stopping: pausing.stopping(), finishing: pausing.finishing() }, drift, terminalNotices, pitwall: `${HOME}/git/github/pitwall`,
   };
 }
@@ -551,7 +555,7 @@ let regenerations = regenerationsFor(state);
 async function cycleReply(s: Session, body: ActionInput<'answer'>) {
   if (!documentRoots(s).length) throw new Error(RPI_NEEDS_WORKTREE);
   const files = checkUploads(body.files);
-  return { key: null, text: cycleMessage(body.text ?? '', files, await cycleFolder(s, state.repos), rpiInvocation(commandsIn(s.worktree))), fresh: true };
+  return { key: null, text: cycleMessage(body.text ?? '', files, await cycleFolder(s, listed()), rpiInvocation(commandsIn(s.worktree))), fresh: true };
 }
 
 async function answerWithDrafts(s: Session, body: ActionInput<'answer'>) {
@@ -1094,7 +1098,7 @@ route('POST', '/mock/artifact', ({ body }) => {
 });
 api('GET /api/sessions/:id/new-cycle', async ({ params }) => {
   const s = must(params[0]);
-  return { folder: await cycleFolder(s, state.repos), changes: uncommitted.get(s.worktree) ?? [] };
+  return { folder: await cycleFolder(s, listed()), changes: uncommitted.get(s.worktree) ?? [] };
 });
 route('POST', '/mock/uncommitted', ({ body }) => {
   const s = must(String(body.id));
@@ -1113,7 +1117,7 @@ routes.push(['GET', /^\/api\/sessions\/([^/]+)\/documents\/(.+)$/, async ({ para
   return new Page(await readFile(file), { 'content-type': type, 'content-security-policy': ARTIFACT_CSP, 'x-content-type-options': 'nosniff' });
 }]);
 const modelOf = (s: Session, key: string) => {
-  const model = modelRoots(s, state.repos).find((m) => m.key === key);
+  const model = modelRoots(s, listed()).find((m) => m.key === key);
   if (!model) throw new Error('this task has no such architecture model');
   return model;
 };
@@ -1359,6 +1363,17 @@ route('POST', '/mock/open-worktree', ({ body }) => {
   if (!repo.worktrees.some((w) => w.path === path)) {
     repo.worktrees.push({ path, branch: s.worktree.split('/').at(-1)!, head: randomUUID().replaceAll('-', '').padEnd(40, '0'), isMain: false, conversations: [] });
   }
+  push();
+  return { path };
+});
+// As a scan that found a clone at <task folder>/<repo> before a worktree of that repository took its path: the path
+// stays registered as a repository, and git lists the repository's worktrees from it as from any of its worktrees.
+route('POST', '/mock/found-clone', ({ body }) => {
+  const s = must(body.id);
+  const repo = state.repos.find((r) => r.name === body.repo && r.worktrees.some((w) => w.path === `${s.worktree}/${r.name}`));
+  if (!repo) throw new Error(`no worktree of ${body.repo} in that task folder`);
+  const path = `${s.worktree}/${repo.name}`;
+  state.repos.push({ ...repo, id: Math.max(0, ...state.repos.map((r) => r.id)) + 1, path, defaultWorktreeRoot: worktreeRootOf(path) });
   push();
   return { path };
 });

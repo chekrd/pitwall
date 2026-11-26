@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { modelRoots } from './architecture.ts';
+import { ownCheckouts } from './checkouts.ts';
 import { liveConversations, listConversations, type Conversation } from './conversations.ts';
 import { repos, roots, sessions, type Repo } from './db.ts';
 import { detectBase, listWorktrees, type Worktree } from './git.ts';
@@ -73,7 +74,7 @@ export async function refreshWorkspace({ scan = false } = {}) {
   next.sort((a, b) => byName(a.name, b.name) || byName(a.path, b.path));
   if (generation < applied) return;
   applied = generation;
-  cache = next;
+  cache = ownCheckouts(next);
   notify();
 }
 
