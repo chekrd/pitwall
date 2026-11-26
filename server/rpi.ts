@@ -76,8 +76,7 @@ export interface Progress {
   total: number;
   // Phases of the outline's overview, or every checkbox when it has no overview.
   unit: 'phase' | 'check';
-  // Any box of the outline ticked or marked ✅: rpi leaves a phase's overview box open until its manual check is
-  // confirmed, while its own checks are already ticked.
+  // Any box of the outline ticked or marked ✅.
   started: boolean;
 }
 
@@ -131,11 +130,23 @@ const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const DONE_MARK = '✅';
 
 // The outline's progress: its Implementation Overview's phases, done when checked or marked ✅ there or on their own
-// heading; without an overview, every checkbox. Implementation has started once any box anywhere in it is ticked.
+// heading, or when a box of their own section is ticked: rpi leaves a phase's overview box and heading unmarked until
+// its manual check is confirmed, though its code is in and its own checks ticked. Without an overview, every checkbox.
+// Implementation has started once any box anywhere in it is ticked.
 export function outlineProgress(lines: string[]): Progress | null {
   const phaseOf = (text: string) => Number(text.match(/\bphase\s+(\d+)/i)?.[1] ?? 0);
-  const doneHeadings = new Set(lines.map((l) => l.match(HEADING)?.[2] ?? '').filter((h) => h.includes(DONE_MARK)).map(phaseOf));
   const boxes = (from: string[]) => from.map((l) => l.match(CHECKBOX)).filter((m) => m !== null);
+  const donePhases = new Set<number>();
+  let section: { phase: number; level: number } | null = null;
+  for (const line of lines) {
+    const heading = line.match(HEADING);
+    const box = line.match(CHECKBOX);
+    if (heading) {
+      const [, hashes, text] = heading;
+      if (!section || hashes.length <= section.level) section = phaseOf(text) > 0 ? { phase: phaseOf(text), level: hashes.length } : null;
+      if (text.includes(DONE_MARK) && phaseOf(text) > 0) donePhases.add(phaseOf(text));
+    } else if (section && box && box[1] !== ' ') donePhases.add(section.phase);
+  }
   const at = lines.findIndex((l) => HEADING.test(l) && /implementation overview/i.test(l));
   const after = lines.slice(at + 1);
   const end = after.findIndex((l) => HEADING.test(l));
@@ -143,7 +154,7 @@ export function outlineProgress(lines: string[]): Progress | null {
   const all = boxes(lines);
   const items = overview.length ? overview : all;
   if (!items.length) return null;
-  const done = items.filter(([, mark, text]) => mark !== ' ' || text.includes(DONE_MARK) || (phaseOf(text) > 0 && doneHeadings.has(phaseOf(text)))).length;
+  const done = items.filter(([, mark, text]) => mark !== ' ' || text.includes(DONE_MARK) || donePhases.has(phaseOf(text))).length;
   const started = done > 0 || all.some(([, mark, text]) => mark !== ' ' || text.includes(DONE_MARK));
   return { done, total: items.length, unit: overview.length ? 'phase' : 'check', started };
 }

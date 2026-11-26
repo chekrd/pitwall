@@ -50,7 +50,9 @@ test("the outline's progress counts its overview's phases, done when checked or 
   assert.deepEqual(parseDocument('05-structure-outline-retries.md', OUTLINE).progress, { done: 2, total: 3, unit: 'phase', started: true });
   assert.deepEqual(outlineProgress(['- [x] one', '- [ ] two', '* [X] three']), { done: 2, total: 3, unit: 'check', started: true }, 'no overview: every checkbox');
   assert.deepEqual(outlineProgress(['## Implementation Overview', '- [ ] Phase 1: a', '- [ ] Phase 2: b', '## Phase 1: a', '- [x] `pnpm test a`']),
-    { done: 0, total: 2, unit: 'phase', started: true }, "a phase's own check ticked, its overview box open until the manual check");
+    { done: 1, total: 2, unit: 'phase', started: true }, "a phase's own check ticked counts it while its overview box waits for the manual check");
+  assert.deepEqual(outlineProgress(['## Implementation Overview', '- [ ] Phase 1: a', '- [ ] Phase 2: b', '## Phase 1: a', '### Validation', '- [ ] manual', '## Open Questions', '- [x] settled', '## Phase 2: b', '- [ ] `pnpm test b`']),
+    { done: 0, total: 2, unit: 'phase', started: true }, "a box under a later heading of the phase's level is not the phase's");
   assert.deepEqual(outlineProgress(['## Implementation Overview', '- [ ] Phase 1: a', '## Phase 1: a', '- [ ] `pnpm test a`']), { done: 0, total: 1, unit: 'phase', started: false });
   assert.equal(outlineProgress(['no boxes here']), null);
 });

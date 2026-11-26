@@ -229,7 +229,7 @@ export const workflow: Check[] = [
     },
   },
   {
-    name: 'RPI.4b an outline whose first phase has its checks ticked but its overview box still open, as rpi leaves it until the manual check, shows Implement under way at 0/3 with Implement the next phase; with no box ticked anywhere Implement is not yet',
+    name: 'RPI.4b an outline whose first phase has its checks ticked but its overview box still open, as rpi leaves it until the manual check, counts the phase, Implement under way at 1/3 with Implement the next phase; with no box ticked anywhere Implement is not yet',
     scenario: 'workflow',
     async run({ page, mock }) {
       await page.goto(`${mock.url}/s/s-export/documents/${encodeURIComponent(OUTLINE)}`);
@@ -237,12 +237,29 @@ export const workflow: Check[] = [
       const outline = await (await fetch(`${mock.url}/api/sessions/s-export/documents/${OUTLINE}`)).text();
       const awaitingManual = outline.replace('- [x] Phase 1', '- [ ] Phase 1').replaceAll(' ✅', '');
       await mock.post('/mock/document', { id: 's-export', path: OUTLINE, text: awaitingManual });
-      const tail = ['Outline:done', 'Implement0/3:current'];
+      const tail = ['Outline:done', 'Implement1/3:current'];
       await page.until('Implement under way', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-phase-strip] li')].map((li) => `${li.textContent}:${li.dataset.state}`).slice(-2)) === want, JSON.stringify(tail));
-      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-phase-strip] li[data-phase="implement"]')!.dataset.explain), 'Under way: 0 of 3 phases of the outline done');
+      assert.equal(await page.eval(() => document.querySelector<HTMLElement>('#task-sheet [data-phase-strip] li[data-phase="implement"]')!.dataset.explain), 'Under way: 1 of 3 phases of the outline done');
       assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-next-steps] [data-step]')].map((b) => b.dataset.step)), ['Implement the next phase']);
       await mock.post('/mock/document', { id: 's-export', path: OUTLINE, text: awaitingManual.replace('- [x] `pnpm test csv`', '- [ ] `pnpm test csv`') });
       await page.until('Implement not yet', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-phase-strip] li')].map((li) => `${li.textContent}:${li.dataset.state}`).slice(-2)) === want, JSON.stringify(['Outline:current', 'Implement0/3:next']));
+    },
+  },
+  {
+    name: 'RPI.4c an outline with every phase implemented, each with a check of its own ticked and its overview box open for the manual check, shows Implement 3/3 done, the chip Done and no Implement the next phase',
+    scenario: 'workflow',
+    async run({ page, mock }) {
+      await page.goto(`${mock.url}/s/s-export/documents/${encodeURIComponent(OUTLINE)}`);
+      await page.until('the outline', headingIs, 'Outline: Invoice CSV export');
+      const outline = await (await fetch(`${mock.url}/api/sessions/s-export/documents/${OUTLINE}`)).text();
+      const implemented = outline.replace('- [x] Phase 1', '- [ ] Phase 1').replaceAll(' ✅', '')
+        .replace('- [ ] `pnpm test invoices/export`', '- [x] `pnpm test invoices/export`')
+        .replace('- [ ] The download opens in a spreadsheet', '#### Automated Verification\n\n- [x] `pnpm build` passes\n\n#### Manual Verification\n\n- [ ] The download opens in a spreadsheet');
+      await mock.post('/mock/document', { id: 's-export', path: OUTLINE, text: implemented });
+      await page.until('Implement done', (want: string) => JSON.stringify([...document.querySelectorAll<HTMLElement>('#task-sheet [data-phase-strip] li')].map((li) => `${li.textContent}:${li.dataset.state}`).slice(-2)) === want, JSON.stringify(['Outline:done', 'Implement3/3:done']));
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll<HTMLElement>('#task-sheet [data-next-steps] [data-step]')].map((b) => b.dataset.step)), []);
+      await page.goto(`${mock.url}/`);
+      await page.until('the chip Done', () => document.querySelector('[data-tile][data-session="s-export"] [data-workflow-chip]')?.textContent === 'RPI · Done');
     },
   },
   {
